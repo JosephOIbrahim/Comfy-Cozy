@@ -788,3 +788,146 @@
 .sd-para-long {
   margin-bottom: var(--sd-space-xl) !important;
 }
+
+/* ── Readability Controls ──────────────────────────────────────── */
+
+.sd-readbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 2px;
+  padding: 3px var(--sd-space-xl) 3px var(--sd-space-lg);
+  background: var(--sd-panel);
+  border-top: 1px solid var(--sd-border-subtle);
+  flex-shrink: 0;
+  opacity: 0.4;
+  transition: opacity 250ms ease;
+}
+
+.sd-readbar:hover {
+  opacity: 1;
+}
+
+.sd-readbar__btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: none;
+  background: transparent;
+  color: var(--sd-text-muted);
+  border-radius: 3px;
+  cursor: pointer;
+  padding: 0;
+  transition: color var(--sd-transition), background var(--sd-transition);
+}
+
+.sd-readbar__btn:hover {
+  color: var(--sd-text-primary);
+  background: var(--sd-card);
+}
+
+.sd-readbar__btn--active {
+  color: var(--sd-accent);
+  background: var(--sd-accent-subtle);
+}
+
+.sd-readbar__btn--active:hover {
+  color: var(--sd-accent);
+  background: var(--sd-accent-dim);
+}
+
+.sd-readbar__btn svg {
+  display: block;
+}
+
+.sd-readbar__sep {
+  width: 1px;
+  height: 14px;
+  background: var(--sd-border-subtle);
+  margin: 0 3px;
+  flex-shrink: 0;
+}
+
+/* Font size text buttons */
+.sd-readbar__btn--font-down {
+  font-family: var(--sd-font-sans);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.sd-readbar__btn--font-up {
+  font-family: var(--sd-font-sans);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+/* ── Font Size Overrides ───────────────────────────────────────── */
+
+.sd-messages[data-font="s"] .sd-message {
+  font-size: 12px;
+}
+
+.sd-messages[data-font="s"] .sd-text-body {
+  font-size: 12px;
+}
+
+.sd-messages[data-font="s"] .sd-code-block {
+  font-size: 10.5px;
+}
+
+/* data-font="m" is the default (13px) — no override needed */
+
+.sd-messages[data-font="l"] .sd-message {
+  font-size: 15px;
+}
+
+.sd-messages[data-font="l"] .sd-text-body {
+  font-size: 15px;
+}
+
+.sd-messages[data-font="l"] .sd-code-block {
+  font-size: 13px;
+}
+
+/* ── Text Alignment Overrides ──────────────────────────────────── */
+
+/* data-align="left" is default — no override needed */
+
+.sd-messages[data-align="center"] .sd-message__body {
+  text-align: center;
+}
+
+.sd-messages[data-align="right"] .sd-message__body {
+  text-align: right;
+}
+
+/* ── Compact Mode Overrides (comfort is the default base) ──────── */
+
+.sd-messages[data-mode="compact"] {
+  gap: 10px;
+}
+
+.sd-messages[data-mode="compact"] .sd-message {
+  line-height: 1.45;
+  padding: var(--sd-space-sm) var(--sd-space-lg);
+}
+
+.sd-messages[data-mode="compact"] .sd-text-body p {
+  margin-bottom: 4px;
+}
+
+.sd-messages[data-mode="compact"] .sd-message--agent + .sd-message--agent {
+  padding-top: var(--sd-space-sm);
+  border-top: none;
+  margin-top: 0;
+}
+
+.sd-messages[data-mode="compact"] .sd-message--agent {
+  border-left-color: transparent;
+}
+
+.sd-messages[data-mode="compact"] .sd-para-long {
+  margin-bottom: var(--sd-space-md) !important;
+}

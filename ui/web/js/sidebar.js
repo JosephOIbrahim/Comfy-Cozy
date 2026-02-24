@@ -106,6 +106,145 @@ class AgentConnection {
   }
 }
 
+/* ── Readability Controls ─────────────────────────────────────────── */
+
+const SVG_NS = "http://www.w3.org/2000/svg";
+const FONT_STEPS = ["s", "m", "l"];
+const ALIGN_OPTIONS = ["left", "center", "right"];
+const MODE_OPTIONS = ["comfort", "compact"];
+
+/** Create a tiny SVG with horizontal line rects. */
+function _svgLines(lineData) {
+  const svg = document.createElementNS(SVG_NS, "svg");
+  svg.setAttribute("width", "14");
+  svg.setAttribute("height", "14");
+  svg.setAttribute("viewBox", "0 0 14 14");
+  for (const d of lineData) {
+    const rect = document.createElementNS(SVG_NS, "rect");
+    rect.setAttribute("x", String(d.x));
+    rect.setAttribute("y", String(d.y));
+    rect.setAttribute("width", String(d.w));
+    rect.setAttribute("height", "1.5");
+    rect.setAttribute("rx", "0.75");
+    rect.setAttribute("fill", "currentColor");
+    svg.appendChild(rect);
+  }
+  return svg;
+}
+
+/** Alignment icon — three lines with position weight. */
+function _alignIcon(align) {
+  const specs = {
+    left:   [{ x: 1, y: 3, w: 12 }, { x: 1, y: 6.5, w: 8 },  { x: 1, y: 10, w: 10 }],
+    center: [{ x: 1, y: 3, w: 12 }, { x: 3, y: 6.5, w: 8 },  { x: 2, y: 10, w: 10 }],
+    right:  [{ x: 1, y: 3, w: 12 }, { x: 5, y: 6.5, w: 8 },  { x: 3, y: 10, w: 10 }],
+  };
+  return _svgLines(specs[align]);
+}
+
+/** Mode icon — three lines with gap spacing. */
+function _modeIcon(mode) {
+  const ys = mode === "comfort" ? [2, 6.25, 10.5] : [4, 6.25, 8.5];
+  return _svgLines(ys.map(y => ({ x: 2, y, w: 10 })));
+}
+
+/** Create a readbar button. */
+function _readBtn(title, ariaLabel) {
+  const btn = document.createElement("button");
+  btn.className = "sd-readbar__btn";
+  btn.title = title;
+  btn.setAttribute("aria-label", ariaLabel || title);
+  return btn;
+}
+
+/** Create a separator. */
+function _readSep() {
+  const sep = document.createElement("span");
+  sep.className = "sd-readbar__sep";
+  return sep;
+}
+
+/** Populate the readability bar. */
+function _buildReadbar(barEl, messagesEl) {
+  // Restore saved preferences (comfort + m + left are defaults)
+  const savedFont  = localStorage.getItem("sd-font")  || "m";
+  const savedAlign = localStorage.getItem("sd-align") || "left";
+  const savedMode  = localStorage.getItem("sd-mode")  || "comfort";
+
+  messagesEl.dataset.font  = savedFont;
+  messagesEl.dataset.align = savedAlign;
+  messagesEl.dataset.mode  = savedMode;
+
+  // ── Font size: A↓ A↑ ──
+  const fontDown = _readBtn("Smaller text");
+  fontDown.classList.add("sd-readbar__btn--font-down");
+  fontDown.textContent = "A";
+  fontDown.addEventListener("click", () => {
+    const i = FONT_STEPS.indexOf(messagesEl.dataset.font);
+    if (i > 0) {
+      messagesEl.dataset.font = FONT_STEPS[i - 1];
+      localStorage.setItem("sd-font", messagesEl.dataset.font);
+    }
+  });
+  barEl.appendChild(fontDown);
+
+  const fontUp = _readBtn("Larger text");
+  fontUp.classList.add("sd-readbar__btn--font-up");
+  fontUp.textContent = "A";
+  fontUp.addEventListener("click", () => {
+    const i = FONT_STEPS.indexOf(messagesEl.dataset.font);
+    if (i < FONT_STEPS.length - 1) {
+      messagesEl.dataset.font = FONT_STEPS[i + 1];
+      localStorage.setItem("sd-font", messagesEl.dataset.font);
+    }
+  });
+  barEl.appendChild(fontUp);
+
+  barEl.appendChild(_readSep());
+
+  // ── Alignment: left / center / right ──
+  const alignBtns = {};
+  for (const align of ALIGN_OPTIONS) {
+    const btn = _readBtn(`${align.charAt(0).toUpperCase() + align.slice(1)} align`);
+    btn.appendChild(_alignIcon(align));
+    btn.addEventListener("click", () => {
+      messagesEl.dataset.align = align;
+      localStorage.setItem("sd-align", align);
+      _syncActive();
+    });
+    alignBtns[align] = btn;
+    barEl.appendChild(btn);
+  }
+
+  barEl.appendChild(_readSep());
+
+  // ── Mode: comfort / compact ──
+  const modeBtns = {};
+  const modeLabels = { comfort: "Comfort reading", compact: "Compact reading" };
+  for (const mode of MODE_OPTIONS) {
+    const btn = _readBtn(modeLabels[mode]);
+    btn.appendChild(_modeIcon(mode));
+    btn.addEventListener("click", () => {
+      messagesEl.dataset.mode = mode;
+      localStorage.setItem("sd-mode", mode);
+      _syncActive();
+    });
+    modeBtns[mode] = btn;
+    barEl.appendChild(btn);
+  }
+
+  // Sync active highlights
+  function _syncActive() {
+    for (const [k, b] of Object.entries(alignBtns)) {
+      b.classList.toggle("sd-readbar__btn--active", k === messagesEl.dataset.align);
+    }
+    for (const [k, b] of Object.entries(modeBtns)) {
+      b.classList.toggle("sd-readbar__btn--active", k === messagesEl.dataset.mode);
+    }
+  }
+  _syncActive();
+}
+
 /* ── Build the sidebar DOM ────────────────────────────────────────── */
 
 function buildSidebar(el) {
@@ -127,6 +266,7 @@ function buildSidebar(el) {
         <span class="sd-message__body">What would you like to do with your workflow?</span>
       </div>
     </div>
+    <div class="sd-readbar" id="sd-readbar"></div>
     <div class="sd-input-bar">
       <input
         type="text"
@@ -146,6 +286,10 @@ function buildSidebar(el) {
   const stageBar = el.querySelector("#sd-stage");
   const stageLabel = el.querySelector("#sd-stage-label");
   const stageDetail = el.querySelector("#sd-stage-detail");
+  const readbarEl = el.querySelector("#sd-readbar");
+
+  // Build readability controls
+  _buildReadbar(readbarEl, messagesEl);
 
   let busy = false;
   let streamingEl = null;     // element receiving streamed text deltas
