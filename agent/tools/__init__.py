@@ -10,6 +10,7 @@ Brain tools are lazily imported to avoid circular dependencies
 """
 
 import logging
+import threading
 
 from . import comfy_api, comfy_inspect, workflow_parse, workflow_patch, comfy_execute, comfy_discover, session_tools, workflow_templates, civitai_api, model_compat, verify_execution, github_releases, pipeline, image_metadata, node_replacement
 
@@ -30,17 +31,21 @@ for _mod in _MODULES:
 
 # Brain tools are loaded lazily to break the circular import
 _brain_loaded = False
+_brain_lock = threading.Lock()
 _BRAIN_TOOL_NAMES: set[str] = set()
 
 
 def _ensure_brain():
-    """Lazily load brain layer tools."""
+    """Lazily load brain layer tools (thread-safe)."""
     global _brain_loaded, _BRAIN_TOOL_NAMES
     if _brain_loaded:
         return
-    from ..brain import ALL_BRAIN_TOOLS
-    _BRAIN_TOOL_NAMES.update(t["name"] for t in ALL_BRAIN_TOOLS)
-    _brain_loaded = True
+    with _brain_lock:
+        if _brain_loaded:  # double-check after acquiring lock
+            return
+        from ..brain import ALL_BRAIN_TOOLS
+        _BRAIN_TOOL_NAMES.update(t["name"] for t in ALL_BRAIN_TOOLS)
+        _brain_loaded = True
 
 
 def _get_all_tools() -> list[dict]:

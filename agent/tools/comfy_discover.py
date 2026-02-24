@@ -37,8 +37,9 @@ def _check_deprecated(class_type: str) -> dict | None:
                     "replacement": reps[0].get("new_node_id", "unknown"),
                     "all_replacements": [r.get("new_node_id") for r in reps],
                 }
-    except Exception:
-        pass
+    except Exception as e:
+        import logging as _logging
+        _logging.getLogger(__name__).warning("_check_deprecated failed for %s: %s", class_type, e)
     return None
 
 # ---------------------------------------------------------------------------

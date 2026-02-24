@@ -254,8 +254,8 @@ def _detect_gpu() -> dict:
                 "trt_supported": True,  # Assume modern NVIDIA
                 "sweet_spots": {},
             }
-    except Exception:
-        pass
+    except Exception as e:
+        log.warning("GPU detection failed (falling back to defaults): %s", e)
 
     return {
         "detected_name": "unknown",
