@@ -31,41 +31,54 @@ class WorkflowSession:
         self._lock = threading.Lock()
 
     def __getitem__(self, key: str):
-        return self._data[key]
+        with self._lock:
+            return self._data[key]
 
     def __setitem__(self, key: str, value):
-        self._data[key] = value
+        with self._lock:
+            self._data[key] = value
 
     def __contains__(self, key: str) -> bool:
-        return key in self._data
+        with self._lock:
+            return key in self._data
 
     def get(self, key: str, default=None):
-        return self._data.get(key, default)
+        with self._lock:
+            return self._data.get(key, default)
 
     def keys(self):
-        return self._data.keys()
+        with self._lock:
+            return list(self._data.keys())
 
     def values(self):
-        return self._data.values()
+        with self._lock:
+            return list(self._data.values())
 
     def items(self):
-        return self._data.items()
+        with self._lock:
+            return list(self._data.items())
 
     def update(self, other):
         """Update session data from a dict or another WorkflowSession."""
-        if isinstance(other, WorkflowSession):
-            self._data.update(other._data)
-        else:
-            self._data.update(other)
+        with self._lock:
+            if isinstance(other, WorkflowSession):
+                self._data.update(other._data)
+            else:
+                self._data.update(other)
 
     def __deepcopy__(self, memo):
         """Support copy.deepcopy() — copies data but creates a fresh lock."""
-        new = WorkflowSession(self.session_id)
-        new._data = copy.deepcopy(self._data, memo)
-        return new
+        with self._lock:
+            new = WorkflowSession(self.session_id)
+            new._data = copy.deepcopy(self._data, memo)
+            return new
 
     def __repr__(self) -> str:
-        return f"WorkflowSession(session_id={self.session_id!r}, keys={list(self._data.keys())})"
+        with self._lock:
+            return (
+                f"WorkflowSession(session_id={self.session_id!r},"
+                f" keys={list(self._data.keys())})"
+            )
 
 
 # ---------------------------------------------------------------------------

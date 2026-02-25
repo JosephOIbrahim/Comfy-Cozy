@@ -100,7 +100,14 @@ def handle(name: str, tool_input: dict, *, session_id: str | None = None) -> str
     _ensure_brain()
     if name in _BRAIN_TOOL_NAMES:
         from ..brain import handle as handle_brain
-        return handle_brain(name, tool_input)
+        try:
+            return handle_brain(name, tool_input)
+        except Exception as e:
+            log.error("Unhandled error in brain tool %s", name, exc_info=True)
+            from ._util import to_json
+            return to_json(
+                {"error": f"Internal error in {name}: {type(e).__name__}: {e}"}
+            )
 
     # Intelligence layer tools
     mod = _HANDLERS.get(name)

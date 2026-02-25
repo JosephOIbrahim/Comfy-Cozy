@@ -180,6 +180,92 @@ class TestThreadSafety:
 
 
 # ---------------------------------------------------------------------------
+# Concurrent access (lock-protected dict methods)
+# ---------------------------------------------------------------------------
+
+class TestConcurrentAccess:
+    def test_concurrent_read_write(self):
+        """10 threads doing mixed reads/writes — no exceptions, consistent state."""
+        s = WorkflowSession("concurrent")
+        barrier = threading.Barrier(10)
+        errors = []
+
+        def writer(idx):
+            try:
+                barrier.wait()
+                for i in range(50):
+                    s[f"key_{idx}_{i}"] = f"val_{idx}_{i}"
+            except Exception as exc:
+                errors.append(exc)
+
+        def reader(idx):
+            try:
+                barrier.wait()
+                for _ in range(50):
+                    _ = s.get(f"key_{idx}_0", "missing")
+                    _ = s.keys()
+                    _ = "loaded_path" in s
+            except Exception as exc:
+                errors.append(exc)
+
+        threads = []
+        for i in range(5):
+            threads.append(threading.Thread(target=writer, args=(i,)))
+            threads.append(threading.Thread(target=reader, args=(i,)))
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert errors == [], f"Concurrent access raised: {errors}"
+        # All writer keys present
+        for i in range(5):
+            for j in range(50):
+                assert s[f"key_{i}_{j}"] == f"val_{i}_{j}"
+
+    def test_concurrent_update(self):
+        """Multiple threads calling update() — all updates applied."""
+        s = WorkflowSession("upd")
+        barrier = threading.Barrier(10)
+        errors = []
+
+        def updater(idx):
+            try:
+                barrier.wait()
+                s.update({f"u_{idx}": idx})
+            except Exception as exc:
+                errors.append(exc)
+
+        threads = [threading.Thread(target=updater, args=(i,)) for i in range(10)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert errors == []
+        for i in range(10):
+            assert s[f"u_{i}"] == i
+
+    def test_keys_returns_snapshot(self):
+        """keys() returns a list (snapshot), not a live dict_keys view."""
+        s = WorkflowSession("snap")
+        k = s.keys()
+        assert isinstance(k, list)
+
+    def test_values_returns_snapshot(self):
+        """values() returns a list (snapshot), not a live dict_values view."""
+        s = WorkflowSession("snap")
+        v = s.values()
+        assert isinstance(v, list)
+
+    def test_items_returns_snapshot(self):
+        """items() returns a list (snapshot), not a live dict_items view."""
+        s = WorkflowSession("snap")
+        it = s.items()
+        assert isinstance(it, list)
+
+
+# ---------------------------------------------------------------------------
 # Deep copy
 # ---------------------------------------------------------------------------
 

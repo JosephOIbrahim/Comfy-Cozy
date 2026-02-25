@@ -1,5 +1,8 @@
 """Test the tool registry and dispatch."""
 
+import json
+from unittest.mock import patch
+
 from agent.tools import ALL_TOOLS, handle
 
 
@@ -144,3 +147,24 @@ class TestToolRegistry:
 
     def test_total_tool_count(self):
         assert len(ALL_TOOLS) == 80, f"Expected 80 tools, got {len(ALL_TOOLS)}"
+
+    def test_brain_tool_error_returns_json(self):
+        """Brain tool exceptions should be caught and returned as JSON errors."""
+        with patch("agent.brain.handle", side_effect=RuntimeError("test boom")):
+            result = handle("plan_goal", {})
+        parsed = json.loads(result)
+        assert "error" in parsed
+        assert "test boom" in parsed["error"]
+        assert "RuntimeError" in parsed["error"]
+
+    def test_intelligence_tool_error_returns_json(self):
+        """Intelligence layer tool exceptions should be caught and returned as JSON."""
+        with patch(
+            "agent.tools.comfy_api.handle",
+            side_effect=RuntimeError("api boom"),
+        ):
+            result = handle("is_comfyui_running", {})
+        parsed = json.loads(result)
+        assert "error" in parsed
+        assert "api boom" in parsed["error"]
+        assert "RuntimeError" in parsed["error"]

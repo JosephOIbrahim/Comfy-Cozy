@@ -7,6 +7,7 @@ Includes streaming responses, context management, retry logic, and logging.
 """
 
 import concurrent.futures
+import json
 import logging
 import threading
 import time
@@ -94,13 +95,15 @@ def _summarize_dropped(messages: list[dict]) -> str:
                 # Extract key info from tool results
                 if '"loaded_path"' in result_text or '"saved"' in result_text:
                     try:
-                        import json
                         data = json.loads(result_text)
                         path = data.get("loaded_path") or data.get("saved") or data.get("file")
                         if path:
                             sections["workflow_info"] = path
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        log.debug(
+                            "Could not parse tool result for context summary: %s",
+                            type(e).__name__,
+                        )
 
         elif role == "assistant" and isinstance(content, list):
             # Extract tool call names from assistant content blocks

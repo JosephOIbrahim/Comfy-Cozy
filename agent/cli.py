@@ -15,6 +15,8 @@ from .config import AGENT_MODEL, COMFYUI_URL, COMFYUI_DATABASE, ANTHROPIC_API_KE
 from .logging_config import setup_logging
 from .tools import comfy_inspect, comfy_discover, session_tools
 
+log = logging.getLogger(__name__)
+
 app = typer.Typer(
     help="ComfyUI Agent — AI co-pilot for ComfyUI workflows",
     no_args_is_help=True,
@@ -104,8 +106,10 @@ def run(
                 )
                 if "saved" in save_result:
                     console.print(f"\n[dim]Session '{session}' saved.[/dim]")
-            except Exception:
-                pass
+            except Exception as e:
+                log.warning(
+                    "Failed to save session '%s' on exit: %s", session, e
+                )
 
     signal.signal(signal.SIGTERM, _save_and_exit)
     atexit.register(
