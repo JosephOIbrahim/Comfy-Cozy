@@ -21,6 +21,8 @@ from mcp.server import Server
 from mcp.server.stdio import stdio_server
 import mcp.types as types
 
+from .progress import ProgressReporter
+
 log = logging.getLogger(__name__)
 
 
@@ -83,13 +85,21 @@ def create_mcp_server() -> "Server":
         # Extract optional session_id for future multi-session support
         session_id = arguments.pop("_session_id", None)
 
+        # Build progress reporter so handlers can send live updates
+        ctx = server.request_context
+        progress_token = ctx.meta.progressToken if ctx.meta else None
+        loop = asyncio.get_running_loop()
+        progress = ProgressReporter(
+            loop, ctx.session, progress_token, ctx.request_id,
+        )
+
         # Our tool handlers are synchronous — run in thread executor
         # to avoid blocking the async event loop
-        loop = asyncio.get_running_loop()
         try:
             import functools
             handler = functools.partial(
-                handle_tool, name, arguments, session_id=session_id
+                handle_tool, name, arguments,
+                session_id=session_id, progress=progress,
             )
             result = await loop.run_in_executor(None, handler)
         except Exception as e:

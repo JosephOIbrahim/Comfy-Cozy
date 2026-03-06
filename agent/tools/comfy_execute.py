@@ -13,6 +13,7 @@ import uuid
 import httpx
 
 from ..config import COMFYUI_HOST, COMFYUI_PORT, COMFYUI_URL
+from ..progress import ProgressCallback, ProgressReporter
 from ._util import to_json
 
 log = logging.getLogger(__name__)
@@ -227,9 +228,13 @@ def _poll_completion(
     prompt_id: str,
     timeout: float,
     poll_interval: float = 1.0,
+    progress: ProgressCallback | None = None,
 ) -> dict:
     """Poll /history until the prompt completes or times out."""
+    progress = progress or ProgressReporter.noop()
     deadline = time.monotonic() + timeout
+    start = time.monotonic()
+    poll_count = 0
 
     while time.monotonic() < deadline:
         try:
@@ -268,14 +273,27 @@ def _poll_completion(
                             "subfolder": vid.get("subfolder", ""),
                         })
 
+                n = len(outputs)
+                progress.report(
+                    1.0, 1.0,
+                    f"Complete — {n} output{'s' if n != 1 else ''}"
+                )
                 return {
                     "status": "complete" if status_str == "success" else status_str,
                     "prompt_id": prompt_id,
                     "outputs": outputs,
                 }
 
+        poll_count += 1
+        elapsed = int(time.monotonic() - start)
+        if poll_count % 3 == 0:
+            progress.report(
+                elapsed, timeout,
+                f"Generating... ({elapsed}s elapsed)",
+            )
         time.sleep(poll_interval)
 
+    progress.report(timeout, timeout, "Timed out")
     return {
         "status": "timeout",
         "prompt_id": prompt_id,
@@ -291,14 +309,21 @@ def _poll_completion(
 def _execute_with_websocket(
     workflow: dict,
     timeout: float = 300,
+    progress: ProgressCallback | None = None,
 ) -> dict:
     """Execute workflow with real-time WebSocket progress updates."""
+    progress = progress or ProgressReporter.noop()
+    total_nodes = sum(
+        1 for v in workflow.values()
+        if isinstance(v, dict) and "class_type" in v
+    )
+
     if not _HAS_WS:
         # Fallback to polling
         prompt_id, err = _queue_prompt(workflow)
         if err:
             return {"error": err}
-        result = _poll_completion(prompt_id, timeout=timeout)
+        result = _poll_completion(prompt_id, timeout=timeout, progress=progress)
         result["monitoring"] = "polling_fallback"
         return result
 
@@ -309,9 +334,12 @@ def _execute_with_websocket(
     if err:
         return {"error": err}
 
+    progress.report(0, total_nodes, "Queued — waiting for ComfyUI...")
+
     progress_log = []
     node_times = {}
     current_node = None
+    nodes_done = 0
     start_time = time.monotonic()
 
     try:
@@ -349,6 +377,7 @@ def _execute_with_websocket(
                             "event": "start",
                             "elapsed_s": round(time.monotonic() - start_time, 2),
                         })
+                        progress.report(0, total_nodes, "Execution started")
 
                 elif msg_type == "executing":
                     if data.get("prompt_id") != prompt_id:
@@ -356,10 +385,15 @@ def _execute_with_websocket(
                     node_id = data.get("node")
                     if node_id is None:
                         # Execution complete
+                        elapsed = round(time.monotonic() - start_time, 1)
                         progress_log.append({
                             "event": "complete",
                             "elapsed_s": round(time.monotonic() - start_time, 2),
                         })
+                        progress.report(
+                            total_nodes, total_nodes,
+                            f"Complete ({elapsed}s)",
+                        )
                         break
                     # Track node timing
                     now = time.monotonic()
@@ -368,6 +402,7 @@ def _execute_with_websocket(
                         node_times[current_node]["duration_s"] = round(
                             now - node_times[current_node]["start"], 2
                         )
+                        nodes_done += 1
                     current_node = node_id
                     node_times[node_id] = {"start": now}
                     # Get class_type from workflow
@@ -378,6 +413,10 @@ def _execute_with_websocket(
                         "class_type": class_type,
                         "elapsed_s": round(now - start_time, 2),
                     })
+                    progress.report(
+                        nodes_done, total_nodes,
+                        f"Node {nodes_done + 1}/{total_nodes}: {class_type}",
+                    )
 
                 elif msg_type == "progress":
                     if data.get("prompt_id", prompt_id) == prompt_id:
@@ -392,22 +431,43 @@ def _execute_with_websocket(
                             "pct": pct,
                             "elapsed_s": round(time.monotonic() - start_time, 2),
                         })
+                        # Sub-node progress (sampler steps)
+                        class_type = workflow.get(
+                            current_node or "", {},
+                        ).get("class_type", "Generating")
+                        # Interpolate between current node and next
+                        sub_frac = value / max_val if max_val else 0
+                        fine_progress = nodes_done + sub_frac
+                        progress.report(
+                            fine_progress, total_nodes,
+                            f"{class_type} — step {value}/{max_val} ({pct}%)",
+                        )
 
                 elif msg_type == "execution_error":
                     if data.get("prompt_id") == prompt_id:
+                        node_type = data.get("node_type", "Unknown")
+                        progress.report(
+                            nodes_done, total_nodes,
+                            f"Error in {node_type}",
+                        )
                         return {
                             "status": "error",
                             "prompt_id": prompt_id,
                             "error": data.get("exception_message", "Unknown error"),
                             "node_id": data.get("node_id"),
-                            "class_type": data.get("node_type"),
+                            "class_type": node_type,
                             "progress_log": progress_log,
                             "monitoring": "websocket",
                         }
 
     except Exception as e:
         log.warning("WebSocket monitoring failed, falling back to polling: %s", e)
-        result = _poll_completion(prompt_id, timeout=max(timeout - (time.monotonic() - start_time), 10))
+        progress.report(0, None, "WebSocket lost — polling...")
+        result = _poll_completion(
+            prompt_id,
+            timeout=max(timeout - (time.monotonic() - start_time), 10),
+            progress=progress,
+        )
         result["monitoring"] = "polling_fallback"
         result["ws_error"] = str(e)
         return result
@@ -564,7 +624,11 @@ def _handle_validate_before_execute(tool_input: dict) -> str:
     })
 
 
-def _handle_execute_workflow(tool_input: dict) -> str:
+def _handle_execute_workflow(
+    tool_input: dict,
+    progress: ProgressCallback | None = None,
+) -> str:
+    progress = progress or ProgressReporter.noop()
     path_str = tool_input.get("path")
     timeout = tool_input.get("timeout", 120)
 
@@ -585,17 +649,25 @@ def _handle_execute_workflow(tool_input: dict) -> str:
                 ),
             })
 
+    progress.report(0, None, "Queuing workflow...")
+
     # Queue it
     prompt_id, err = _queue_prompt(workflow)
     if err:
         return to_json({"error": err})
 
+    progress.report(0, None, "Queued — waiting for completion...")
+
     # Wait for completion
-    result = _poll_completion(prompt_id, timeout=timeout)
+    result = _poll_completion(prompt_id, timeout=timeout, progress=progress)
     return to_json(result)
 
 
-def _handle_execute_with_progress(tool_input: dict) -> str:
+def _handle_execute_with_progress(
+    tool_input: dict,
+    progress: ProgressCallback | None = None,
+) -> str:
+    progress = progress or ProgressReporter.noop()
     path_str = tool_input.get("path")
     timeout = tool_input.get("timeout", 300)
     auto_verify = tool_input.get("auto_verify", False)
@@ -614,7 +686,7 @@ def _handle_execute_with_progress(tool_input: dict) -> str:
                 "error": "No workflow loaded. Provide a 'path' or load one first.",
             })
 
-    result = _execute_with_websocket(workflow, timeout=timeout)
+    result = _execute_with_websocket(workflow, timeout=timeout, progress=progress)
 
     # Auto-verify if requested and execution completed successfully
     if auto_verify and result.get("status") == "complete" and result.get("prompt_id"):
@@ -713,15 +785,19 @@ def _handle_get_execution_status(tool_input: dict) -> str:
 # Dispatch
 # ---------------------------------------------------------------------------
 
-def handle(name: str, tool_input: dict) -> str:
+def handle(
+    name: str,
+    tool_input: dict,
+    progress: ProgressCallback | None = None,
+) -> str:
     """Execute a comfy_execute tool call."""
     try:
         if name == "validate_before_execute":
             return _handle_validate_before_execute(tool_input)
         elif name == "execute_workflow":
-            return _handle_execute_workflow(tool_input)
+            return _handle_execute_workflow(tool_input, progress=progress)
         elif name == "execute_with_progress":
-            return _handle_execute_with_progress(tool_input)
+            return _handle_execute_with_progress(tool_input, progress=progress)
         elif name == "get_execution_status":
             return _handle_get_execution_status(tool_input)
         else:

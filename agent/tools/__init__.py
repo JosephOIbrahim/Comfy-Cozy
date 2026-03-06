@@ -86,7 +86,13 @@ class _ToolList(list):
 ALL_TOOLS = _ToolList()
 
 
-def handle(name: str, tool_input: dict, *, session_id: str | None = None) -> str:
+def handle(
+    name: str,
+    tool_input: dict,
+    *,
+    session_id: str | None = None,
+    progress: "ProgressCallback | None" = None,
+) -> str:
     """Dispatch a tool call to the right handler.
 
     Args:
@@ -95,7 +101,11 @@ def handle(name: str, tool_input: dict, *, session_id: str | None = None) -> str
         session_id: Optional session ID for workflow state isolation.
                     Currently unused (default session), but enables future
                     multi-session MCP usage.
+        progress: Optional progress reporter for long-running tools.
+                  Passed through to handlers that support it.
     """
+    from ..progress import ProgressCallback  # noqa: F811 (type only)
+
     # Check brain tools (lazy loaded)
     _ensure_brain()
     if name in _BRAIN_TOOL_NAMES:
@@ -115,6 +125,9 @@ def handle(name: str, tool_input: dict, *, session_id: str | None = None) -> str
         log.warning("Unknown tool called: %s", name)
         return f"Unknown tool: {name}"
     try:
+        # Forward progress to modules that accept it
+        if mod is comfy_execute:
+            return mod.handle(name, tool_input, progress=progress)
         return mod.handle(name, tool_input)
     except Exception as e:
         log.error("Unhandled error in tool %s", name, exc_info=True)
