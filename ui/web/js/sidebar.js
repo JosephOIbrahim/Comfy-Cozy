@@ -1,5 +1,7 @@
 import { app } from "../../../scripts/app.js";
 import { renderText, createTypingIndicator, createPanel, createNodePill } from "./chat.js";
+import { createDispatchCard, updateAgentStatus } from "./dispatch.js";
+import { createProgressPanel, updateProgress } from "./progress.js";
 
 /* ── SUPER DUPER Sidebar ─────────────────────────────────────────────
  *  Registers a sidebar tab in ComfyUI's extension manager.
@@ -295,6 +297,9 @@ function buildSidebar(el) {
   let streamingEl = null;     // element receiving streamed text deltas
   let streamAccum = "";       // accumulated text during streaming
   let typingIndicator = null; // typing dots shown during stream
+  let dispatchCard = null;    // current agent dispatch card element
+  let progressPanel = null;   // current progress panel element
+  let pipelineState = {};     // tracks pipeline stage statuses
 
   function scrollToBottom() {
     messagesEl.scrollTop = messagesEl.scrollHeight;
@@ -444,8 +449,66 @@ function buildSidebar(el) {
           streamingEl = null;
           streamAccum = "";
           typingIndicator = null;
+          dispatchCard = null;
+          if (progressPanel) {
+            progressPanel.remove();
+            progressPanel = null;
+          }
+          pipelineState = {};
           setBusy(false);
         }
+        break;
+
+      case "progress":
+        // ComfyUI execution progress — update bar and node detail
+        if (progressPanel) {
+          updateProgress(progressPanel, {
+            progress: data.progress != null ? data.progress : null,
+            currentNode: data.current_node || data.currentNode,
+            nodeIndex: data.node_index != null ? data.node_index : data.nodeIndex,
+            nodeTotal: data.node_total != null ? data.node_total : data.nodeTotal,
+            etaSeconds: data.eta_seconds != null ? data.eta_seconds : data.etaSeconds,
+          });
+          scrollToBottom();
+        }
+        break;
+
+      case "agent_dispatch": {
+        // Insert dispatch card ABOVE upcoming chat messages
+        const cardData = {
+          prompt: data.prompt,
+          agents: data.agents || [],
+          estimate: data.estimate_seconds != null ? `~${data.estimate_seconds}s` : undefined,
+          nodeCount: data.node_count,
+        };
+        dispatchCard = createDispatchCard(cardData);
+        messagesEl.appendChild(dispatchCard);
+
+        // Create progress panel below the dispatch card
+        pipelineState = { router: "waiting", intent: "waiting", execution: "waiting", verify: "waiting" };
+        progressPanel = createProgressPanel();
+        messagesEl.appendChild(progressPanel);
+
+        scrollToBottom();
+        break;
+      }
+
+      case "agent_status":
+        if (dispatchCard) {
+          updateAgentStatus(
+            dispatchCard,
+            data.agent_key,
+            data.status,
+            data.message,
+            data.duration
+          );
+        }
+        // Update pipeline level in progress panel
+        if (progressPanel && data.agent_key in pipelineState) {
+          pipelineState[data.agent_key] = data.status;
+          updateProgress(progressPanel, { pipeline: pipelineState });
+        }
+        scrollToBottom();
         break;
 
       case "error":

@@ -496,6 +496,52 @@ def _build_panel_for_tool(name: str, tool_input: dict, result_json: str) -> dict
 
 
 # ---------------------------------------------------------------------------
+# Agent dispatch helpers (stage -> agent identity card)
+# ---------------------------------------------------------------------------
+
+_STAGE_TO_AGENT = {
+    "UNDERSTAND": "router",
+    "DISCOVER":   "intent",
+    "PILOT":      "execution",
+    "VERIFY":     "verify",
+    "BRAIN":      "router",
+}
+
+_AGENT_ROSTER = [
+    {"key": "router",    "name": "ROUTER",    "role": "Pipeline Orchestrator"},
+    {"key": "intent",    "name": "INTENT",    "role": "Artistic Translator"},
+    {"key": "execution", "name": "EXECUTION", "role": "Workflow Patcher"},
+    {"key": "verify",    "name": "VERIFY",    "role": "Quality Judge"},
+]
+
+
+def _emit_agent_dispatch(msg_queue: queue.Queue, prompt_text: str,
+                         node_count: int | None = None) -> None:
+    """Push an agent_dispatch event to the WebSocket queue."""
+    agents = [dict(a, status="waiting") for a in _AGENT_ROSTER]
+    msg_queue.put({
+        "type": "agent_dispatch",
+        "prompt": prompt_text,
+        "agents": agents,
+        "estimate_seconds": None,
+        "node_count": node_count,
+    })
+
+
+def _emit_agent_status(msg_queue: queue.Queue, agent_key: str, status: str,
+                        message: str | None = None,
+                        duration: str | None = None) -> None:
+    """Push an agent_status event to the WebSocket queue."""
+    msg_queue.put({
+        "type": "agent_status",
+        "agent_key": agent_key,
+        "status": status,
+        "message": message,
+        "duration": duration,
+    })
+
+
+# ---------------------------------------------------------------------------
 # Synchronous agent runner (called from thread)
 # ---------------------------------------------------------------------------
 
@@ -510,7 +556,14 @@ def _run_agent_sync(conv: ConversationState, user_text: str, msg_queue: queue.Qu
     conv._build_system()
     conv.messages.append({"role": "user", "content": user_text})
 
+    # Emit dispatch card before first agent turn
+    node_count = None
+    if conv.workflow_summary:
+        node_count = conv.workflow_summary.get("node_count")
+    _emit_agent_dispatch(msg_queue, user_text, node_count)
+
     max_turns = 15  # safety limit per user message
+    _active_agents: set[str] = set()  # track which agents are currently active
 
     for turn in range(max_turns):
         try:
@@ -520,6 +573,18 @@ def _run_agent_sync(conv: ConversationState, user_text: str, msg_queue: queue.Qu
             def on_tool(name, inp):
                 # Infer stage from tool name
                 stage = _infer_stage(name)
+                agent_key = _STAGE_TO_AGENT.get(stage, "router")
+
+                # Transition agent status: mark active, complete previous
+                if agent_key not in _active_agents:
+                    # Complete any previously active agents
+                    for prev in list(_active_agents):
+                        _emit_agent_status(msg_queue, prev, "complete")
+                    _active_agents.clear()
+                    _active_agents.add(agent_key)
+                    _emit_agent_status(msg_queue, agent_key, "active",
+                                       message=f"Using {name}...")
+
                 nodes = _extract_nodes_touched(name, inp, conv)
                 msg_queue.put({
                     "type": "tool_call",
@@ -543,14 +608,26 @@ def _run_agent_sync(conv: ConversationState, user_text: str, msg_queue: queue.Qu
             )
 
             if done:
+                # Complete any remaining active agents
+                for a in list(_active_agents):
+                    _emit_agent_status(msg_queue, a, "complete")
+                _active_agents.clear()
                 msg_queue.put({"type": "done"})
                 return
 
         except Exception as e:
             log.error("Agent turn error: %s", e, exc_info=True)
+            # Mark active agents as errored
+            for a in list(_active_agents):
+                _emit_agent_status(msg_queue, a, "error", message=str(e))
+            _active_agents.clear()
             msg_queue.put({"type": "error", "message": str(e)})
             return
 
+    # Complete remaining agents on turn limit
+    for a in list(_active_agents):
+        _emit_agent_status(msg_queue, a, "complete")
+    _active_agents.clear()
     msg_queue.put({"type": "done"})
 
 
@@ -824,6 +901,24 @@ async def _forward_event(ws, event, accumulated_text):
         await ws.send_json({
             "type": "panel",
             "panel": event["panel"],
+        })
+
+    elif etype == "agent_dispatch":
+        await ws.send_json({
+            "type": "agent_dispatch",
+            "prompt": event.get("prompt", ""),
+            "agents": event.get("agents", []),
+            "estimate_seconds": event.get("estimate_seconds"),
+            "node_count": event.get("node_count"),
+        })
+
+    elif etype == "agent_status":
+        await ws.send_json({
+            "type": "agent_status",
+            "agent_key": event.get("agent_key", ""),
+            "status": event.get("status", "waiting"),
+            "message": event.get("message"),
+            "duration": event.get("duration"),
         })
 
     elif etype == "error":
