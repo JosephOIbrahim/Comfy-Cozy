@@ -101,6 +101,28 @@ app.registerExtension({
   name: "SuperDuper.NodeFX",
 
   async setup() {
+    // ── Workflow execution tracker ──
+    let executionActive = false;
+    let executionIndex = 0;
+
+    api.addEventListener("execution_start", ({ detail }) => {
+      executionActive = true;
+      executionIndex = 0;
+      document.dispatchEvent(new CustomEvent("superduper:execution_start", { detail }));
+    });
+
+    api.addEventListener("progress", ({ detail }) => {
+      if (detail && detail.max) {
+        document.dispatchEvent(new CustomEvent("superduper:node_progress", {
+          detail: {
+            value: detail.value,
+            max: detail.max,
+            progress: detail.value / detail.max
+          }
+        }));
+      }
+    });
+
     // ── A: Listen to ComfyUI execution events
     api.addEventListener("executing", ({ detail }) => {
       const nodeId = detail ? String(detail) : null;
@@ -111,6 +133,10 @@ app.registerExtension({
           _completedNodes.set(_executingNodeId, Date.now());
         }
         _executingNodeId = null;
+        if (executionActive) {
+          executionActive = false;
+          document.dispatchEvent(new CustomEvent("superduper:execution_complete"));
+        }
         return;
       }
 
@@ -120,6 +146,31 @@ app.registerExtension({
       }
 
       _executingNodeId = nodeId;
+      executionIndex++;
+
+      // Notify sidebar of executing node
+      const node = app.graph ? app.graph.getNodeById(parseInt(nodeId, 10)) : null;
+      const nodeName = node ? node.title || node.type : "Node " + nodeId;
+      document.dispatchEvent(new CustomEvent("superduper:node_executing", {
+        detail: { nodeId: nodeId, nodeName: nodeName }
+      }));
+
+      // Dispatch execution progress for standalone Queue Prompt tracking
+      document.dispatchEvent(new CustomEvent("superduper:execution_progress", {
+        detail: { nodeId: nodeId, nodeName: nodeName, nodeIndex: executionIndex }
+      }));
+
+      // Auto-pan canvas to center on executing node if off-screen
+      if (node && app.canvas) {
+        const canvas = app.canvas;
+        const nx = node.pos[0] + node.size[0] / 2;
+        const ny = node.pos[1] + node.size[1] / 2;
+        const visible = canvas.visible_area;
+        if (visible && (nx < visible[0] || nx > visible[0] + visible[2] ||
+            ny < visible[1] || ny > visible[1] + visible[3])) {
+          canvas.centerOnNode(node);
+        }
+      }
     });
 
     api.addEventListener("executed", ({ detail }) => {
@@ -129,6 +180,11 @@ app.registerExtension({
         if (_executingNodeId === nodeId) {
           _executingNodeId = null;
         }
+
+        // Notify sidebar of completed node
+        document.dispatchEvent(new CustomEvent("superduper:node_executed", {
+          detail: { nodeId: nodeId }
+        }));
       }
     });
 

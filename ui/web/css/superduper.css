@@ -6,7 +6,7 @@
  *  Slot colors: official ComfyUI dark theme
  * ──────────────────────────────────────────────────────────────────── */
 
-@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap");
+/* Fonts loaded via sidebar.js <link> element (IBM Plex Sans + JetBrains Mono) */
 
 /* ── Design Tokens ──────────────────────────────────────────────── */
 
@@ -58,8 +58,8 @@
   --agent-doctor: #B39DDB;
 
   /* Typography */
-  --sd-font-sans: "Inter", "SF Pro Display", system-ui, -apple-system, sans-serif;
-  --sd-font-mono: "JetBrains Mono", "Fira Code", "SF Mono", "Cascadia Code", monospace;
+  --sd-font-sans: 'IBM Plex Sans', -apple-system, sans-serif;
+  --sd-font-mono: 'JetBrains Mono', monospace;
 
   /* Spacing */
   --sd-space-xs: 4px;
@@ -1294,4 +1294,36 @@
     box-shadow: 0 0 12px #00BB8188, 0 0 25px #00BB8155;
     opacity: 1;
   }
+}
+
+/* ── Thinking Indicator ────────────────────────────────────────────── */
+
+.sd-thinking {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-md) var(--space-lg);
+  color: #888;
+  font-family: var(--sd-font-sans);
+  font-size: 13px;
+  line-height: 1.65;
+  animation: sdSlideUp 0.3s var(--ease-out-expo);
+}
+
+@keyframes sdSlideUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.sd-thinking__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--agent-router);
+  animation: sd-think-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes sd-think-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.85); }
 }

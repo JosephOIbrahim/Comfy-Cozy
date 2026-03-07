@@ -11,7 +11,12 @@ import { createProgressPanel, updateProgress } from "./progress.js";
 const SIDEBAR_ID = "superduper";
 const SIDEBAR_TITLE = "Super Duper";
 
-/* ── Load stylesheet ──────────────────────────────────────────────── */
+/* ── Load fonts & stylesheet ──────────────────────────────────────── */
+
+const fontLink = document.createElement("link");
+fontLink.rel = "stylesheet";
+fontLink.href = "https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap";
+document.head.appendChild(fontLink);
 
 const cssLink = document.createElement("link");
 cssLink.rel = "stylesheet";
@@ -346,6 +351,7 @@ function buildSidebar(el) {
         break;
 
       case "text_delta":
+        _clearThinking();
         // Streaming: show typing indicator, accumulate text
         if (!streamingEl) {
           streamingEl = document.createElement("div");
@@ -413,6 +419,7 @@ function buildSidebar(el) {
       }
 
       case "stage":
+        _clearThinking();
         setStage(data.stage, data.detail, data.nodes_touched);
 
         // Show node interaction indicator in chat
@@ -474,6 +481,7 @@ function buildSidebar(el) {
         break;
 
       case "agent_dispatch": {
+        _clearThinking();
         // Insert dispatch card ABOVE upcoming chat messages
         const cardData = {
           prompt: data.prompt,
@@ -508,10 +516,26 @@ function buildSidebar(el) {
           pipelineState[data.agent_key] = data.status;
           updateProgress(progressPanel, { pipeline: pipelineState });
         }
+        // Dispatch node touch events so canvas highlights agent-touched nodes
+        if (data.nodes_touched && data.nodes_touched.length > 0) {
+          const color = {
+            router: "#00BB81",
+            intent: "#FFD500",
+            execution: "#64B5F6",
+            verify: "#FF6E6E",
+            doctor: "#B39DDB"
+          }[data.agent_key] || "#00BB81";
+          for (const nodeId of data.nodes_touched) {
+            document.dispatchEvent(new CustomEvent("superduper:node_touch", {
+              detail: { nodeId: nodeId, agentColor: color }
+            }));
+          }
+        }
         scrollToBottom();
         break;
 
       case "error":
+        _clearThinking();
         setStage(null);
         messagesEl.appendChild(createMessageEl("system", data.message));
         streamingEl = null;
@@ -538,13 +562,37 @@ function buildSidebar(el) {
 
   /* ── Send message ─────────────────────────────────────────────── */
 
+  function _showThinking() {
+    const el = document.createElement("div");
+    el.className = "sd-thinking";
+
+    const dot = document.createElement("span");
+    dot.className = "sd-thinking__dot";
+    el.appendChild(dot);
+
+    const label = document.createElement("span");
+    label.textContent = "Connecting to agents...";
+    el.appendChild(label);
+
+    messagesEl.appendChild(el);
+    scrollToBottom();
+  }
+
+  function _clearThinking() {
+    const el = messagesEl.querySelector(".sd-thinking");
+    if (el) el.remove();
+  }
+
   async function sendMessage() {
     const text = inputEl.value.trim();
     if (!text || busy) return;
 
-    // Show user message
+    // Show user message immediately
     messagesEl.appendChild(createMessageEl("user", text));
     inputEl.value = "";
+
+    // Show thinking indicator right away
+    _showThinking();
     scrollToBottom();
 
     // Capture current workflow from ComfyUI canvas
@@ -565,6 +613,7 @@ function buildSidebar(el) {
     }
     const sent = conn.send("chat", payload);
     if (!sent) {
+      _clearThinking();
       messagesEl.appendChild(
         createMessageEl("system", "Not connected. Reconnecting...")
       );
@@ -590,6 +639,11 @@ function buildSidebar(el) {
           app.canvas.deselectAllNodes();
           app.canvas.selectNode(node);
           app.canvas.centerOnNode(node);
+
+          // Flash the node with a jade accent bar (visual ping)
+          document.dispatchEvent(new CustomEvent("superduper:node_touch", {
+            detail: { nodeId: pill.dataset.nodeId, agentColor: "#00BB81" }
+          }));
         }
       }
     } catch (err) {
@@ -632,6 +686,53 @@ function buildSidebar(el) {
       }
     } catch (err) { /* silent */ }
   }, true);
+
+  // ── Standalone execution tracking (Queue Prompt without agent) ────
+  let standaloneExecution = false;
+
+  document.addEventListener("superduper:execution_start", () => {
+    // Only create a standalone progress panel if agent isn't driving
+    if (progressPanel) return;
+    standaloneExecution = true;
+    progressPanel = createProgressPanel();
+    messagesEl.appendChild(progressPanel);
+    updateProgress(progressPanel, { progress: null });
+    scrollToBottom();
+  });
+
+  document.addEventListener("superduper:execution_progress", (e) => {
+    if (!progressPanel) return;
+    updateProgress(progressPanel, {
+      currentNode: e.detail.nodeName,
+      nodeIndex: e.detail.nodeIndex,
+    });
+    scrollToBottom();
+  });
+
+  document.addEventListener("superduper:node_progress", (e) => {
+    if (!progressPanel) return;
+    updateProgress(progressPanel, { progress: e.detail.progress });
+  });
+
+  document.addEventListener("superduper:execution_complete", () => {
+    if (progressPanel && standaloneExecution) {
+      updateProgress(progressPanel, { progress: 1 });
+      // Fade out after a brief moment
+      setTimeout(() => {
+        if (progressPanel && standaloneExecution) {
+          progressPanel.remove();
+          progressPanel = null;
+          standaloneExecution = false;
+        }
+      }, 2000);
+    }
+  });
+
+  // Update progress panel with current node name (agent-driven or standalone)
+  document.addEventListener("superduper:node_executing", (e) => {
+    if (!progressPanel) return;
+    updateProgress(progressPanel, { currentNode: e.detail.nodeName });
+  });
 
   inputEl.addEventListener("keydown", (e) => {
     if (e.key === "Enter" && !e.shiftKey) {
