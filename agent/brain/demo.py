@@ -426,33 +426,4 @@ class DemoAgent(BrainAgent):
         })
 
 
-# ---------------------------------------------------------------------------
-# Backward compatibility — lazy singleton
-# ---------------------------------------------------------------------------
-
-_instance: DemoAgent | None = None
-
-
-def _get_instance() -> DemoAgent:
-    global _instance
-    if _instance is None:
-        _instance = DemoAgent()
-    return _instance
-
-
-TOOLS = DemoAgent.TOOLS
 DEMO_SCENARIOS = _DEMO_SCENARIOS
-
-
-def handle(name: str, tool_input: dict) -> str:
-    """Execute a demo tool call."""
-    return _get_instance().handle(name, tool_input)
-
-
-def __getattr__(name: str):
-    """Proxy module-level state access to singleton instance."""
-    if name == "_demo_state":
-        return _get_instance()._demo_state
-    if name == "_demo_lock":
-        return _get_instance()._demo_lock
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

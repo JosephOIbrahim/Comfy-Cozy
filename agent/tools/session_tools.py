@@ -86,9 +86,16 @@ TOOLS: list[dict] = [
                 "note": {
                     "type": "string",
                     "description": (
-                        "The note text. Be specific and actionable — "
-                        "e.g. 'User prefers anime style LoRAs with SDXL' "
-                        "or 'sd_xl_base_1.0 works well with controlnet depth'."
+                        "The note text. Be specific and actionable."
+                    ),
+                },
+                "note_type": {
+                    "type": "string",
+                    "enum": ["preference", "observation", "decision", "tip"],
+                    "description": (
+                        "Type of note: 'preference' (artist taste), "
+                        "'observation' (what worked), 'decision' (explicit choice), "
+                        "'tip' (workflow advice). Defaults to 'observation'."
                     ),
                 },
             },
@@ -158,7 +165,8 @@ def _handle_list_sessions(tool_input: dict) -> str:
 def _handle_add_note(tool_input: dict) -> str:
     session_name = tool_input["session_name"]
     note = tool_input["note"]
-    result = add_note(session_name, note)
+    note_type = tool_input.get("note_type", "observation")
+    result = add_note(session_name, note, note_type=note_type)
     return to_json(result)
 
 

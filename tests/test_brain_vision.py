@@ -5,7 +5,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from agent.brain import vision
+from agent.brain import handle
+from agent.brain.vision import VisionAgent
 
 
 @pytest.fixture
@@ -25,7 +26,7 @@ def fake_image(tmp_path):
 
 class TestAnalyzeImage:
     def test_file_not_found(self):
-        result = json.loads(vision.handle("analyze_image", {
+        result = json.loads(handle("analyze_image", {
             "image_path": "/nonexistent/image.png",
         }))
         assert "error" in result
@@ -48,7 +49,7 @@ class TestAnalyzeImage:
             mock_client.messages.create.return_value = mock_response
             mock_client_cls.return_value = mock_client
 
-            result = json.loads(vision.handle("analyze_image", {
+            result = json.loads(handle("analyze_image", {
                 "image_path": fake_image,
                 "prompt_used": "a red pixel",
             }))
@@ -70,7 +71,7 @@ class TestAnalyzeImage:
             mock_client.messages.create.return_value = mock_response
             mock_client_cls.return_value = mock_client
 
-            result = json.loads(vision.handle("analyze_image", {
+            result = json.loads(handle("analyze_image", {
                 "image_path": fake_image,
             }))
 
@@ -80,7 +81,7 @@ class TestAnalyzeImage:
 
 class TestCompareOutputs:
     def test_both_files_missing(self):
-        result = json.loads(vision.handle("compare_outputs", {
+        result = json.loads(handle("compare_outputs", {
             "image_a": "/fake/a.png",
             "image_b": "/fake/b.png",
         }))
@@ -102,7 +103,7 @@ class TestCompareOutputs:
             mock_client.messages.create.return_value = mock_response
             mock_client_cls.return_value = mock_client
 
-            result = json.loads(vision.handle("compare_outputs", {
+            result = json.loads(handle("compare_outputs", {
                 "image_a": fake_image,
                 "image_b": fake_image,
                 "change_description": "Increased steps from 20 to 30",
@@ -136,7 +137,7 @@ class TestSuggestImprovements:
             mock_client.messages.create.return_value = mock_response
             mock_client_cls.return_value = mock_client
 
-            result = json.loads(vision.handle("suggest_improvements", {
+            result = json.loads(handle("suggest_improvements", {
                 "image_path": fake_image,
                 "workflow_summary": "SDXL, 20 steps, Euler, CFG 7.0",
                 "goal": "more detail",
@@ -149,8 +150,9 @@ class TestSuggestImprovements:
 class TestHashCompare:
     def test_no_pillow(self, fake_image):
         """Test graceful fallback when Pillow not available."""
+        from agent.brain import vision
         with patch.object(vision, "_HAS_PIL", False):
-            result = json.loads(vision.handle("hash_compare_images", {
+            result = json.loads(handle("hash_compare_images", {
                 "image_a": fake_image,
                 "image_b": fake_image,
             }))
@@ -158,19 +160,19 @@ class TestHashCompare:
             assert "Pillow" in result["error"]
 
     def test_file_not_found(self):
-        result = json.loads(vision.handle("hash_compare_images", {
+        result = json.loads(handle("hash_compare_images", {
             "image_a": "/fake/a.png",
             "image_b": "/fake/b.png",
         }))
         assert "error" in result
 
-    @pytest.mark.skipif(not vision._HAS_PIL, reason="Pillow not installed")
+    @pytest.mark.skipif(not __import__("agent.brain.vision", fromlist=["_HAS_PIL"])._HAS_PIL, reason="Pillow not installed")
     def test_identical_images(self, tmp_path):
         from PIL import Image as PILImage
         img = PILImage.new("RGB", (64, 64), (128, 128, 128))
         path = tmp_path / "identical.png"
         img.save(path)
-        result = json.loads(vision.handle("hash_compare_images", {
+        result = json.loads(handle("hash_compare_images", {
             "image_a": str(path),
             "image_b": str(path),
         }))
@@ -178,7 +180,7 @@ class TestHashCompare:
         assert result["hash_similarity"] == 1.0
         assert result["pixel_diff_pct"] == 0.0
 
-    @pytest.mark.skipif(not vision._HAS_PIL, reason="Pillow not installed")
+    @pytest.mark.skipif(not __import__("agent.brain.vision", fromlist=["_HAS_PIL"])._HAS_PIL, reason="Pillow not installed")
     def test_different_images(self, tmp_path):
         """Create two visually different images and compare."""
         from PIL import Image as PILImage
@@ -190,14 +192,14 @@ class TestHashCompare:
         img_a.save(path_a)
         img_b.save(path_b)
 
-        result = json.loads(vision.handle("hash_compare_images", {
+        result = json.loads(handle("hash_compare_images", {
             "image_a": str(path_a),
             "image_b": str(path_b),
         }))
         assert result["verdict"] in ("different", "very_different")
         assert result["pixel_diff_pct"] > 50.0
 
-    @pytest.mark.skipif(not vision._HAS_PIL, reason="Pillow not installed")
+    @pytest.mark.skipif(not __import__("agent.brain.vision", fromlist=["_HAS_PIL"])._HAS_PIL, reason="Pillow not installed")
     def test_similar_images(self, tmp_path):
         """Create two slightly different images."""
         from PIL import Image as PILImage
@@ -209,7 +211,7 @@ class TestHashCompare:
         img_a.save(path_a)
         img_b.save(path_b)
 
-        result = json.loads(vision.handle("hash_compare_images", {
+        result = json.loads(handle("hash_compare_images", {
             "image_a": str(path_a),
             "image_b": str(path_b),
         }))
@@ -217,9 +219,10 @@ class TestHashCompare:
         assert result["resolution_a"] == "64x64"
 
     def test_hamming_distance(self):
-        assert vision._hamming_distance(0, 0) == 0
-        assert vision._hamming_distance(0b1111, 0b0000) == 4
-        assert vision._hamming_distance(0b1010, 0b0101) == 4
+        from agent.brain.vision import _hamming_distance
+        assert _hamming_distance(0, 0) == 0
+        assert _hamming_distance(0b1111, 0b0000) == 4
+        assert _hamming_distance(0b1010, 0b0101) == 4
 
 
 class TestBrainMessageActivation:
@@ -245,7 +248,7 @@ class TestBrainMessageActivation:
             mock_client.messages.create.return_value = mock_response
             mock_client_cls.return_value = mock_client
 
-            vision.handle("analyze_image", {
+            handle("analyze_image", {
                 "image_path": fake_image,
                 "prompt_used": "test prompt",
             })
@@ -276,7 +279,7 @@ class TestBrainMessageActivation:
             mock_client.messages.create.return_value = mock_response
             mock_client_cls.return_value = mock_client
 
-            vision.handle("compare_outputs", {
+            handle("compare_outputs", {
                 "image_a": fake_image,
                 "image_b": fake_image,
             })

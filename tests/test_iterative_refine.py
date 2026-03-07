@@ -443,11 +443,22 @@ class TestValidationIntegration:
 class TestVerifyEnrichment:
     """Verify Agent receives parameters_used from workflow extraction."""
 
-    @patch("agent.brain.iterative_refine.memory_handle")
+    @staticmethod
+    def _memory_mock_side_effect(name, tool_input):
+        """Pass through to real dispatch except for memory tools."""
+        if name in ("record_outcome", "get_learned_patterns", "get_recommendations"):
+            return json.dumps({})
+        from agent.brain._sdk import BrainAgent
+        agent = BrainAgent._registry.get(name)
+        if agent is not None:
+            return agent.handle(name, tool_input)
+        return json.dumps({"error": f"Unknown tool: {name}"})
+
+    @patch("agent.brain.iterative_refine.BrainAgent.dispatch")
     @patch("agent.brain.iterative_refine._is_comfyui_available", return_value=False)
-    def test_parameters_used_passed_to_evaluate(self, mock_avail, mock_mem):
+    def test_parameters_used_passed_to_evaluate(self, mock_avail, mock_dispatch):
         """Verify Agent should receive extracted parameters via evaluation path."""
-        mock_mem.return_value = json.dumps({})
+        mock_dispatch.side_effect = self._memory_mock_side_effect
 
         # Use "evaluate" / "rate" to trigger evaluation intent classification
         result = json.loads(handle("iterative_refine", {
@@ -471,11 +482,11 @@ class TestVerifyEnrichment:
         result = _extract_parameters_from_workflow(None)
         assert result is None
 
-    @patch("agent.brain.iterative_refine.memory_handle")
+    @patch("agent.brain.iterative_refine.BrainAgent.dispatch")
     @patch("agent.brain.iterative_refine._is_comfyui_available", return_value=False)
-    def test_evaluation_path_has_validation_key(self, mock_avail, mock_mem):
+    def test_evaluation_path_has_validation_key(self, mock_avail, mock_dispatch):
         """Evaluation results should include validation key."""
-        mock_mem.return_value = json.dumps({})
+        mock_dispatch.side_effect = self._memory_mock_side_effect
 
         result = json.loads(handle("iterative_refine", {
             "user_intent": "how does this look",

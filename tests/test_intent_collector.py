@@ -23,10 +23,15 @@ def agent():
 
 
 @pytest.fixture(autouse=True)
-def reset_singleton(monkeypatch):
-    """Reset module-level singleton between tests."""
-    import agent.brain.intent_collector as mod
-    monkeypatch.setattr(mod, "_singleton", None)
+def reset_singleton():
+    """Reset registered IntentCollectorAgent state between tests."""
+    from agent.brain._sdk import BrainAgent
+    BrainAgent._register_all()
+    instance = BrainAgent._registry.get("capture_intent")
+    if instance is not None:
+        instance._current_intent = None
+        instance._intent_history.clear()
+    yield
 
 
 # ---------------------------------------------------------------------------

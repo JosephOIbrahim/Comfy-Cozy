@@ -88,7 +88,7 @@ class TestLoadWorkflowFromData:
     def test_ui_only_returns_error(self):
         err = workflow_patch.load_workflow_from_data(SAMPLE_UI_ONLY)
         assert err is not None
-        assert "UI-only" in err
+        assert "without editable data" in err
 
     def test_empty_dict_returns_error(self):
         err = workflow_patch.load_workflow_from_data({})

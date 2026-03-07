@@ -12,7 +12,6 @@ from pathlib import Path
 
 from ._protocol import make_id
 from ._sdk import BrainAgent
-from .memory import handle as memory_handle
 
 log = logging.getLogger(__name__)
 
@@ -371,7 +370,7 @@ class PlannerAgent(BrainAgent):
         """Query memory for learned patterns to inform planning."""
         try:
             import json as _json
-            raw = memory_handle("get_learned_patterns", {"session": session})
+            raw = BrainAgent.dispatch("get_learned_patterns", {"session": session})
             return _json.loads(raw) if raw else None
         except Exception as e:
             log.debug("Could not query learned patterns for planning: %s", e)
@@ -381,7 +380,7 @@ class PlannerAgent(BrainAgent):
         """Record goal completion to memory for cross-session learning."""
         try:
             completed_steps = [s for s in plan["steps"] if s["status"] == "done"]
-            memory_handle("record_outcome", {
+            BrainAgent.dispatch("record_outcome", {
                 "session": plan.get("session", "default"),
                 "workflow_summary": (
                     f"Goal completed: {plan['goal']} "
@@ -595,36 +594,4 @@ class PlannerAgent(BrainAgent):
         })
 
 
-# ---------------------------------------------------------------------------
-# Backward compatibility — lazy singleton
-# ---------------------------------------------------------------------------
-
-_instance: PlannerAgent | None = None
-
-
-def _get_instance() -> PlannerAgent:
-    global _instance
-    if _instance is None:
-        _instance = PlannerAgent()
-    return _instance
-
-
-TOOLS = PlannerAgent.TOOLS
 GOAL_PATTERNS = _GOAL_PATTERNS
-
-
-def handle(name: str, tool_input: dict) -> str:
-    """Execute a planner tool call."""
-    return _get_instance().handle(name, tool_input)
-
-
-def _load_plan(session: str) -> dict | None:
-    """Module-level proxy for backward compatibility."""
-    return _get_instance()._load_plan(session)
-
-
-def __getattr__(name: str):
-    """Proxy module-level state access to singleton instance."""
-    if name == "_GENERIC_STEPS":
-        return _GENERIC_STEPS
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

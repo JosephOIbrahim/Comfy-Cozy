@@ -23,10 +23,17 @@ def agent():
 
 
 @pytest.fixture(autouse=True)
-def reset_singleton(monkeypatch):
-    """Reset module-level singleton between tests."""
-    import agent.brain.iteration_accumulator as mod
-    monkeypatch.setattr(mod, "_singleton", None)
+def reset_singleton():
+    """Reset registered IterationAccumulatorAgent state between tests."""
+    from agent.brain._sdk import BrainAgent
+    BrainAgent._register_all()
+    instance = BrainAgent._registry.get("start_iteration_tracking")
+    if instance is not None:
+        instance._steps.clear()
+        instance._started_at = None
+        instance._accepted = None
+        instance._intent_summary = ""
+    yield
 
 
 # ---------------------------------------------------------------------------

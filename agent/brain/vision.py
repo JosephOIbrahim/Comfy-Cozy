@@ -509,23 +509,3 @@ def _pixel_diff(img_a, img_b) -> dict:
     }
 
 
-# ---------------------------------------------------------------------------
-# Backward compatibility — lazy singleton
-# ---------------------------------------------------------------------------
-
-_instance: VisionAgent | None = None
-
-
-def _get_instance() -> VisionAgent:
-    global _instance
-    if _instance is None:
-        _instance = VisionAgent()
-    return _instance
-
-
-TOOLS = VisionAgent.TOOLS
-
-
-def handle(name: str, tool_input: dict) -> str:
-    """Execute a vision tool call."""
-    return _get_instance().handle(name, tool_input)

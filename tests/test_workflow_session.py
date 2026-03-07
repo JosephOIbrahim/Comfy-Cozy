@@ -170,7 +170,7 @@ class TestThreadSafety:
 
     def test_session_has_lock(self):
         s = get_session("locktest")
-        assert isinstance(s._lock, type(threading.Lock()))
+        assert isinstance(s._lock, type(threading.RLock()))
 
     def test_lock_is_acquirable(self):
         s = get_session("locktest2")

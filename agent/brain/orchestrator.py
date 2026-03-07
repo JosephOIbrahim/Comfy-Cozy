@@ -230,8 +230,7 @@ class OrchestratorAgent(BrainAgent):
             }
 
         executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
-        # Use module-level _run_subtask so tests can mock it
-        future = executor.submit(_run_subtask, task_id, profile, tool_calls)
+        future = executor.submit(self._run_subtask, task_id, profile, tool_calls)
 
         def _on_done(fut):
             try:
@@ -310,39 +309,3 @@ class OrchestratorAgent(BrainAgent):
         })
 
 
-# ---------------------------------------------------------------------------
-# Backward compatibility — lazy singleton
-# ---------------------------------------------------------------------------
-
-_instance: OrchestratorAgent | None = None
-
-
-def _get_instance() -> OrchestratorAgent:
-    global _instance
-    if _instance is None:
-        _instance = OrchestratorAgent()
-    return _instance
-
-
-TOOLS = OrchestratorAgent.TOOLS
-
-
-def handle(name: str, tool_input: dict) -> str:
-    """Execute an orchestrator tool call."""
-    return _get_instance().handle(name, tool_input)
-
-
-def _run_subtask(task_id: str, profile: str, tool_calls: list[dict]) -> dict:
-    """Module-level proxy for OrchestratorAgent._run_subtask."""
-    return _get_instance()._run_subtask(task_id, profile, tool_calls)
-
-
-def __getattr__(name: str):
-    """Proxy module-level state access to singleton instance."""
-    if name == "_active_tasks":
-        return _get_instance()._active_tasks
-    if name == "_tasks_lock":
-        return _get_instance()._tasks_lock
-    if name == "_TOOL_PROFILES":
-        return _TOOL_PROFILES
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

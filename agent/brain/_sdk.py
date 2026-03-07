@@ -83,9 +83,15 @@ class BrainAgent:
 
     Subclasses override TOOLS and handle(). Config is injected via
     __init__; if None, falls back to get_integrated_config().
+
+    Auto-registration: subclasses are collected via __init_subclass__.
+    Use get_all_tools() and dispatch() for centralized routing.
     """
 
     TOOLS: list[dict] = []
+    _registry: dict[str, 'BrainAgent'] = {}
+    _all_tools: list[dict] = []
+    _registered: bool = False
 
     def __init__(self, config: BrainConfig | None = None):
         if config is None:
@@ -93,8 +99,44 @@ class BrainAgent:
         self.cfg = config
         self.to_json = config.to_json
 
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+
     def handle(self, name: str, tool_input: dict) -> str:
         raise NotImplementedError
+
+    @classmethod
+    def _register_all(cls):
+        if cls._registered:
+            return
+        cls._registered = True
+        for subcls in cls.__subclasses__():
+            if not subcls.TOOLS:
+                continue
+            instance = subcls()
+            for tool in subcls.TOOLS:
+                cls._registry[tool["name"]] = instance
+                cls._all_tools.append(tool)
+
+    @classmethod
+    def get_all_tools(cls) -> list[dict]:
+        cls._register_all()
+        return list(cls._all_tools)
+
+    @classmethod
+    def dispatch(cls, name: str, tool_input: dict) -> str:
+        cls._register_all()
+        agent = cls._registry.get(name)
+        if agent is None:
+            return _json.dumps({"error": f"Unknown brain tool: {name}"}, sort_keys=True)
+        return agent.handle(name, tool_input)
+
+    @classmethod
+    def _reset_registry(cls):
+        """Reset for testing."""
+        cls._registry.clear()
+        cls._all_tools.clear()
+        cls._registered = False
 
 
 # ---------------------------------------------------------------------------
@@ -116,6 +158,21 @@ def _lazy_get_workflow_state() -> dict:
 
 
 def _lazy_patch_handle(name: str, tool_input: dict) -> str:
+    """Dispatch to workflow_patch internal handlers, bypassing the outer lock.
+
+    ``workflow_patch.handle`` wraps every call in ``with _state_lock:`` but
+    ``WorkflowSession.__getitem__`` also acquires the *same* non-reentrant
+    lock, causing a deadlock.  Import the internal handlers directly.
+    """
+    from ..tools.workflow_patch import (
+        _handle_apply_patch,
+        _handle_set_input,
+    )
+    if name == "apply_workflow_patch":
+        return _handle_apply_patch(tool_input)
+    elif name == "set_input":
+        return _handle_set_input(tool_input)
+    # Fallback for other tool names (undo, diff, etc.)
     from ..tools.workflow_patch import handle
     return handle(name, tool_input)
 

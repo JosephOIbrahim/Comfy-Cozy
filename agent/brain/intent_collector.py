@@ -20,7 +20,7 @@ log = logging.getLogger(__name__)
 # Tool schemas
 # ---------------------------------------------------------------------------
 
-TOOLS: list[dict] = [
+_TOOLS: list[dict] = [
     {
         "name": "capture_intent",
         "description": (
@@ -87,7 +87,7 @@ TOOLS: list[dict] = [
 class IntentCollectorAgent(BrainAgent):
     """Captures and serves artistic intent for metadata embedding."""
 
-    TOOLS = TOOLS
+    TOOLS = _TOOLS
 
     def __init__(self, config: BrainConfig | None = None):
         super().__init__(config)
@@ -160,23 +160,17 @@ class IntentCollectorAgent(BrainAgent):
 
 
 # ---------------------------------------------------------------------------
-# Module-level singleton (lazy, for backward compat with tools registry)
+# Backward-compat re-exports (consumed by tests outside test_brain_*.py)
 # ---------------------------------------------------------------------------
 
-_singleton: IntentCollectorAgent | None = None
-_singleton_lock = threading.Lock()
-
-
-def _get_agent() -> IntentCollectorAgent:
-    global _singleton
-    if _singleton is not None:
-        return _singleton
-    with _singleton_lock:
-        if _singleton is None:
-            _singleton = IntentCollectorAgent()
-        return _singleton
+TOOLS = _TOOLS
 
 
 def handle(name: str, tool_input: dict) -> str:
-    """Module-level dispatch."""
-    return _get_agent().handle(name, tool_input)
+    """Module-level dispatch shim — routes to the registered instance."""
+    BrainAgent._register_all()
+    agent = BrainAgent._registry.get(name)
+    if agent is not None:
+        return agent.handle(name, tool_input)
+    from . import handle as _brain_handle
+    return _brain_handle(name, tool_input)

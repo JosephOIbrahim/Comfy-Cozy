@@ -6,24 +6,36 @@ from unittest.mock import patch
 
 import pytest
 
-from agent.brain import orchestrator
+from agent.brain import handle
+from agent.brain._sdk import BrainAgent
+from agent.brain.orchestrator import OrchestratorAgent, _TOOL_PROFILES
+
+
+# Get the auto-registered OrchestratorAgent instance from the registry
+def _get_orch_instance() -> OrchestratorAgent:
+    BrainAgent._register_all()
+    agent = BrainAgent._registry.get("spawn_subtask")
+    assert isinstance(agent, OrchestratorAgent)
+    return agent
 
 
 @pytest.fixture(autouse=True)
 def clean_active_tasks():
     """Reset active tasks between tests."""
-    orchestrator._active_tasks.clear()
+    agent = _get_orch_instance()
+    agent._active_tasks.clear()
     yield
-    orchestrator._active_tasks.clear()
+    agent._active_tasks.clear()
 
 
 class TestSpawnSubtask:
     def test_spawn_researcher(self):
-        with patch("agent.brain.orchestrator._run_subtask", return_value={
+        agent = _get_orch_instance()
+        with patch.object(agent, "_run_subtask", return_value={
             "task_id": "test", "status": "completed", "results": [],
             "completed_at": time.time(),
         }):
-            result = json.loads(orchestrator.handle("spawn_subtask", {
+            result = json.loads(handle("spawn_subtask", {
                 "task_description": "Find SDXL models",
                 "profile": "researcher",
                 "tool_calls": [
@@ -35,7 +47,7 @@ class TestSpawnSubtask:
         assert result["tool_count"] == 1
 
     def test_spawn_rejects_invalid_profile(self):
-        result = json.loads(orchestrator.handle("spawn_subtask", {
+        result = json.loads(handle("spawn_subtask", {
             "task_description": "Test",
             "profile": "invalid_profile",
             "tool_calls": [],
@@ -43,7 +55,7 @@ class TestSpawnSubtask:
         assert "error" in result
 
     def test_spawn_rejects_unauthorized_tool(self):
-        result = json.loads(orchestrator.handle("spawn_subtask", {
+        result = json.loads(handle("spawn_subtask", {
             "task_description": "Try to modify workflow",
             "profile": "researcher",
             "tool_calls": [
@@ -54,11 +66,12 @@ class TestSpawnSubtask:
         assert "not allowed" in result["error"]
 
     def test_spawn_max_concurrent(self):
+        agent = _get_orch_instance()
         # Fill up the active tasks
         for i in range(3):
-            orchestrator._active_tasks[f"task_{i}"] = {"status": "running"}
+            agent._active_tasks[f"task_{i}"] = {"status": "running"}
 
-        result = json.loads(orchestrator.handle("spawn_subtask", {
+        result = json.loads(handle("spawn_subtask", {
             "task_description": "One too many",
             "profile": "researcher",
             "tool_calls": [{"tool": "list_models", "input": {}}],
@@ -69,11 +82,12 @@ class TestSpawnSubtask:
 
 class TestCheckSubtasks:
     def test_no_tasks(self):
-        result = json.loads(orchestrator.handle("check_subtasks", {}))
+        result = json.loads(handle("check_subtasks", {}))
         assert result["tasks"] == []
 
     def test_check_completed(self):
-        orchestrator._active_tasks["abc123"] = {
+        agent = _get_orch_instance()
+        agent._active_tasks["abc123"] = {
             "status": "completed",
             "description": "Find models",
             "profile": "researcher",
@@ -83,34 +97,36 @@ class TestCheckSubtasks:
             ],
             "completed_at": time.time(),
         }
-        result = json.loads(orchestrator.handle("check_subtasks", {}))
+        result = json.loads(handle("check_subtasks", {}))
         assert result["summary"]["completed"] == 1
         assert result["tasks"][0]["tool_results"] == 1
 
     def test_check_running(self):
-        orchestrator._active_tasks["run123"] = {
+        agent = _get_orch_instance()
+        agent._active_tasks["run123"] = {
             "status": "running",
             "description": "Searching",
             "profile": "researcher",
             "started_at": time.time() - 10,
             "tool_count": 3,
         }
-        result = json.loads(orchestrator.handle("check_subtasks", {}))
+        result = json.loads(handle("check_subtasks", {}))
         assert result["summary"]["running"] == 1
         assert result["tasks"][0]["elapsed_s"] >= 9
 
     def test_check_specific_ids(self):
-        orchestrator._active_tasks["a"] = {"status": "completed", "description": "A", "profile": "researcher", "results": []}
-        orchestrator._active_tasks["b"] = {"status": "running", "description": "B", "profile": "builder", "started_at": time.time(), "tool_count": 1}
+        agent = _get_orch_instance()
+        agent._active_tasks["a"] = {"status": "completed", "description": "A", "profile": "researcher", "results": []}
+        agent._active_tasks["b"] = {"status": "running", "description": "B", "profile": "builder", "started_at": time.time(), "tool_count": 1}
 
-        result = json.loads(orchestrator.handle("check_subtasks", {"task_ids": ["a"]}))
+        result = json.loads(handle("check_subtasks", {"task_ids": ["a"]}))
         assert len(result["tasks"]) == 1
         assert result["tasks"][0]["task_id"] == "a"
 
 
 class TestToolProfiles:
     def test_researcher_has_read_tools(self):
-        allowed = orchestrator._TOOL_PROFILES["researcher"]["allowed_tools"]
+        allowed = _TOOL_PROFILES["researcher"]["allowed_tools"]
         assert "list_models" in allowed
         assert "discover" in allowed
         assert "get_all_nodes" in allowed
@@ -119,13 +135,13 @@ class TestToolProfiles:
         assert "execute_workflow" not in allowed
 
     def test_builder_has_write_tools(self):
-        allowed = orchestrator._TOOL_PROFILES["builder"]["allowed_tools"]
+        allowed = _TOOL_PROFILES["builder"]["allowed_tools"]
         assert "apply_workflow_patch" in allowed
         assert "add_node" in allowed
         assert "connect_nodes" in allowed
 
     def test_validator_has_execute_tools(self):
-        allowed = orchestrator._TOOL_PROFILES["validator"]["allowed_tools"]
+        allowed = _TOOL_PROFILES["validator"]["allowed_tools"]
         assert "validate_before_execute" in allowed
         assert "execute_workflow" in allowed
         assert "analyze_image" in allowed

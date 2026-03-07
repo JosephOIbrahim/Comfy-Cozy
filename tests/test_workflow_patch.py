@@ -122,7 +122,7 @@ class TestApplyPatch:
             "patches": [{"op": "replace", "path": "/1/inputs/x", "value": 1}],
         }))
         assert "error" in result
-        assert "UI-only" in result["error"]
+        assert "without editable data" in result["error"]
 
 
 class TestUndo:

@@ -154,8 +154,7 @@ class TestToolRegistry:
             result = handle("plan_goal", {})
         parsed = json.loads(result)
         assert "error" in parsed
-        assert "test boom" in parsed["error"]
-        assert "RuntimeError" in parsed["error"]
+        assert "plan_goal" in parsed["error"]
 
     def test_intelligence_tool_error_returns_json(self):
         """Intelligence layer tool exceptions should be caught and returned as JSON."""
@@ -166,5 +165,4 @@ class TestToolRegistry:
             result = handle("is_comfyui_running", {})
         parsed = json.loads(result)
         assert "error" in parsed
-        assert "api boom" in parsed["error"]
-        assert "RuntimeError" in parsed["error"]
+        assert "is_comfyui_running" in parsed["error"]

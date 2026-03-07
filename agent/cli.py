@@ -13,15 +13,59 @@ from rich.table import Table
 
 from .config import AGENT_MODEL, COMFYUI_URL, COMFYUI_DATABASE, ANTHROPIC_API_KEY, LOG_DIR
 from .logging_config import setup_logging
+from .streaming import NullHandler
 from .tools import comfy_inspect, comfy_discover, session_tools
 
 log = logging.getLogger(__name__)
 
 app = typer.Typer(
-    help="ComfyUI Agent — AI co-pilot for ComfyUI workflows",
+    help="ComfyUI Agent -- AI co-pilot for ComfyUI workflows",
     no_args_is_help=True,
 )
 console = Console()
+
+
+# ---------------------------------------------------------------------------
+# CLI stream handler
+# ---------------------------------------------------------------------------
+
+
+class CLIHandler(NullHandler):
+    """Rich terminal output handler."""
+
+    def __init__(self, rich_console: Console):
+        self._console = rich_console
+        self._streamed_any = False
+
+    def on_text(self, text: str) -> None:
+        self._streamed_any = True
+        print(text, end="", flush=True)
+
+    def on_tool_call(self, name: str, input: dict) -> None:
+        if self._streamed_any:
+            print()
+            self._streamed_any = False
+        inp_summary = json.dumps(input, default=str, sort_keys=True)
+        if len(inp_summary) > 80:
+            inp_summary = inp_summary[:77] + "..."
+        self._console.print(f"  [dim]-> {name}({inp_summary})[/dim]")
+
+    def on_stream_end(self) -> None:
+        if self._streamed_any:
+            print()
+            self._streamed_any = False
+
+    def on_input(self) -> str | None:
+        try:
+            return self._console.input("[bold cyan]> [/bold cyan]")
+        except (KeyboardInterrupt, EOFError):
+            self._console.print()
+            return None
+
+
+# ---------------------------------------------------------------------------
+# Commands
+# ---------------------------------------------------------------------------
 
 
 @app.command()
@@ -116,45 +160,8 @@ def run(
         lambda: _save_and_exit() if session and not _shutdown_done.is_set() else None
     )
 
-    # Streaming callbacks
-    _streamed_any = False
-
-    def on_text_delta(text: str):
-        nonlocal _streamed_any
-        _streamed_any = True
-        print(text, end="", flush=True)
-
-    def on_tool_call(name: str, inp: dict):
-        nonlocal _streamed_any
-        if _streamed_any:
-            print()  # Newline after streamed text
-            _streamed_any = False
-        inp_summary = json.dumps(inp, default=str, sort_keys=True)
-        if len(inp_summary) > 80:
-            inp_summary = inp_summary[:77] + "..."
-        console.print(f"  [dim]-> {name}({inp_summary})[/dim]")
-
-    def on_stream_end():
-        nonlocal _streamed_any
-        if _streamed_any:
-            print()  # Final newline after streamed text
-            _streamed_any = False
-
-    def on_user_input() -> str | None:
-        try:
-            return console.input("[bold cyan]> [/bold cyan]")
-        except (KeyboardInterrupt, EOFError):
-            console.print()
-            return None
-
-    run_interactive(
-        client,
-        session_context=session_context,
-        on_text_delta=on_text_delta,
-        on_tool_call=on_tool_call,
-        on_stream_end=on_stream_end,
-        on_user_input=on_user_input,
-    )
+    handler = CLIHandler(console)
+    run_interactive(client, session_context=session_context, handler=handler)
 
     # Save session on normal exit (atexit handles abnormal exit)
     _save_and_exit()
@@ -228,7 +235,7 @@ def parse(
                 if isinstance(v, dict) and "class_type" in v
             }
         else:
-            # UI-only — convert nodes array to dict keyed by ID
+            # UI-only -- convert nodes array to dict keyed by ID
             nodes = {}
             for node in data["nodes"]:
                 nid = str(node.get("id", ""))
@@ -265,7 +272,7 @@ def parse(
     console.print("[bold]Node types:[/bold]")
     console.print(table)
 
-    # Show editable fields (API format only — UI format lacks field names)
+    # Show editable fields (API format only)
     api_nodes = {
         nid: n for nid, n in nodes.items()
         if n.get("inputs") and not n.get("_widgets_values")
@@ -277,18 +284,18 @@ def parse(
         fields_table.add_column("Value", style="dim")
         for nid, node in sorted(api_nodes.items()):
             ct = node.get("class_type", "?")
-            for field, value in node.get("inputs", {}).items():
+            for fld, value in node.get("inputs", {}).items():
                 if isinstance(value, list):
                     continue  # connection
                 val_repr = repr(value)
                 if len(val_repr) > 50:
                     val_repr = val_repr[:47] + "..."
-                fields_table.add_row(f"{ct} [{nid}]", field, val_repr)
+                fields_table.add_row(f"{ct} [{nid}]", fld, val_repr)
         console.print("\n[bold]Editable fields:[/bold]")
         console.print(fields_table)
     elif fmt == "UI format":
         console.print(
-            "\n[dim]UI-format workflow — editable fields require ComfyUI "
+            "\n[dim]UI-format workflow -- editable fields require ComfyUI "
             "running (use interactive mode to analyze with /object_info).[/dim]"
         )
 
@@ -368,7 +375,9 @@ def search(
             name = r.get("name", "?")
             rtype = r.get("type", "")
             source = r.get("source", "")
-            extra = [p for p in [r.get("model_type", ""), r.get("base_model", "")] if p]
+            extra = [
+                p for p in [r.get("model_type", ""), r.get("base_model", "")] if p
+            ]
             if extra:
                 rtype = f"{rtype} ({', '.join(extra)})" if rtype else ", ".join(extra)
             status = "[green]installed[/green]" if r.get("installed") else ""
@@ -390,7 +399,7 @@ def search(
 
 @app.command()
 def mcp():
-    """Primary integration -- exposes all 65 tools via MCP for Claude Code.
+    """Primary integration -- exposes all tools via MCP for Claude Code.
 
     Starts the MCP server using stdio transport. Configure in your
     Claude Code settings (.claude/settings.json) to use these tools

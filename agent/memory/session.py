@@ -20,7 +20,9 @@ from ..config import SESSIONS_DIR
 
 log = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
+
+NOTE_TYPES = ("preference", "observation", "decision", "tip")
 
 
 def _sessions_dir() -> Path:
@@ -122,11 +124,17 @@ def list_sessions() -> dict:
     }
 
 
-def add_note(name: str, note: str) -> dict:
-    """Add a note to a session (create session if it doesn't exist).
+def add_note(name: str, note: str, *, note_type: str = "observation") -> dict:
+    """Add a typed note to a session (create session if it doesn't exist).
 
     Returns {"added": True, "total_notes": n} or {"error": msg}.
     """
+    if note_type not in NOTE_TYPES:
+        return {
+            "error": f"Unknown note type: {note_type}",
+            "hint": f"Use one of: {', '.join(NOTE_TYPES)}",
+        }
+
     path = _sessions_dir() / f"{name}.json"
 
     if path.exists():
@@ -142,6 +150,7 @@ def add_note(name: str, note: str) -> dict:
 
     data["notes"].append({
         "text": note,
+        "type": note_type,
         "added_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
     })
     data["saved_at"] = time.strftime("%Y-%m-%dT%H:%M:%S")
@@ -173,11 +182,33 @@ def _migrate_session(data: dict) -> dict:
     """Upgrade session data from older schema versions to current.
 
     v0 -> v1: adds schema_version field.
+    v1 -> v2: typed notes (preference/observation/decision/tip).
     """
     version = data.get("schema_version", 0)
     if version < 1:
         data["schema_version"] = 1
         log.debug("Migrated session '%s' from v0 to v1", data.get("name", "?"))
+    if version < 2:
+        notes = data.get("notes", [])
+        migrated = []
+        for note in notes:
+            if isinstance(note, str):
+                migrated.append({
+                    "text": note,
+                    "type": "observation",
+                    "added_at": data.get("saved_at", ""),
+                })
+            elif isinstance(note, dict) and "type" not in note:
+                note["type"] = "observation"
+                migrated.append(note)
+            else:
+                migrated.append(note)
+        data["notes"] = migrated
+        data["schema_version"] = 2
+        log.debug(
+            "Migrated session '%s' from v1 to v2 (typed notes)",
+            data.get("name", "?"),
+        )
     return data
 
 
@@ -210,6 +241,7 @@ def _empty_session(name: str) -> dict:
     return {
         "name": name,
         "saved_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        "schema_version": SCHEMA_VERSION,
         "workflow": {"loaded_path": None, "format": None},
         "notes": [],
         "metadata": {},

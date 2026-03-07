@@ -28,7 +28,7 @@ class WorkflowSession:
             "history": [],
             "format": None,
         }
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
 
     def __getitem__(self, key: str):
         with self._lock:

@@ -1,11 +1,13 @@
 """Build the agent's system prompt from knowledge files and context."""
 
+from pathlib import Path
+
 from .config import KNOWLEDGE_DIR, COMFYUI_DATABASE, CUSTOM_NODES_DIR, MODELS_DIR
 
 _RULES = """\
 RULES:
 1. NEVER claim to know about specific models from memory. ALWAYS use tools.
-2. When asked "what model should I use for X?" — search first, recommend after.
+2. When asked "what model should I use for X?" -- search first, recommend after.
 3. When modifying workflows, ALWAYS show the proposed patch and get confirmation before applying.
 4. When something fails, read the error, check node compatibility, suggest fixes.
 5. Use extended thinking for: workflow design from scratch, debugging, architecture decisions.
@@ -18,7 +20,7 @@ RULES:
 12. Use format='names_only' or format='summary' for large tool queries; drill down with specific tools.
 13. For workflow creation, prefer loading a template (list_workflow_templates) and patching it.
 14. Before executing, use validate_before_execute to catch errors early.
-15. Use add_node/connect_nodes/set_input for building workflows instead of raw JSON patches when possible.
+15. Use add_node/connect_nodes/set_input for building workflows instead of raw patches when possible.
 16. When past outcomes exist, proactively mention relevant patterns without overwhelming.
 
 TOOL OVERVIEW:
@@ -33,7 +35,7 @@ Filesystem:
 Workflow Understanding:
   load_workflow, validate_workflow, get_editable_fields
 
-Workflow Editing (RFC6902 JSON Patch):
+Workflow Editing:
   apply_workflow_patch, preview_workflow_patch, undo_workflow_patch,
   get_workflow_diff, save_workflow, reset_workflow
 
@@ -56,62 +58,23 @@ Session Memory:
   save_session, load_session, list_sessions, add_note
 """
 
-# Keyword -> knowledge file mapping for dynamic loading
-_KNOWLEDGE_TRIGGERS = {
-    "controlnet_patterns": [
-        "controlnet", "control_net", "depth_map", "canny", "openpose",
-        "lineart", "scribble", "ControlNetLoader", "ControlNetApply",
-    ],
-    "video_workflows": [
-        "animatediff", "animate", "video", "svd", "stable_video",
-        "frame", "motion", "AnimateDiffLoader", "VHS_",
-    ],
-    "flux_specifics": [
-        "flux", "FLUX", "FluxGuidance", "FluxLoader",
-    ],
-    "common_recipes": [
-        "create workflow", "build workflow", "from scratch",
-        "new workflow", "make a workflow", "set up a pipeline",
-    ],
-    "3d_workflows": [
-        "3d", "3D", "mesh", "hunyuan3d", "Hunyuan3D", "triplane",
-        "gaussian", "splat", "3dgs", "3DGS", "glb", "GLB", "ply",
-        "point_cloud", "Hunyuan3DLoader", "SaveGLB", "Preview3D",
-        "Load3DGaussian", "MeshDecoder", "3d_gen",
-        "3d generation", "Wan2.1", "wan2", "Wan-T2V", "Wan-I2V",
-        "vnccs", "VNCCS", "action director", "ActionDirector",
-        "pose", "camera angle", "3d viewport", "3dview",
-        "depth map from 3d", "controlnet 3d",
-    ],
-    "3d_partner_nodes": [
-        "mesh generation", "3d model", "generate 3d", "best 3d",
-        "hunyuan3d", "meshy", "tripo", "rodin", "trellis",
-        "partner node", "partner", "which 3d", "compare 3d",
-        "splat to mesh", "gaussian to mesh", "convert splat",
-        "export 3d", "NeRF to mesh", "get GLB", "marching cubes",
-    ],
-    "audio_workflows": [
-        "tts", "TTS", "text to speech", "audio", "voice",
-        "cosyvoice", "CosyVoice", "CosyVoiceLoader",
-        "qwen audio", "QwenAudio", "bark", "tortoise",
-        "xtts", "XTTS", "fish speech", "chattts", "ChatTTS",
-        "SaveAudio", "LoadAudio", "AudioSave",
-        "text-to-speech", "narration", "speech synthesis",
-    ],
-    "3d_camera_pipeline": [
-        "camera control", "camera position", "camera settings",
-        "load3d camera", "LOAD3D_CAMERA", "Load3D_Camera",
-        "cinematic", "focal length", "camera pipeline",
-        "shot type", "framing", "camera rig",
-        "sensor size", "anamorphic", "camera lens",
-        "AdvancedCameraControl", "camera export",
-    ],
-    "workflow_optimization": [
-        "slow", "bottleneck", "optimize workflow", "performance",
-        "speed up", "taking too long", "profiler", "ProfilerX",
-        "too slow", "faster", "laggy", "TensorRT", "tensorrt",
-    ],
-}
+# Keyword -> knowledge file mapping loaded from YAML
+_TRIGGERS_PATH = Path(__file__).parent / "knowledge" / "triggers.yaml"
+_triggers_cache: dict | None = None
+
+
+def _load_triggers() -> dict:
+    """Load knowledge triggers from YAML. Cached after first load."""
+    global _triggers_cache
+    if _triggers_cache is not None:
+        return _triggers_cache
+    if _TRIGGERS_PATH.exists():
+        import yaml
+        with open(_TRIGGERS_PATH, encoding="utf-8") as f:
+            _triggers_cache = yaml.safe_load(f) or {}
+    else:
+        _triggers_cache = {}
+    return _triggers_cache
 
 
 def _detect_relevant_knowledge(session_context: dict | None) -> set[str]:
@@ -141,7 +104,9 @@ def _detect_relevant_knowledge(session_context: dict | None) -> set[str]:
 
     combined = f"{workflow_text} {notes_text}".lower()
 
-    for knowledge_file, keywords in _KNOWLEDGE_TRIGGERS.items():
+    trigger_defs = _load_triggers()
+    for knowledge_file, config in trigger_defs.items():
+        keywords = config.get("keywords", [])
         if any(kw.lower() in combined for kw in keywords):
             triggers.add(knowledge_file)
 
@@ -156,7 +121,7 @@ def build_system_prompt(session_context: dict | None = None) -> str:
                         When provided, injects session memory and loads relevant knowledge.
     """
     parts = [
-        "You are a ComfyUI co-pilot — an expert assistant that helps artists "
+        "You are a ComfyUI co-pilot -- an expert assistant that helps artists "
         "inspect, understand, discover, modify, and execute ComfyUI workflows "
         "through natural conversation.\n",
         "You have tools to query the live ComfyUI API, scan the local filesystem, "
@@ -167,7 +132,7 @@ def build_system_prompt(session_context: dict | None = None) -> str:
         f"Models: {MODELS_DIR}\n",
     ]
 
-    # Inject session context (privileged position — before knowledge)
+    # Inject session context (privileged position -- before knowledge)
     if session_context:
         parts.append("\n--- Session Context ---")
         session_name = session_context.get("name", "")
@@ -177,7 +142,10 @@ def build_system_prompt(session_context: dict | None = None) -> str:
         # Loaded workflow summary
         wf = session_context.get("workflow", {})
         if wf.get("loaded_path"):
-            parts.append(f"Loaded workflow: {wf['loaded_path']} (format: {wf.get('format', '?')})")
+            parts.append(
+                f"Loaded workflow: {wf['loaded_path']} "
+                f"(format: {wf.get('format', '?')})"
+            )
             if wf.get("history_depth", 0) > 0:
                 parts.append(f"  Patches applied: {wf['history_depth']}")
 
@@ -193,9 +161,10 @@ def build_system_prompt(session_context: dict | None = None) -> str:
     # Proactive recommendations from memory (if outcomes exist)
     if session_context and session_context.get("name"):
         try:
-            from .brain.memory import handle as memory_handle
+            from .brain.memory import MemoryAgent
             import json as _json
-            recs_raw = memory_handle("get_recommendations", {
+            _mem = MemoryAgent()
+            recs_raw = _mem.handle("get_recommendations", {
                 "session": session_context["name"],
             })
             recs = _json.loads(recs_raw)
@@ -212,7 +181,7 @@ def build_system_prompt(session_context: dict | None = None) -> str:
                     )
                 parts.append("")
         except Exception:
-            pass  # Memory unavailable — skip silently
+            pass  # Memory unavailable -- skip silently
 
     # Load core knowledge files (always)
     relevant_extras = _detect_relevant_knowledge(session_context)

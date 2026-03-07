@@ -1044,7 +1044,7 @@ class TestMemoryRecording:
                 verify_agent=mock_verify,
             ),
         ), patch(
-            "agent.brain.iterative_refine.memory_handle",
+            "agent.brain.iterative_refine.BrainAgent.dispatch",
         ) as mock_memory:
             result = _parse(handle("iterative_refine", {
                 "user_intent": "make it dreamier",
@@ -1089,7 +1089,7 @@ class TestMemoryRecording:
                 verify_agent=mock_verify,
             ),
         ), patch(
-            "agent.brain.iterative_refine.memory_handle",
+            "agent.brain.iterative_refine.BrainAgent.dispatch",
         ) as mock_memory:
             result = _parse(handle("iterative_refine", {
                 "user_intent": "photorealistic portrait",
@@ -1127,7 +1127,7 @@ class TestMemoryRecording:
                 verify_agent=mock_verify,
             ),
         ), patch(
-            "agent.brain.iterative_refine.memory_handle",
+            "agent.brain.iterative_refine.BrainAgent.dispatch",
         ) as mock_memory:
             result = _parse(handle("iterative_refine", {
                 "user_intent": "evaluate this output",
@@ -1150,7 +1150,7 @@ class TestMemoryRecording:
     def test_planned_does_not_record_to_memory(self):
         """Planned status (no verification) should NOT record to memory."""
         with patch(
-            "agent.brain.iterative_refine.memory_handle",
+            "agent.brain.iterative_refine.BrainAgent.dispatch",
         ) as mock_memory:
             result = _parse(handle("iterative_refine", {
                 "user_intent": "make it dreamier",
@@ -1181,7 +1181,7 @@ class TestMemoryRecording:
                 verify_agent=mock_verify,
             ),
         ), patch(
-            "agent.brain.iterative_refine.memory_handle",
+            "agent.brain.iterative_refine.BrainAgent.dispatch",
             side_effect=RuntimeError("disk full"),
         ):
             result = _parse(handle("iterative_refine", {
@@ -1231,7 +1231,7 @@ class TestMemoryRecording:
                 verify_agent=mock_verify,
             ),
         ), patch(
-            "agent.brain.iterative_refine.memory_handle",
+            "agent.brain.iterative_refine.BrainAgent.dispatch",
         ) as mock_memory:
             result = _parse(handle("iterative_refine", {
                 "user_intent": "make it dreamier",
@@ -1270,7 +1270,7 @@ class TestMemoryRecording:
                 verify_agent=mock_verify,
             ),
         ), patch(
-            "agent.brain.iterative_refine.memory_handle",
+            "agent.brain.iterative_refine.BrainAgent.dispatch",
         ) as mock_memory:
             handle("iterative_refine", {
                 "user_intent": "cinematic lighting",

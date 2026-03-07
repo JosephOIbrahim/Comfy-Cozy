@@ -16,7 +16,7 @@ import json
 import pytest
 
 from agent.system_prompt import build_system_prompt, _detect_relevant_knowledge
-from agent.main import _summarize_dropped, _mask_processed_results
+from agent.context import summarize_dropped, mask_processed_results
 from agent.tools import workflow_patch, workflow_templates, comfy_api, comfy_inspect
 
 
@@ -77,10 +77,8 @@ class TestSessionAwarePrompt:
                 {"category": "low", "recommendation": "Try Euler", "confidence": 0.3},
             ],
         })
-        with mock_patch("agent.system_prompt.memory_handle", create=True):
-            # Patch at import location inside the function
-            with mock_patch("agent.brain.memory.handle", return_value=mock_recs):
-                prompt = build_system_prompt(session_context=ctx)
+        with mock_patch("agent.brain.memory.MemoryAgent.handle", return_value=mock_recs):
+            prompt = build_system_prompt(session_context=ctx)
         assert "Recommendations from Past Sessions" in prompt
         assert "DPM++ 2M Karras works best" in prompt
         assert "SDXL base produces best results" in prompt
@@ -140,7 +138,7 @@ class TestStructuredCompaction:
             {"role": "user", "content": "What models do I have?"},
             {"role": "user", "content": "Search for SDXL LoRAs"},
         ]
-        summary = _summarize_dropped(messages)
+        summary = summarize_dropped(messages)
         assert "What models do I have?" in summary
         assert "Search for SDXL LoRAs" in summary
 
@@ -151,7 +149,7 @@ class TestStructuredCompaction:
                 "content": [type("Block", (), {"type": "tool_use", "name": "get_all_nodes"})()],
             },
         ]
-        summary = _summarize_dropped(messages)
+        summary = summarize_dropped(messages)
         assert "get_all_nodes" in summary
 
     def test_summarize_extracts_workflow_path(self):
@@ -163,11 +161,11 @@ class TestStructuredCompaction:
                 ],
             },
         ]
-        summary = _summarize_dropped(messages)
+        summary = summarize_dropped(messages)
         assert "/my/workflow.json" in summary
 
     def test_summarize_empty_messages(self):
-        summary = _summarize_dropped([])
+        summary = summarize_dropped([])
         assert "Context Summary" in summary
 
 
@@ -450,7 +448,7 @@ class TestObservationMasking:
                 {"type": "tool_result", "tool_use_id": "2", "content": "y" * 3000},
             ]},
         ]
-        masked = _mask_processed_results(messages)
+        masked = mask_processed_results(messages)
         # Old result should be masked
         old_content = masked[0]["content"][0]["content"]
         assert "Processed result" in old_content
@@ -469,12 +467,12 @@ class TestObservationMasking:
                 {"type": "tool_result", "tool_use_id": "2", "content": "another"},
             ]},
         ]
-        masked = _mask_processed_results(messages)
+        masked = mask_processed_results(messages)
         assert masked[0]["content"][0]["content"] == "small result"
 
     def test_no_masking_with_few_messages(self):
         messages = [{"role": "user", "content": "hello"}]
-        result = _mask_processed_results(messages)
+        result = mask_processed_results(messages)
         assert result is messages
 
     def test_does_not_mutate_original(self):
@@ -488,7 +486,7 @@ class TestObservationMasking:
                 {"type": "tool_result", "tool_use_id": "2", "content": "new"},
             ]},
         ]
-        _mask_processed_results(messages)
+        mask_processed_results(messages)
         assert messages[0]["content"][0]["content"] == original_content
 
 

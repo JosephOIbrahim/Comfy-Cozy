@@ -114,9 +114,10 @@ def handle(
             return handle_brain(name, tool_input)
         except Exception as e:
             log.error("Unhandled error in brain tool %s", name, exc_info=True)
-            from ._util import to_json
-            return to_json(
-                {"error": f"Internal error in {name}: {type(e).__name__}: {e}"}
+            from ..errors import error_json
+            return error_json(
+                f"Something went wrong with {name}.",
+                hint="Check the logs or try again.",
             )
 
     # Intelligence layer tools
@@ -131,5 +132,8 @@ def handle(
         return mod.handle(name, tool_input)
     except Exception as e:
         log.error("Unhandled error in tool %s", name, exc_info=True)
-        from ._util import to_json
-        return to_json({"error": f"Internal error in {name}: {type(e).__name__}: {e}"})
+        from ..errors import error_json
+        return error_json(
+            f"Something went wrong with {name}.",
+            hint="Check the logs or try again.",
+        )

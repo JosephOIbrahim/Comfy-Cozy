@@ -266,9 +266,28 @@ def _detect_gpu() -> dict:
 
 
 def _get_patch_handle():
-    """Get the workflow patch handle function (lazy import)."""
-    from ..tools.workflow_patch import handle as patch_handle
-    return patch_handle
+    """Get a workflow-patch dispatch that bypasses the outer state lock.
+
+    ``workflow_patch.handle`` acquires ``_state_lock`` and then accesses
+    ``_state[...]`` which re-acquires the *same* non-reentrant lock via
+    ``WorkflowSession.__getitem__``, causing a deadlock.  Importing the
+    internal handlers directly avoids the double-lock.
+    """
+    from ..tools.workflow_patch import (
+        _handle_apply_patch,
+        _handle_set_input,
+    )
+
+    def _dispatch(name: str, tool_input: dict) -> str:
+        if name == "apply_workflow_patch":
+            return _handle_apply_patch(tool_input)
+        elif name == "set_input":
+            return _handle_set_input(tool_input)
+        # Fallback — import the full handle for any other tool name
+        from ..tools.workflow_patch import handle as _full
+        return _full(name, tool_input)
+
+    return _dispatch
 
 
 # ---------------------------------------------------------------------------
@@ -664,34 +683,3 @@ class OptimizerAgent(BrainAgent):
             })
 
 
-# ---------------------------------------------------------------------------
-# Backward compatibility — lazy singleton
-# ---------------------------------------------------------------------------
-
-_instance: OptimizerAgent | None = None
-
-
-def _get_instance() -> OptimizerAgent:
-    global _instance
-    if _instance is None:
-        _instance = OptimizerAgent()
-    return _instance
-
-
-TOOLS = OptimizerAgent.TOOLS
-
-
-def handle(name: str, tool_input: dict) -> str:
-    """Execute an optimizer tool call."""
-    return _get_instance().handle(name, tool_input)
-
-
-def __getattr__(name: str):
-    """Proxy module-level state access to singleton instance."""
-    if name == "_OPTIMIZATIONS":
-        return _OPTIMIZATIONS
-    if name == "_GPU_HEAVY_NODES":
-        return _GPU_HEAVY_NODES
-    if name == "_TRT_PACKS":
-        return _TRT_PACKS
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

@@ -1,0 +1,175 @@
+# Knowledge trigger definitions.
+# Each knowledge file maps to keywords that activate it.
+# Priority: 1=always load when matched, 2=load if context supports, 3=load only if explicit
+
+3d_camera_pipeline:
+  priority: 2
+  keywords:
+    - AdvancedCameraControl
+    - LOAD3D_CAMERA
+    - Load3D_Camera
+    - anamorphic
+    - camera control
+    - camera export
+    - camera lens
+    - camera pipeline
+    - camera position
+    - camera rig
+    - camera settings
+    - cinematic
+    - focal length
+    - framing
+    - load3d camera
+    - sensor size
+    - shot type
+
+3d_partner_nodes:
+  priority: 2
+  keywords:
+    - NeRF to mesh
+    - best 3d
+    - compare 3d
+    - convert splat
+    - export 3d
+    - gaussian to mesh
+    - generate 3d
+    - get GLB
+    - hunyuan3d
+    - marching cubes
+    - mesh generation
+    - meshy
+    - partner
+    - partner node
+    - rodin
+    - splat to mesh
+    - trellis
+    - tripo
+    - which 3d
+    - 3d model
+
+3d_workflows:
+  priority: 1
+  keywords:
+    - 3DGS
+    - 3d
+    - 3D
+    - 3d generation
+    - 3d viewport
+    - 3d_gen
+    - 3dgs
+    - 3dview
+    - ActionDirector
+    - GLB
+    - Hunyuan3D
+    - Hunyuan3DLoader
+    - Load3DGaussian
+    - MeshDecoder
+    - Preview3D
+    - SaveGLB
+    - VNCCS
+    - Wan-I2V
+    - Wan-T2V
+    - Wan2.1
+    - action director
+    - camera angle
+    - controlnet 3d
+    - depth map from 3d
+    - gaussian
+    - glb
+    - hunyuan3d
+    - mesh
+    - ply
+    - point_cloud
+    - pose
+    - splat
+    - triplane
+    - vnccs
+    - wan2
+
+audio_workflows:
+  priority: 2
+  keywords:
+    - AudioSave
+    - ChatTTS
+    - CosyVoice
+    - CosyVoiceLoader
+    - LoadAudio
+    - QwenAudio
+    - SaveAudio
+    - TTS
+    - XTTS
+    - audio
+    - bark
+    - chattts
+    - cosyvoice
+    - fish speech
+    - narration
+    - qwen audio
+    - speech synthesis
+    - text to speech
+    - text-to-speech
+    - tortoise
+    - tts
+    - voice
+    - xtts
+
+common_recipes:
+  priority: 1
+  keywords:
+    - build workflow
+    - create workflow
+    - from scratch
+    - make a workflow
+    - new workflow
+    - set up a pipeline
+
+controlnet_patterns:
+  priority: 1
+  keywords:
+    - ControlNetApply
+    - ControlNetLoader
+    - canny
+    - control_net
+    - controlnet
+    - depth_map
+    - lineart
+    - openpose
+    - scribble
+
+flux_specifics:
+  priority: 1
+  keywords:
+    - FLUX
+    - FluxGuidance
+    - FluxLoader
+    - flux
+
+video_workflows:
+  priority: 2
+  keywords:
+    - AnimateDiffLoader
+    - VHS_
+    - animatediff
+    - animate
+    - frame
+    - motion
+    - stable_video
+    - svd
+    - video
+
+workflow_optimization:
+  priority: 2
+  keywords:
+    - ProfilerX
+    - TensorRT
+    - bottleneck
+    - faster
+    - laggy
+    - optimize workflow
+    - performance
+    - profiler
+    - slow
+    - speed up
+    - taking too long
+    - tensorrt
+    - too slow

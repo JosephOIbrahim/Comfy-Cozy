@@ -79,3 +79,6 @@ def to_json(obj, **kwargs) -> str:
     """Serialize to JSON with deterministic key ordering."""
     kwargs.setdefault("sort_keys", True)
     return _json.dumps(obj, **kwargs)
+
+
+from ..errors import error_json  # noqa: F401, E402 -- re-exported for tool modules

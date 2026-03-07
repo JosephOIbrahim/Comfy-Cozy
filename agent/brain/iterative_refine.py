@@ -20,7 +20,6 @@ import logging
 from ._sdk import BrainAgent
 from ..agents.router import Router
 from ..tools import handle as tools_handle
-from .memory import handle as memory_handle
 
 log = logging.getLogger(__name__)
 
@@ -28,7 +27,7 @@ log = logging.getLogger(__name__)
 # Tool schemas
 # ---------------------------------------------------------------------------
 
-TOOLS: list[dict] = [
+_TOOLS: list[dict] = [
     {
         "name": "iterative_refine",
         "description": (
@@ -178,7 +177,7 @@ def _record_to_memory(
             "vision_notes": vision_notes,
         }
 
-        memory_handle("record_outcome", outcome_input)
+        BrainAgent.dispatch("record_outcome", outcome_input)
         log.debug(
             "Recorded MoE outcome to memory: status=%s model=%s score=%s",
             status, model_id, quality_score,
@@ -483,7 +482,7 @@ def _handle_generation_or_modification(
     # Query memory for learned patterns to inform Intent Agent
     learned_patterns = None
     try:
-        raw = memory_handle("get_learned_patterns", {"session": "default", "model_filter": model_id})
+        raw = BrainAgent.dispatch("get_learned_patterns", {"session": "default", "model_filter": model_id})
         parsed = _json.loads(raw) if raw else {}
         if parsed and not parsed.get("error"):
             learned_patterns = parsed
@@ -812,29 +811,37 @@ def _extract_parameters_from_workflow(workflow_state) -> dict | None:
 
 
 # ---------------------------------------------------------------------------
-# Module-level handle() and dispatch
-# ---------------------------------------------------------------------------
-
-def handle(name: str, tool_input: dict) -> str:
-    """Execute a tool call."""
-    if name == "iterative_refine":
-        return _handle_iterative_refine(tool_input)
-    elif name == "classify_intent":
-        return _handle_classify_intent(tool_input)
-    return _safe_to_json({"error": f"Unknown tool: {name}"})
-
-
-# ---------------------------------------------------------------------------
 # IterativeRefineAgent — SDK class
 # ---------------------------------------------------------------------------
 
 class IterativeRefineAgent(BrainAgent):
     """MoE pipeline orchestrator -- brain agent wrapper."""
 
-    TOOLS = TOOLS
+    TOOLS = _TOOLS
 
     def __init__(self, cfg=None):
         super().__init__(cfg)
 
     def handle(self, name: str, tool_input: dict) -> str:
-        return handle(name, tool_input)
+        if name == "iterative_refine":
+            return _handle_iterative_refine(tool_input)
+        elif name == "classify_intent":
+            return _handle_classify_intent(tool_input)
+        return _safe_to_json({"error": f"Unknown tool: {name}"})
+
+
+# ---------------------------------------------------------------------------
+# Backward-compat re-exports (consumed by tests outside test_brain_*.py)
+# ---------------------------------------------------------------------------
+
+TOOLS = _TOOLS
+
+
+def handle(name: str, tool_input: dict) -> str:
+    """Module-level dispatch shim — routes to the registered instance."""
+    BrainAgent._register_all()
+    agent = BrainAgent._registry.get(name)
+    if agent is not None:
+        return agent.handle(name, tool_input)
+    from . import handle as _brain_handle
+    return _brain_handle(name, tool_input)

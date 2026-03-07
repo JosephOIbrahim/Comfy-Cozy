@@ -94,6 +94,43 @@ class TestBrainAgent:
         assert json.loads(result) == {"key": "value"}
 
 
+class TestAutoRegistration:
+    """Test the BrainAgent auto-registration machinery."""
+
+    def setup_method(self):
+        BrainAgent._reset_registry()
+
+    def teardown_method(self):
+        BrainAgent._reset_registry()
+
+    def test_get_all_tools_returns_tools(self):
+        tools = BrainAgent.get_all_tools()
+        names = [t["name"] for t in tools]
+        # Spot-check that tools from several subclasses are present
+        assert "analyze_image" in names
+        assert "plan_goal" in names
+        assert "record_outcome" in names
+        assert "spawn_subtask" in names
+        assert "profile_workflow" in names
+        assert "start_demo" in names
+
+    def test_dispatch_routes_correctly(self):
+        result = json.loads(BrainAgent.dispatch("start_demo", {"scenario": "list"}))
+        assert "available_scenarios" in result
+
+    def test_dispatch_unknown_tool(self):
+        result = json.loads(BrainAgent.dispatch("nonexistent_tool_xyz", {}))
+        assert "error" in result
+
+    def test_reset_registry(self):
+        BrainAgent.get_all_tools()
+        assert BrainAgent._registered is True
+        BrainAgent._reset_registry()
+        assert BrainAgent._registered is False
+        assert len(BrainAgent._registry) == 0
+        assert len(BrainAgent._all_tools) == 0
+
+
 class TestIntegratedConfig:
     def setup_method(self):
         reset_integrated_config()
@@ -165,24 +202,8 @@ class TestStandaloneInstantiation:
         assert len(agent.TOOLS) == 4
 
 
-class TestBackwardCompat:
-    """Verify module-level APIs still work (existing tests depend on these)."""
-
-    def test_module_tools_match_class_tools(self):
-        from agent.brain import demo, memory, optimizer, orchestrator, planner, vision
-
-        assert demo.TOOLS is demo.DemoAgent.TOOLS
-        assert planner.TOOLS is planner.PlannerAgent.TOOLS
-        assert memory.TOOLS is memory.MemoryAgent.TOOLS
-        assert vision.TOOLS is vision.VisionAgent.TOOLS
-        assert orchestrator.TOOLS is orchestrator.OrchestratorAgent.TOOLS
-        assert optimizer.TOOLS is optimizer.OptimizerAgent.TOOLS
-
-    def test_module_handle_delegates(self):
-        from agent.brain import demo
-
-        result = json.loads(demo.handle("start_demo", {"scenario": "list"}))
-        assert "available_scenarios" in result
+class TestPackageExports:
+    """Verify package-level exports still work."""
 
     def test_package_exports(self):
         from agent.brain import (
@@ -203,3 +224,25 @@ class TestBackwardCompat:
         assert issubclass(VisionAgent, BrainAgent)
         assert issubclass(OrchestratorAgent, BrainAgent)
         assert issubclass(OptimizerAgent, BrainAgent)
+
+    def test_all_brain_tools_and_handle(self):
+        from agent.brain import ALL_BRAIN_TOOLS, handle
+
+        assert len(ALL_BRAIN_TOOLS) > 0
+        # handle should dispatch correctly
+        result = json.loads(handle("start_demo", {"scenario": "list"}))
+        assert "available_scenarios" in result
+
+    def test_class_tools_match_registry(self):
+        from agent.brain import ALL_BRAIN_TOOLS
+        from agent.brain.demo import DemoAgent
+        from agent.brain.planner import PlannerAgent
+        from agent.brain.memory import MemoryAgent
+        from agent.brain.vision import VisionAgent
+        from agent.brain.orchestrator import OrchestratorAgent
+        from agent.brain.optimizer import OptimizerAgent
+
+        all_names = {t["name"] for t in ALL_BRAIN_TOOLS}
+        for cls in (DemoAgent, PlannerAgent, MemoryAgent, VisionAgent, OrchestratorAgent, OptimizerAgent):
+            for tool in cls.TOOLS:
+                assert tool["name"] in all_names, f"{tool['name']} from {cls.__name__} not in ALL_BRAIN_TOOLS"

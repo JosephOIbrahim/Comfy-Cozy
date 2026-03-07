@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 import pytest
 
-from agent.brain import optimizer
+from agent.brain import handle
 from agent.tools import workflow_patch
 
 
@@ -42,7 +42,7 @@ def _load_sample():
 
 class TestProfileWorkflow:
     def test_profile_no_workflow(self):
-        result = json.loads(optimizer.handle("profile_workflow", {}))
+        result = json.loads(handle("profile_workflow", {}))
         assert "error" in result
 
     def test_profile_with_workflow(self):
@@ -53,7 +53,7 @@ class TestProfileWorkflow:
             "trt_supported": True,
             "sweet_spots": {"max_resolution_no_tiling": [1536, 1536]},
         }):
-            result = json.loads(optimizer.handle("profile_workflow", {}))
+            result = json.loads(handle("profile_workflow", {}))
         assert result["workflow"]["total_nodes"] == 6
         assert len(result["workflow"]["gpu_heavy_nodes"]) >= 2  # KSampler + VAEDecode
         assert result["gpu"]["name"] == "NVIDIA GeForce RTX 4090"
@@ -64,14 +64,14 @@ class TestProfileWorkflow:
             "detected_name": "test", "vram_gb": 24, "trt_supported": True,
             "sweet_spots": {"max_resolution_no_tiling": [1536, 1536]},
         }):
-            result = json.loads(optimizer.handle("profile_workflow", {}))
+            result = json.loads(handle("profile_workflow", {}))
         resolutions = result["workflow"]["resolutions"]
         assert any(r["width"] == 1024 for r in resolutions)
 
 
 class TestSuggestOptimizations:
     def test_suggest_no_workflow(self):
-        result = json.loads(optimizer.handle("suggest_optimizations", {}))
+        result = json.loads(handle("suggest_optimizations", {}))
         assert "error" in result
 
     def test_suggest_with_workflow(self):
@@ -83,7 +83,7 @@ class TestSuggestOptimizations:
             "compute_cap": "sm_89",
             "sweet_spots": {"max_resolution_no_tiling": [1536, 1536]},
         }):
-            result = json.loads(optimizer.handle("suggest_optimizations", {}))
+            result = json.loads(handle("suggest_optimizations", {}))
         assert result["optimization_count"] >= 5
         # Should include TRT since GPU supports it
         ids = [o["id"] for o in result["optimizations"]]
@@ -96,7 +96,7 @@ class TestSuggestOptimizations:
             "detected_name": "manual", "vram_gb": 10, "trt_supported": True,
             "sweet_spots": {},
         }):
-            result = json.loads(optimizer.handle("suggest_optimizations", {
+            result = json.loads(handle("suggest_optimizations", {
                 "gpu_name": "NVIDIA GeForce RTX 4090",
             }))
         assert result["optimization_count"] >= 1
@@ -109,7 +109,7 @@ class TestCheckTensorRT:
              patch("agent.brain.optimizer._detect_gpu", return_value={
                  "detected_name": "RTX 4090", "trt_supported": True,
              }):
-            result = json.loads(optimizer.handle("check_tensorrt_status", {}))
+            result = json.loads(handle("check_tensorrt_status", {}))
         assert result["any_pack_installed"] is False
         assert result["ready"] is False
 
@@ -122,7 +122,7 @@ class TestCheckTensorRT:
              patch("agent.brain.optimizer._detect_gpu", return_value={
                  "detected_name": "RTX 4090", "trt_supported": True,
              }):
-            result = json.loads(optimizer.handle("check_tensorrt_status", {}))
+            result = json.loads(handle("check_tensorrt_status", {}))
         assert result["any_pack_installed"] is True
         assert result["ready"] is True
 
@@ -130,7 +130,7 @@ class TestCheckTensorRT:
 class TestApplyOptimization:
     def test_apply_vae_tiling(self):
         _load_sample()
-        result = json.loads(optimizer.handle("apply_optimization", {
+        result = json.loads(handle("apply_optimization", {
             "optimization_id": "vae_tiling",
         }))
         assert result["applied"] == "vae_tiling"
@@ -145,7 +145,7 @@ class TestApplyOptimization:
             "detected_name": "test", "vram_gb": 24, "trt_supported": True,
             "sweet_spots": {"sdxl_batch": 2, "sd15_batch": 4},
         }):
-            result = json.loads(optimizer.handle("apply_optimization", {
+            result = json.loads(handle("apply_optimization", {
                 "optimization_id": "batch_size",
             }))
         assert result["applied"] == "batch_size"
@@ -154,7 +154,7 @@ class TestApplyOptimization:
 
     def test_apply_step_optimization(self):
         _load_sample()
-        result = json.loads(optimizer.handle("apply_optimization", {
+        result = json.loads(handle("apply_optimization", {
             "optimization_id": "step_optimization",
             "params": {"steps": 15},
         }))
@@ -164,7 +164,7 @@ class TestApplyOptimization:
 
     def test_apply_sampler_efficiency(self):
         _load_sample()
-        result = json.loads(optimizer.handle("apply_optimization", {
+        result = json.loads(handle("apply_optimization", {
             "optimization_id": "sampler_efficiency",
             "params": {"sampler": "dpmpp_2m", "scheduler": "karras"},
         }))
@@ -174,14 +174,14 @@ class TestApplyOptimization:
         assert wf["3"]["inputs"]["scheduler"] == "karras"
 
     def test_apply_no_workflow(self):
-        result = json.loads(optimizer.handle("apply_optimization", {
+        result = json.loads(handle("apply_optimization", {
             "optimization_id": "vae_tiling",
         }))
         assert "error" in result
 
     def test_apply_unknown(self):
         _load_sample()
-        result = json.loads(optimizer.handle("apply_optimization", {
+        result = json.loads(handle("apply_optimization", {
             "optimization_id": "nonexistent",
         }))
         assert "error" in result

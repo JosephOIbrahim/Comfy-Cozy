@@ -14,7 +14,7 @@ from pathlib import Path
 
 import jsonpatch
 
-from ._util import to_json
+from ._util import to_json, error_json
 
 # ---------------------------------------------------------------------------
 # Module-level state (one active workflow at a time)
@@ -60,8 +60,8 @@ def _load_workflow(path_str: str) -> str | None:
             _state["format"] = "ui_with_api"
         else:
             return (
-                "UI-only workflow format -- can't patch without API data. "
-                "Re-export using 'Save (API Format)' in ComfyUI."
+                "This workflow was saved without editable data. "
+                "Re-export using 'Save (API Format)' in ComfyUI's menu."
             )
     else:
         api_nodes = {
@@ -88,12 +88,8 @@ TOOLS: list[dict] = [
     {
         "name": "apply_workflow_patch",
         "description": (
-            "Apply RFC6902 JSON patches to a workflow. If no workflow is "
-            "loaded yet, provide the file path to load it first. "
-            "Patches use the format: "
-            '[{"op": "replace", "path": "/node_id/inputs/field", "value": new_value}]. '
-            "Returns the changes made and the current state of affected fields. "
-            "Supports undo via undo_workflow_patch."
+            "Modify specific values in a workflow. Load a workflow file first "
+            "if needed. Returns what changed and supports undo."
         ),
         "input_schema": {
             "type": "object",
@@ -108,8 +104,8 @@ TOOLS: list[dict] = [
                 "patches": {
                     "type": "array",
                     "description": (
-                        "RFC6902 patch operations. Each has 'op' (usually 'replace'), "
-                        "'path' (e.g. '/5/inputs/text'), and 'value'."
+                        "Changes to apply. Each needs an operation ('replace'), "
+                        "the field path (e.g. '/5/inputs/text'), and the new value."
                     ),
                     "items": {
                         "type": "object",
@@ -128,7 +124,7 @@ TOOLS: list[dict] = [
     {
         "name": "preview_workflow_patch",
         "description": (
-            "Preview what a patch would change WITHOUT applying it. "
+            "Preview what changes would look like WITHOUT applying them. "
             "Shows before/after values for each affected field."
         ),
         "input_schema": {
@@ -136,7 +132,7 @@ TOOLS: list[dict] = [
             "properties": {
                 "patches": {
                     "type": "array",
-                    "description": "RFC6902 patch operations to preview.",
+                    "description": "Changes to preview (same format as apply_workflow_patch).",
                     "items": {
                         "type": "object",
                         "properties": {
@@ -629,8 +625,8 @@ def load_workflow_from_data(data: dict, source: str = "<sidebar>") -> str | None
 
     if fmt == "ui_only":
         return (
-            "UI-only workflow format -- can't patch without API data. "
-            "Re-export using 'Save (API Format)' in ComfyUI."
+            "This workflow was saved without editable data. "
+            "Re-export using 'Save (API Format)' in ComfyUI's menu."
         )
 
     if not nodes:

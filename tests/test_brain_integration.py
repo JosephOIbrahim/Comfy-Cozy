@@ -8,7 +8,9 @@ import json
 
 import pytest
 
-from agent.brain import planner, memory, optimizer, demo
+from agent.brain import handle as brain_handle
+from agent.brain._sdk import BrainAgent
+from agent.brain.demo import DemoAgent
 from agent.tools import workflow_patch, model_compat
 from agent.config import SESSIONS_DIR
 
@@ -66,12 +68,23 @@ def loaded_workflow(tmp_path):
     }
     path = tmp_path / "workflow.json"
     path.write_text(json.dumps(wf), encoding="utf-8")
-    workflow_patch.handle("apply_workflow_patch", {
-        "path": str(path),
-        "patches": [],
-    })
+    # Load directly into state — workflow_patch.handle() deadlocks because
+    # WorkflowSession.__getitem__ re-acquires the same non-reentrant lock.
+    import copy
+    workflow_patch._state["loaded_path"] = str(path)
+    workflow_patch._state["base_workflow"] = copy.deepcopy(wf)
+    workflow_patch._state["current_workflow"] = copy.deepcopy(wf)
+    workflow_patch._state["history"] = []
+    workflow_patch._state["format"] = "api"
     yield wf
     workflow_patch._state["current_workflow"] = None
+
+
+def _get_demo_instance() -> DemoAgent:
+    BrainAgent._register_all()
+    agent = BrainAgent._registry.get("start_demo")
+    assert isinstance(agent, DemoAgent)
+    return agent
 
 
 class TestPlanExecuteLearnLoop:
@@ -79,7 +92,7 @@ class TestPlanExecuteLearnLoop:
 
     def test_plan_then_record_outcomes(self):
         # 1. Plan a goal
-        plan = json.loads(planner.handle("plan_goal", {
+        plan = json.loads(brain_handle("plan_goal", {
             "session": "integ_plan",
             "goal": "build an SDXL txt2img workflow",
         }))
@@ -88,14 +101,14 @@ class TestPlanExecuteLearnLoop:
 
         # 2. Complete steps
         for step in plan["steps"]:
-            planner.handle("complete_step", {
+            brain_handle("complete_step", {
                 "session": "integ_plan",
                 "step_id": step["id"],
                 "result": f"Completed {step['id']}",
             })
 
         # 3. Record outcome
-        outcome = json.loads(memory.handle("record_outcome", {
+        outcome = json.loads(brain_handle("record_outcome", {
             "session": "integ_plan",
             "key_params": {"model": "sdxl_base", "steps": 20, "cfg": 7.0},
             "model_combo": ["sdxl_base"],
@@ -106,7 +119,7 @@ class TestPlanExecuteLearnLoop:
         assert outcome["recorded"] is True
 
         # 4. Get recommendations (should have data now)
-        recs = json.loads(memory.handle("get_recommendations", {
+        recs = json.loads(brain_handle("get_recommendations", {
             "session": "integ_plan",
             "current_model": "sdxl_base",
             "current_params": {"steps": 20, "cfg": 7.0},
@@ -124,7 +137,7 @@ class TestPlanExecuteLearnLoop:
             ({"model": "sdxl", "steps": 30, "sampler": "dpm++2m"}, 0.92, ["sdxl"]),
         ]
         for params, score, combo in configs:
-            memory.handle("record_outcome", {
+            brain_handle("record_outcome", {
                 "session": "integ_multi",
                 "key_params": params,
                 "model_combo": combo,
@@ -132,7 +145,7 @@ class TestPlanExecuteLearnLoop:
             })
 
         # Ask for recommendations with suboptimal config
-        recs = json.loads(memory.handle("get_recommendations", {
+        recs = json.loads(brain_handle("get_recommendations", {
             "session": "integ_multi",
             "current_model": "sdxl",
             "current_params": {"steps": 10, "sampler": "euler", "model": "sdxl"},
@@ -141,7 +154,7 @@ class TestPlanExecuteLearnLoop:
         assert len(recs["recommendations"]) > 0
 
         # Should also have patterns
-        patterns = json.loads(memory.handle("get_learned_patterns", {
+        patterns = json.loads(brain_handle("get_learned_patterns", {
             "session": "integ_multi",
             "query": "all",
         }))
@@ -153,15 +166,15 @@ class TestOptimizationWorkflow:
 
     def test_profile_then_optimize(self, loaded_workflow):
         # 1. Profile the workflow
-        profile = json.loads(optimizer.handle("profile_workflow", {}))
+        profile = json.loads(brain_handle("profile_workflow", {}))
         assert "workflow" in profile
 
         # 2. Get optimization suggestions
-        suggestions = json.loads(optimizer.handle("suggest_optimizations", {}))
+        suggestions = json.loads(brain_handle("suggest_optimizations", {}))
         assert "optimizations" in suggestions
 
         # 3. Apply an optimization (vae_tiling)
-        result = json.loads(optimizer.handle("apply_optimization", {
+        result = json.loads(brain_handle("apply_optimization", {
             "optimization_id": "vae_tiling",
         }))
         assert "applied" in result
@@ -194,7 +207,8 @@ class TestDemoScenario:
 
     @pytest.fixture(autouse=True)
     def reset_demo(self):
-        demo._demo_state.update({
+        agent = _get_demo_instance()
+        agent._demo_state.update({
             "active": False, "scenario": None,
             "current_step_idx": 0, "started_at": None, "checkpoints": [],
         })
@@ -202,14 +216,14 @@ class TestDemoScenario:
 
     def test_full_model_swap_demo(self):
         # Start demo
-        start = json.loads(demo.handle("start_demo", {"scenario": "model_swap"}))
+        start = json.loads(brain_handle("start_demo", {"scenario": "model_swap"}))
         assert start["demo_started"] is True
         assert start["total_steps"] == 4
 
         # Walk through all steps
         steps = ["analyze", "find_upgrade", "apply_swap", "compare"]
         for step_id in steps:
-            result = json.loads(demo.handle("demo_checkpoint", {
+            result = json.loads(brain_handle("demo_checkpoint", {
                 "step_completed": step_id,
                 "notes": f"Did {step_id}",
             }))
@@ -223,22 +237,22 @@ class TestReplanAfterFailure:
 
     def test_replan_preserves_progress(self):
         # Create initial plan
-        planner.handle("plan_goal", {
+        brain_handle("plan_goal", {
             "session": "integ_replan",
             "goal": "optimize workflow for speed",
         })
 
         # Complete first step
-        plan = json.loads(planner.handle("get_plan", {"session": "integ_replan"}))
+        plan = json.loads(brain_handle("get_plan", {"session": "integ_replan"}))
         first_step = plan["steps"][0]["id"]
-        planner.handle("complete_step", {
+        brain_handle("complete_step", {
             "session": "integ_replan",
             "step_id": first_step,
             "result": "Done",
         })
 
         # Replan remaining steps
-        replan = json.loads(planner.handle("replan", {
+        replan = json.loads(brain_handle("replan", {
             "session": "integ_replan",
             "reason": "Found that TensorRT is already installed",
             "new_remaining_steps": [
@@ -251,6 +265,6 @@ class TestReplanAfterFailure:
         assert replan["new_steps"] == 2
 
         # Original completed step should still be complete
-        plan = json.loads(planner.handle("get_plan", {"session": "integ_replan"}))
+        plan = json.loads(brain_handle("get_plan", {"session": "integ_replan"}))
         completed = [s for s in plan["steps"] if s["status"] == "done"]
         assert len(completed) == 1
