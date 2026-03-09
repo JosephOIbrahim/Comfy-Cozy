@@ -7,6 +7,7 @@ import pytest
 
 from agent.tools.verify_execution import (
     TOOLS,
+    _build_narrative_summary,
     _extract_key_params,
     _verify_prompt,
     _workflow_hash,
@@ -334,3 +335,334 @@ class TestAutoVerify:
         assert "get_output_path" in names
         assert "verify_execution" in names
         assert len(TOOLS) == 2
+
+
+# ---------------------------------------------------------------------------
+# TestMetadataEmbed — metadata auto-embed in verify_execution
+# ---------------------------------------------------------------------------
+
+class TestMetadataEmbed:
+    """Tests for metadata auto-embedding during verify_execution."""
+
+    @pytest.fixture
+    def png_file(self, mock_comfyui_database):
+        """Create a real PNG file in the mock output dir."""
+        img_path = mock_comfyui_database / "ComfyUI_00001_.png"
+        # Minimal valid PNG (1x1 white pixel)
+        import struct
+        import zlib
+
+        def _make_png():
+            sig = b"\x89PNG\r\n\x1a\n"
+            # IHDR
+            ihdr_data = struct.pack(">IIBBBBB", 1, 1, 8, 2, 0, 0, 0)
+            ihdr_crc = zlib.crc32(b"IHDR" + ihdr_data) & 0xFFFFFFFF
+            ihdr = (
+                struct.pack(">I", 13) + b"IHDR" + ihdr_data
+                + struct.pack(">I", ihdr_crc)
+            )
+            # IDAT
+            raw = zlib.compress(b"\x00\xff\xff\xff")
+            idat_crc = zlib.crc32(b"IDAT" + raw) & 0xFFFFFFFF
+            idat = (
+                struct.pack(">I", len(raw)) + b"IDAT" + raw
+                + struct.pack(">I", idat_crc)
+            )
+            # IEND
+            iend_crc = zlib.crc32(b"IEND") & 0xFFFFFFFF
+            iend = struct.pack(">I", 0) + b"IEND" + struct.pack(">I", iend_crc)
+            return sig + ihdr + idat + iend
+
+        img_path.write_bytes(_make_png())
+        return img_path
+
+    @pytest.fixture
+    def history_with_png(self, png_file):
+        """History response referencing the PNG file."""
+        return {
+            "abc123": {
+                "status": {"status_str": "success", "completed": True},
+                "outputs": {
+                    "9": {
+                        "images": [
+                            {
+                                "filename": png_file.name,
+                                "subfolder": "",
+                            },
+                        ],
+                    },
+                },
+            },
+        }
+
+    @pytest.fixture
+    def sample_wf(self):
+        return {
+            "1": {
+                "class_type": "CheckpointLoaderSimple",
+                "inputs": {"ckpt_name": "sd15.safetensors"},
+            },
+            "2": {
+                "class_type": "KSampler",
+                "inputs": {"steps": 20, "cfg": 7.0},
+            },
+        }
+
+    def _mock_dispatch(self, name, inp):
+        """Default dispatch mock: returns success for known tools."""
+        if name == "get_current_intent":
+            return json.dumps({"status": "empty", "intent": None})
+        if name == "record_outcome":
+            return json.dumps({"recorded": True})
+        if name == "write_image_metadata":
+            return json.dumps({"status": "ok"})
+        return json.dumps({"error": "unknown"})
+
+    def test_verify_embeds_metadata_on_success(
+        self, mock_comfyui_database, png_file, history_with_png, sample_wf,
+    ):
+        """When outputs exist and are PNGs, verify dispatches write_image_metadata."""
+        call_log = []
+
+        def dispatch(name, inp):
+            call_log.append(name)
+            return self._mock_dispatch(name, inp)
+
+        with patch("agent.tools.verify_execution.httpx.Client") as MockClient:
+            mock_resp = MagicMock()
+            mock_resp.json.return_value = history_with_png
+            MockClient.return_value.__enter__.return_value.get.return_value = (
+                mock_resp
+            )
+            with patch("agent.tools.handle", side_effect=dispatch):
+                with patch(
+                    "agent.tools.workflow_patch.get_current_workflow",
+                    return_value=sample_wf,
+                ):
+                    result = _verify_prompt("abc123")
+
+        assert "write_image_metadata" in call_log
+        assert result["metadata_embedded"] is True
+
+    def test_verify_skips_metadata_when_outputs_missing(
+        self, mock_comfyui_database,
+    ):
+        """When output file doesn't exist, no metadata embedding."""
+        history = {
+            "abc123": {
+                "status": {"status_str": "success", "completed": True},
+                "outputs": {
+                    "9": {
+                        "images": [
+                            {"filename": "nonexistent.png", "subfolder": ""},
+                        ],
+                    },
+                },
+            },
+        }
+        call_log = []
+
+        def dispatch(name, inp):
+            call_log.append(name)
+            return self._mock_dispatch(name, inp)
+
+        with patch("agent.tools.verify_execution.httpx.Client") as MockClient:
+            mock_resp = MagicMock()
+            mock_resp.json.return_value = history
+            MockClient.return_value.__enter__.return_value.get.return_value = (
+                mock_resp
+            )
+            with patch("agent.tools.handle", side_effect=dispatch):
+                result = _verify_prompt("abc123")
+
+        assert "write_image_metadata" not in call_log
+        assert result["metadata_embedded"] is False
+
+    def test_verify_metadata_includes_intent(
+        self, mock_comfyui_database, png_file, history_with_png, sample_wf,
+    ):
+        """When get_current_intent returns intent data, metadata has intent key."""
+        captured_payloads = []
+
+        def dispatch(name, inp):
+            if name == "get_current_intent":
+                return json.dumps({
+                    "status": "ok",
+                    "intent": {
+                        "user_request": "Make it dreamier",
+                        "interpretation": "Lower CFG",
+                        "style_references": [],
+                        "session_context": "",
+                    },
+                })
+            if name == "record_outcome":
+                return json.dumps({"recorded": True})
+            if name == "write_image_metadata":
+                captured_payloads.append(inp)
+                return json.dumps({"status": "ok"})
+            return json.dumps({})
+
+        with patch("agent.tools.verify_execution.httpx.Client") as MockClient:
+            mock_resp = MagicMock()
+            mock_resp.json.return_value = history_with_png
+            MockClient.return_value.__enter__.return_value.get.return_value = (
+                mock_resp
+            )
+            with patch("agent.tools.handle", side_effect=dispatch):
+                with patch(
+                    "agent.tools.workflow_patch.get_current_workflow",
+                    return_value=sample_wf,
+                ):
+                    result = _verify_prompt("abc123")
+
+        assert len(captured_payloads) == 1
+        metadata = captured_payloads[0]["metadata"]
+        assert "intent" in metadata
+        assert metadata["intent"]["user_request"] == "Make it dreamier"
+
+    def test_verify_metadata_without_intent(
+        self, mock_comfyui_database, png_file, history_with_png, sample_wf,
+    ):
+        """When get_current_intent returns 'empty', metadata still embedded but no intent."""
+        captured_payloads = []
+
+        def dispatch(name, inp):
+            if name == "get_current_intent":
+                return json.dumps({"status": "empty", "intent": None})
+            if name == "record_outcome":
+                return json.dumps({"recorded": True})
+            if name == "write_image_metadata":
+                captured_payloads.append(inp)
+                return json.dumps({"status": "ok"})
+            return json.dumps({})
+
+        with patch("agent.tools.verify_execution.httpx.Client") as MockClient:
+            mock_resp = MagicMock()
+            mock_resp.json.return_value = history_with_png
+            MockClient.return_value.__enter__.return_value.get.return_value = (
+                mock_resp
+            )
+            with patch("agent.tools.handle", side_effect=dispatch):
+                with patch(
+                    "agent.tools.workflow_patch.get_current_workflow",
+                    return_value=sample_wf,
+                ):
+                    result = _verify_prompt("abc123")
+
+        assert result["metadata_embedded"] is True
+        assert len(captured_payloads) == 1
+        metadata = captured_payloads[0]["metadata"]
+        assert "intent" not in metadata
+
+    def test_verify_metadata_embed_failure_doesnt_break(
+        self, mock_comfyui_database, png_file, history_with_png, sample_wf,
+    ):
+        """If write_image_metadata raises, verify still returns normally."""
+
+        def dispatch(name, inp):
+            if name == "get_current_intent":
+                return json.dumps({"status": "empty", "intent": None})
+            if name == "record_outcome":
+                return json.dumps({"recorded": True})
+            if name == "write_image_metadata":
+                raise RuntimeError("Disk full")
+            return json.dumps({})
+
+        with patch("agent.tools.verify_execution.httpx.Client") as MockClient:
+            mock_resp = MagicMock()
+            mock_resp.json.return_value = history_with_png
+            MockClient.return_value.__enter__.return_value.get.return_value = (
+                mock_resp
+            )
+            with patch("agent.tools.handle", side_effect=dispatch):
+                with patch(
+                    "agent.tools.workflow_patch.get_current_workflow",
+                    return_value=sample_wf,
+                ):
+                    result = _verify_prompt("abc123")
+
+        assert result["metadata_embedded"] is False
+        assert result["status"] == "complete"
+        assert result["outcome_recorded"] is True
+
+    def test_verify_result_includes_metadata_embedded_flag(
+        self, mock_comfyui_database, png_file, history_with_png, sample_wf,
+    ):
+        """Result dict always has metadata_embedded key."""
+
+        def dispatch(name, inp):
+            return self._mock_dispatch(name, inp)
+
+        with patch("agent.tools.verify_execution.httpx.Client") as MockClient:
+            mock_resp = MagicMock()
+            mock_resp.json.return_value = history_with_png
+            MockClient.return_value.__enter__.return_value.get.return_value = (
+                mock_resp
+            )
+            with patch("agent.tools.handle", side_effect=dispatch):
+                with patch(
+                    "agent.tools.workflow_patch.get_current_workflow",
+                    return_value=sample_wf,
+                ):
+                    result = _verify_prompt("abc123")
+
+        assert "metadata_embedded" in result
+        assert isinstance(result["metadata_embedded"], bool)
+        assert result["metadata_embedded"] is True
+
+
+# ---------------------------------------------------------------------------
+# TestNarrativeSummary — _build_narrative_summary tests
+# ---------------------------------------------------------------------------
+
+class TestNarrativeSummary:
+    """Tests for _build_narrative_summary."""
+
+    def test_narrative_summary_full(self):
+        """All params produce a readable string with all components."""
+        params = {
+            "model": "dreamshaper_8.safetensors",
+            "resolution": "1024x1024",
+            "steps": 30,
+            "cfg": 7.0,
+            "sampler_name": "euler",
+            "scheduler": "normal",
+            "denoise": 0.7,
+        }
+        summary = _build_narrative_summary(params)
+        assert "dreamshaper_8" in summary
+        assert "1024x1024" in summary
+        assert "30 steps" in summary
+        assert "CFG 7.0" in summary
+        assert "euler normal" in summary
+        assert "(denoise 0.7)" in summary
+
+    def test_narrative_summary_minimal(self):
+        """Only model key produces just the model name."""
+        params = {"model": "sd15.safetensors"}
+        summary = _build_narrative_summary(params)
+        assert "sd15" in summary
+
+    def test_narrative_summary_strips_extension(self):
+        """Model extension is stripped from output."""
+        params = {"model": "v1-5-pruned.safetensors"}
+        summary = _build_narrative_summary(params)
+        assert "v1-5-pruned" in summary
+        assert ".safetensors" not in summary
+
+    def test_narrative_summary_denoise_shown_when_partial(self):
+        """Denoise < 1.0 is shown."""
+        params = {"model": "sd15.ckpt", "denoise": 0.7}
+        summary = _build_narrative_summary(params)
+        assert "(denoise 0.7)" in summary
+
+    def test_narrative_summary_denoise_hidden_at_full(self):
+        """Denoise == 1.0 is not shown."""
+        params = {"model": "sd15.ckpt", "denoise": 1.0}
+        summary = _build_narrative_summary(params)
+        assert "(denoise" not in summary
+
+    def test_narrative_summary_empty_params(self):
+        """Empty dict returns 'unknown'."""
+        summary = _build_narrative_summary({})
+        assert "unknown" in summary.lower()

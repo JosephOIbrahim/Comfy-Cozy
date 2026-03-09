@@ -86,6 +86,26 @@ TOOLS: list[dict] = [
             "required": ["path"],
         },
     },
+    {
+        "name": "classify_workflow",
+        "description": (
+            "Classify a workflow into known pipeline patterns. "
+            "Returns the base pattern (txt2img, img2img, inpaint, etc.), "
+            "any modifiers (controlnet, lora, upscale, etc.), and a "
+            "human-readable description. Use this to understand what "
+            "kind of pipeline a workflow implements."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "Absolute path to the workflow JSON file.",
+                },
+            },
+            "required": ["path"],
+        },
+    },
 ]
 
 # ---------------------------------------------------------------------------
@@ -206,12 +226,27 @@ def _find_editable_fields(nodes: dict, class_filter: str = "") -> list[dict]:
     return fields
 
 
-def _build_summary(nodes: dict, connections: list[dict], fmt: str) -> str:
+def _build_summary(
+    nodes: dict,
+    connections: list[dict],
+    fmt: str,
+    classification: dict | None = None,
+) -> str:
     """Build a human-readable summary of the workflow pipeline."""
     if not nodes:
         return "Empty workflow (no nodes found)."
 
     lines = []
+
+    if classification:
+        lines.append(
+            f"Pipeline: {classification['description']}"
+        )
+        if classification.get("modifiers"):
+            lines.append(
+                f"Modifiers: {', '.join(classification['modifiers'])}"
+            )
+        lines.append("")
 
     # Class type counts
     class_counts: dict[str, int] = {}
@@ -284,6 +319,176 @@ def _build_summary(nodes: dict, connections: list[dict], fmt: str) -> str:
         )
 
     return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# Pattern classification
+# ---------------------------------------------------------------------------
+
+_PATTERN_SIGNATURES: dict[str, dict] = {
+    "txt2img": {
+        "required": ["EmptyLatentImage"],
+        "sampler": True,
+        "loader": True,
+        "description": "Text-to-image generation",
+    },
+    "img2img": {
+        "required_any": [["LoadImage"]],
+        "extra_required_any": [["VAEEncode", "VAEEncodeTiled"]],
+        "sampler": True,
+        "loader": True,
+        "description": "Image-to-image transformation",
+    },
+    "inpaint": {
+        "required_any": [
+            ["SetLatentNoiseMask"],
+            ["InpaintModelConditioning"],
+        ],
+        "sampler": True,
+        "description": "Inpainting or outpainting",
+    },
+    "controlnet": {
+        "required_any": [
+            ["ControlNetApply"],
+            ["ControlNetApplyAdvanced"],
+            ["Apply ControlNet"],
+        ],
+        "sampler": True,
+        "description": "ControlNet-guided generation",
+    },
+    "upscale": {
+        "required_any": [
+            ["UpscaleModelLoader"],
+            ["ImageUpscaleWithModel"],
+            ["LatentUpscale"],
+            ["LatentUpscaleBy"],
+        ],
+        "description": "Image or latent upscaling",
+    },
+    "lora": {
+        "required_any": [
+            ["LoraLoader"],
+            ["LoraLoaderModelOnly"],
+        ],
+        "description": "LoRA model adaptation",
+    },
+    "ip_adapter": {
+        "required_any": [
+            ["IPAdapterApply"],
+            ["IPAdapter"],
+            ["IPAdapterAdvanced"],
+        ],
+        "description": "IP-Adapter image-guided generation",
+    },
+    "video": {
+        "required_any": [
+            ["VHS_VideoCombine"],
+            ["AnimateDiff"],
+            ["SVD_img2vid_Conditioning"],
+        ],
+        "description": "Video generation or animation",
+    },
+}
+
+
+def _classify_pattern(nodes: dict) -> dict:
+    """Classify workflow into known pipeline patterns.
+
+    Analyzes node class_types to identify what kind of pipeline this is.
+    Returns a dict with pattern name, description, modifiers, and
+    class_types.
+    """
+    # Collect all class_types (He2025: sorted for determinism)
+    class_types = sorted({
+        n.get("class_type", "")
+        for n in nodes.values()
+        if isinstance(n, dict) and not n.get("_ui_node")
+    })
+    class_set = set(class_types)
+
+    has_sampler = any(
+        "sampler" in ct.lower() or "ksampler" in ct.lower()
+        for ct in class_types
+    )
+    has_loader = any(
+        "checkpoint" in ct.lower() or "unetloader" in ct.lower()
+        for ct in class_types
+    )
+
+    matched_patterns = []
+    for pattern_name, sig in sorted(_PATTERN_SIGNATURES.items()):
+        if "required" in sig:
+            if not all(req in class_set for req in sig["required"]):
+                continue
+
+        if "required_any" in sig:
+            found_any = False
+            for group in sig["required_any"]:
+                if any(
+                    node_type in class_set for node_type in group
+                ):
+                    found_any = True
+                    break
+            if not found_any:
+                continue
+
+        if "extra_required_any" in sig:
+            found_extra = False
+            for group in sig["extra_required_any"]:
+                if any(
+                    node_type in class_set for node_type in group
+                ):
+                    found_extra = True
+                    break
+            if not found_extra:
+                continue
+
+        if sig.get("sampler") and not has_sampler:
+            continue
+        if sig.get("loader") and not has_loader:
+            continue
+
+        matched_patterns.append(pattern_name)
+
+    # Determine base pattern
+    base_pattern = "unknown"
+    if not matched_patterns:
+        if has_sampler and has_loader:
+            base_pattern = "custom"
+        elif has_sampler:
+            base_pattern = "custom_sampler"
+    else:
+        base_priority = ["txt2img", "img2img", "inpaint"]
+        for bp in base_priority:
+            if bp in matched_patterns:
+                base_pattern = bp
+                break
+        if base_pattern == "unknown":
+            base_pattern = matched_patterns[0]
+
+    modifiers = sorted(
+        [p for p in matched_patterns if p != base_pattern]
+    )
+
+    desc_parts = [
+        _PATTERN_SIGNATURES.get(base_pattern, {}).get(
+            "description", base_pattern
+        )
+    ]
+    for mod in modifiers:
+        mod_desc = _PATTERN_SIGNATURES.get(mod, {}).get(
+            "description", mod
+        )
+        desc_parts.append(f"with {mod_desc.lower()}")
+
+    return {
+        "base_pattern": base_pattern,
+        "modifiers": modifiers,
+        "all_patterns": sorted(matched_patterns),
+        "description": " ".join(desc_parts),
+        "node_count": len(nodes),
+        "class_types": class_types,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -401,7 +606,8 @@ def _handle_load_workflow(tool_input: dict) -> str:
     nodes, fmt = _extract_api_format(data)
     connections = _trace_connections(nodes)
     editable = _find_editable_fields(nodes)
-    summary = _build_summary(nodes, connections, fmt)
+    classification = _classify_pattern(nodes)
+    summary = _build_summary(nodes, connections, fmt, classification)
 
     # Build node list for output
     node_list = {}
@@ -419,6 +625,7 @@ def _handle_load_workflow(tool_input: dict) -> str:
         "node_count": len(nodes),
         "connection_count": len(connections),
         "editable_field_count": len(editable),
+        "classification": classification,
         "summary": summary,
         "nodes": node_list,
         "connections": connections,
@@ -445,6 +652,19 @@ def _handle_validate_workflow(tool_input: dict) -> str:
     connections = _trace_connections(nodes)
     result = _validate_against_comfyui(nodes, connections)
     return to_json(result)
+
+
+def _handle_classify_workflow(tool_input: dict) -> str:
+    path_str = tool_input["path"]
+    data, err = _load_json(path_str)
+    if err:
+        return to_json({"error": err})
+
+    nodes, fmt = _extract_api_format(data)
+    classification = _classify_pattern(nodes)
+    classification["file"] = path_str
+    classification["format"] = fmt
+    return to_json(classification)
 
 
 def _handle_get_editable_fields(tool_input: dict) -> str:
@@ -491,7 +711,8 @@ def summarize_workflow_data(data: dict) -> dict:
     nodes, fmt = _extract_api_format(data)
     connections = _trace_connections(nodes)
     editable = _find_editable_fields(nodes)
-    summary = _build_summary(nodes, connections, fmt)
+    classification = _classify_pattern(nodes)
+    summary = _build_summary(nodes, connections, fmt, classification)
 
     node_list = {}
     for nid, node in sorted(nodes.items()):
@@ -505,6 +726,7 @@ def summarize_workflow_data(data: dict) -> dict:
         "node_count": len(nodes),
         "connection_count": len(connections),
         "editable_field_count": len(editable),
+        "classification": classification,
         "summary": summary,
         "nodes": node_list,
         "editable_fields": editable,
@@ -518,6 +740,8 @@ def handle(name: str, tool_input: dict) -> str:
             return _handle_load_workflow(tool_input)
         elif name == "validate_workflow":
             return _handle_validate_workflow(tool_input)
+        elif name == "classify_workflow":
+            return _handle_classify_workflow(tool_input)
         elif name == "get_editable_fields":
             return _handle_get_editable_fields(tool_input)
         else:

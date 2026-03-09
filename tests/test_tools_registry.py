@@ -43,6 +43,7 @@ class TestToolRegistry:
             "load_workflow",
             "validate_workflow",
             "get_editable_fields",
+            "classify_workflow",
             # Workflow patching (RFC6902)
             "apply_workflow_patch",
             "preview_workflow_patch",
@@ -146,7 +147,7 @@ class TestToolRegistry:
         )
 
     def test_total_tool_count(self):
-        assert len(ALL_TOOLS) == 80, f"Expected 80 tools, got {len(ALL_TOOLS)}"
+        assert len(ALL_TOOLS) == 81, f"Expected 81 tools, got {len(ALL_TOOLS)}"
 
     def test_brain_tool_error_returns_json(self):
         """Brain tool exceptions should be caught and returned as JSON errors."""

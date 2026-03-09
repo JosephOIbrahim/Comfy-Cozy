@@ -10,6 +10,7 @@ Closes the execute -> verify -> learn loop by:
 import hashlib
 import json
 import logging
+import time as _time
 
 import httpx
 
@@ -179,6 +180,49 @@ def _workflow_hash(workflow: dict) -> str:
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
 
 
+def _build_narrative_summary(key_params: dict) -> str:
+    """Build a narrative workflow summary from key params.
+
+    Produces: "modelname at 1024x1024, 30 steps, CFG 7.0, with euler normal"
+    """
+    parts = []
+
+    model = key_params.get("model", "unknown")
+    for suffix in (".safetensors", ".ckpt", ".pt"):
+        if model.endswith(suffix):
+            model = model[: -len(suffix)]
+            break
+    parts.append(model)
+
+    resolution = key_params.get("resolution")
+    if resolution:
+        parts.append(f"at {resolution}")
+
+    steps = key_params.get("steps")
+    if steps:
+        parts.append(f"{steps} steps")
+
+    cfg = key_params.get("cfg")
+    if cfg is not None:
+        parts.append(f"CFG {cfg}")
+
+    sampler = key_params.get("sampler_name")
+    scheduler = key_params.get("scheduler")
+    if sampler:
+        sampler_str = sampler
+        if scheduler:
+            sampler_str = f"{sampler} {scheduler}"
+        parts.append(f"with {sampler_str}")
+
+    denoise = key_params.get("denoise")
+    if denoise is not None and denoise < 1.0:
+        parts.append(f"(denoise {denoise})")
+
+    if len(parts) <= 2:
+        return ", ".join(parts)
+    return ", ".join(parts[:2]) + ", " + ", ".join(parts[2:])
+
+
 def _verify_prompt(
     prompt_id: str,
     *,
@@ -295,11 +339,10 @@ def _verify_prompt(
     # record_outcome expects top-level fields: key_params, render_time_s,
     # quality_score, workflow_hash, goal_id, model_combo, etc.
     outcome_recorded = False
+    # Build model_combo from key_params (used in step 5 and 5.6)
+    model_combo = []
     try:
         from . import handle as dispatch_tool
-
-        # Build model_combo from key_params
-        model_combo = []
         if key_params.get("model"):
             model_combo.append(key_params["model"])
 
@@ -307,9 +350,7 @@ def _verify_prompt(
             "session": session,
             "key_params": key_params,
             "workflow_hash": workflow_hash,
-            "workflow_summary": f"{key_params.get('model', 'unknown')} "
-                               f"{key_params.get('steps', '?')} steps "
-                               f"CFG {key_params.get('cfg', '?')}",
+            "workflow_summary": _build_narrative_summary(key_params),
             "model_combo": model_combo,
         }
         if render_time_s is not None:
@@ -323,6 +364,50 @@ def _verify_prompt(
         outcome_recorded = True
     except Exception as e:
         log.warning("Failed to record outcome: %s", e)
+
+    # 5.5 Collect intent for metadata
+    intent_data = None
+    try:
+        from . import handle as _dispatch_tool
+        intent_raw = _dispatch_tool("get_current_intent", {})
+        intent_result = json.loads(intent_raw)
+        if intent_result.get("status") == "ok":
+            intent_data = intent_result["intent"]
+    except Exception:
+        pass
+
+    # 5.6 Embed creative metadata into PNG outputs
+    metadata_embedded = False
+    if all_exist and outputs:
+        for out in outputs:
+            if (out["type"] == "image" and out["exists"]
+                    and out["absolute_path"].lower().endswith(".png")):
+                metadata_payload = {
+                    "schema_version": 1,
+                    "timestamp": _time.time(),
+                    "session": {
+                        "session_name": session,
+                        "workflow_hash": workflow_hash,
+                        "key_params": key_params,
+                        "model_combo": model_combo,
+                    },
+                }
+                if intent_data:
+                    metadata_payload["intent"] = {
+                        "user_request": intent_data.get("user_request", ""),
+                        "interpretation": intent_data.get("interpretation", ""),
+                        "style_references": intent_data.get("style_references", []),
+                        "session_context": intent_data.get("session_context", ""),
+                    }
+                try:
+                    from . import handle as _dispatch_tool
+                    _dispatch_tool("write_image_metadata", {
+                        "image_path": out["absolute_path"],
+                        "metadata": metadata_payload,
+                    })
+                    metadata_embedded = True
+                except Exception as e:
+                    log.warning("Failed to embed metadata into %s: %s", out["absolute_path"], e)
 
     # 6. Build result
     mapped_status = "complete" if status_str == "success" else status_str
@@ -350,6 +435,7 @@ def _verify_prompt(
         "workflow_hash": workflow_hash,
         "key_params": key_params,
         "render_time_s": render_time_s,
+        "metadata_embedded": metadata_embedded,
         "message": " ".join(message_parts),
     }
 

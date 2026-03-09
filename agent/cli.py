@@ -128,6 +128,21 @@ def run(
                 },
             }
 
+            # Detect last output image for metadata resume
+            if session_context and load_result.get("workflow_restored"):
+                try:
+                    from pathlib import Path
+                    from .config import COMFYUI_OUTPUT_DIR
+                    pngs = sorted(
+                        COMFYUI_OUTPUT_DIR.glob("*.png"),
+                        key=lambda p: p.stat().st_mtime,
+                        reverse=True,
+                    )
+                    if pngs:
+                        session_context["last_output_path"] = str(pngs[0])
+                except Exception:
+                    pass
+
     console.print("[dim]Type your question or command. 'quit' to exit.[/dim]\n")
 
     # Import here to avoid loading anthropic at CLI startup

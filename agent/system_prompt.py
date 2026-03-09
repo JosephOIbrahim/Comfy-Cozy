@@ -183,6 +183,35 @@ def build_system_prompt(session_context: dict | None = None) -> str:
         except Exception:
             pass  # Memory unavailable -- skip silently
 
+    # Auto-read creative metadata from last output (if available)
+    if session_context and session_context.get("last_output_path"):
+        try:
+            from .tools import handle as _tools_handle
+            import json as _json
+            meta_raw = _tools_handle("reconstruct_context", {
+                "image_path": session_context["last_output_path"],
+            })
+            meta = _json.loads(meta_raw)
+            if meta.get("has_context"):
+                parts.append("\n--- Last Output Context ---")
+                parts.append(meta.get("summary", ""))
+                ctx = meta.get("context", {})
+                if ctx.get("intent"):
+                    parts.append(
+                        f"  Artist wanted: {ctx['intent'].get('what_artist_wanted', '')}"
+                    )
+                    parts.append(
+                        f"  Interpretation: {ctx['intent'].get('how_agent_interpreted', '')}"
+                    )
+                if ctx.get("session", {}).get("key_params"):
+                    kp = ctx["session"]["key_params"]
+                    parts.append(
+                        f"  Last params: {', '.join(f'{k}={v}' for k, v in sorted(kp.items()))}"
+                    )
+                parts.append("")
+        except Exception:
+            pass  # Metadata unavailable -- skip silently
+
     # Load core knowledge files (always)
     relevant_extras = _detect_relevant_knowledge(session_context)
     if KNOWLEDGE_DIR.exists():

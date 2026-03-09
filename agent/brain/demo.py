@@ -36,7 +36,7 @@ _DEMO_SCENARIOS: dict[str, dict] = {
                     "I'll look at the workflow structure, what model it's using, "
                     "and what parameters are set."
                 ),
-                "suggested_tools": ["load_workflow", "get_editable_fields"],
+                "suggested_tools": ["load_workflow", "classify_workflow", "get_editable_fields"],
             },
             {
                 "id": "find_upgrade",
@@ -200,7 +200,8 @@ _DEMO_SCENARIOS: dict[str, dict] = {
                     "validated, and reversible."
                 ),
                 "suggested_tools": [
-                    "get_workflow_template", "set_input", "list_models",
+                    "get_workflow_template", "classify_workflow", "set_input",
+                    "list_models",
                 ],
             },
             {
@@ -386,12 +387,24 @@ class DemoAgent(BrainAgent):
         step_idx = self._demo_state["current_step_idx"]
         total = len(scenario["steps"])
 
+        # Enrich checkpoint with workflow pattern if available
+        pattern_info = None
+        try:
+            from ..tools.workflow_patch import get_current_workflow
+            from ..tools.workflow_parse import _classify_pattern, _extract_api_format
+            wf = get_current_workflow()
+            if wf:
+                nodes, _fmt = _extract_api_format(wf)
+                pattern_info = _classify_pattern(nodes)
+        except Exception:
+            pass
+
         if step_idx >= total:
             # Demo complete
             elapsed = time.time() - self._demo_state["started_at"]
             self._demo_state["active"] = False
 
-            return self.to_json({
+            result = {
                 "demo_complete": True,
                 "scenario": self._demo_state["scenario"],
                 "title": scenario["title"],
@@ -403,13 +416,16 @@ class DemoAgent(BrainAgent):
                     f"Demo complete! '{scenario['title']}' finished in "
                     f"{int(elapsed // 60)}m {int(elapsed % 60)}s."
                 ),
-            })
+            }
+            if pattern_info is not None:
+                result["workflow_pattern"] = pattern_info
+            return self.to_json(result)
 
         # Show next step
         next_step = scenario["steps"][step_idx]
         progress = f"{step_idx}/{total}"
 
-        return self.to_json({
+        result = {
             "checkpoint": step_completed,
             "progress": progress,
             "next_step": {
@@ -423,7 +439,10 @@ class DemoAgent(BrainAgent):
                 f"[{progress}] {step_completed} complete. "
                 f"Next: {next_step['label']}."
             ),
-        })
+        }
+        if pattern_info is not None:
+            result["workflow_pattern"] = pattern_info
+        return self.to_json(result)
 
 
 DEMO_SCENARIOS = _DEMO_SCENARIOS
