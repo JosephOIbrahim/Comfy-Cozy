@@ -5,7 +5,6 @@ import json
 import pytest
 
 from agent.brain import handle
-from agent.brain._sdk import BrainAgent
 from agent.brain.memory import (
     MemoryAgent,
     OUTCOME_SCHEMA_VERSION,

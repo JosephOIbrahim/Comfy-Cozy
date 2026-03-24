@@ -2,12 +2,10 @@
 
 import json
 
-import pytest
 
 from agent.tools.workflow_parse import (
     _build_summary,
     _classify_pattern,
-    _extract_api_format,
     _trace_connections,
     handle,
 )

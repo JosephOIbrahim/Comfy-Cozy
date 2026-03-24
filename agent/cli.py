@@ -131,7 +131,6 @@ def run(
             # Detect last output image for metadata resume
             if session_context and load_result.get("workflow_restored"):
                 try:
-                    from pathlib import Path
                     from .config import COMFYUI_OUTPUT_DIR
                     pngs = sorted(
                         COMFYUI_OUTPUT_DIR.glob("*.png"),

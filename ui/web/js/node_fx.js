@@ -195,6 +195,31 @@ app.registerExtension({
       drawNodeFX(node, ctx);
     };
 
+    // ── C: Bidirectional canvas-sidebar selection bridge
+    // When a node is selected on canvas, notify sidebar
+    if (app.canvas) {
+      const origOnNodeSelected = app.canvas.onNodeSelected;
+      app.canvas.onNodeSelected = function (node) {
+        if (origOnNodeSelected) origOnNodeSelected.call(this, node);
+        if (node) {
+          document.dispatchEvent(new CustomEvent("superduper:canvas_node_selected", {
+            detail: { nodeId: String(node.id), classType: node.type }
+          }));
+        }
+      };
+    }
+
+    // When sidebar selects a node, find and select it on canvas
+    document.addEventListener("superduper:sidebar_node_selected", (e) => {
+      const { nodeId } = e.detail || {};
+      if (!nodeId || !app.graph || !app.canvas) return;
+      const node = app.graph.getNodeById(parseInt(nodeId, 10));
+      if (node) {
+        app.canvas.selectNode(node);
+        app.canvas.centerOnNode(node);
+      }
+    });
+
     // ── D: Listen for agent touch events from sidebar
     document.addEventListener("superduper:node_touch", (e) => {
       const { nodeId, agentColor } = e.detail || {};

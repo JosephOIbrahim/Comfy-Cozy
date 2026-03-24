@@ -91,7 +91,8 @@ def handle(
     tool_input: dict,
     *,
     session_id: str | None = None,
-    progress: "ProgressCallback | None" = None,
+    progress: "object | None" = None,
+    ctx: "object | None" = None,
 ) -> str:
     """Dispatch a tool call to the right handler.
 
@@ -99,12 +100,17 @@ def handle(
         name: Tool name to dispatch.
         tool_input: Tool arguments dict.
         session_id: Optional session ID for workflow state isolation.
-                    Currently unused (default session), but enables future
-                    multi-session MCP usage.
+                    When ctx is not provided, this is used to look up
+                    the SessionContext from the global registry.
         progress: Optional progress reporter for long-running tools.
                   Passed through to handlers that support it.
+        ctx: Optional SessionContext for session-scoped state.
+             When None, falls back to the default session (v1 behavior).
     """
-    from ..progress import ProgressCallback  # noqa: F811 (type only)
+    # Resolve session context if not provided
+    if ctx is None and session_id:
+        from ..session_context import get_session_context
+        ctx = get_session_context(session_id)
 
     # Check brain tools (lazy loaded)
     _ensure_brain()
@@ -112,7 +118,7 @@ def handle(
         from ..brain import handle as handle_brain
         try:
             return handle_brain(name, tool_input)
-        except Exception as e:
+        except Exception:
             log.error("Unhandled error in brain tool %s", name, exc_info=True)
             from ..errors import error_json
             return error_json(
@@ -130,7 +136,7 @@ def handle(
         if mod is comfy_execute:
             return mod.handle(name, tool_input, progress=progress)
         return mod.handle(name, tool_input)
-    except Exception as e:
+    except Exception:
         log.error("Unhandled error in tool %s", name, exc_info=True)
         from ..errors import error_json
         return error_json(
