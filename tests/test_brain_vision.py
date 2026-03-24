@@ -6,7 +6,6 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from agent.brain import handle
-from agent.brain.vision import VisionAgent
 
 
 @pytest.fixture

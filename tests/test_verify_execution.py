@@ -513,7 +513,7 @@ class TestMetadataEmbed:
                     "agent.tools.workflow_patch.get_current_workflow",
                     return_value=sample_wf,
                 ):
-                    result = _verify_prompt("abc123")
+                    _verify_prompt("abc123")
 
         assert len(captured_payloads) == 1
         metadata = captured_payloads[0]["metadata"]

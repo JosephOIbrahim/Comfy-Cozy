@@ -1,0 +1,60 @@
+{
+  "version": "2.0.0-alpha",
+  "baseline": {
+    "tests_passing": 1290,
+    "lint_errors": 14,
+    "recorded_at": "2026-03-24",
+    "branch": "master",
+    "commit": "8bdf850"
+  },
+  "phases": {
+    "P0_scaffold": {
+      "status": "in_progress",
+      "owner": "PRODUCER",
+      "branch": "v2/main"
+    },
+    "P1_session_state": {
+      "status": "pending",
+      "owner": "SYS_ENG",
+      "reviewer": "COMFY_LEAD",
+      "branch": "v2/sys/session-scope"
+    },
+    "P2_authority": {
+      "status": "pending",
+      "owner": "COMFY_LEAD",
+      "reviewer": "SYS_ENG",
+      "branch": "v2/comfy/authority"
+    },
+    "P3_coordination": {
+      "status": "pending",
+      "owner": "COMFY_LEAD",
+      "reviewer": "VFX_SUPER",
+      "branch": "v2/comfy/coordination"
+    },
+    "P4_adversarial": {
+      "status": "pending",
+      "owner": "SYS_ENG",
+      "reviewer": "VFX_SUPER",
+      "branch": "v2/sys/adversarial"
+    },
+    "P5_ui": {
+      "status": "pending",
+      "owner": "NUKE_COMP",
+      "reviewer": "VFX_SUPER",
+      "branch": "v2/vfx/ui-refactor"
+    },
+    "P6_integration": {
+      "status": "pending",
+      "owner": "PRODUCER",
+      "reviewer": "ALL",
+      "branch": "v2/main"
+    }
+  },
+  "gates": {
+    "G0_scaffold": "pending",
+    "G1_session_contract": "pending",
+    "G2_coordination": "pending",
+    "G3_ui_review": "pending",
+    "G4_final": "pending"
+  }
+}

@@ -91,7 +91,7 @@ def handle(
     tool_input: dict,
     *,
     session_id: str | None = None,
-    progress: "ProgressCallback | None" = None,
+    progress: "object | None" = None,
 ) -> str:
     """Dispatch a tool call to the right handler.
 
@@ -104,7 +104,6 @@ def handle(
         progress: Optional progress reporter for long-running tools.
                   Passed through to handlers that support it.
     """
-    from ..progress import ProgressCallback  # noqa: F811 (type only)
 
     # Check brain tools (lazy loaded)
     _ensure_brain()
@@ -112,7 +111,7 @@ def handle(
         from ..brain import handle as handle_brain
         try:
             return handle_brain(name, tool_input)
-        except Exception as e:
+        except Exception:
             log.error("Unhandled error in brain tool %s", name, exc_info=True)
             from ..errors import error_json
             return error_json(
@@ -130,7 +129,7 @@ def handle(
         if mod is comfy_execute:
             return mod.handle(name, tool_input, progress=progress)
         return mod.handle(name, tool_input)
-    except Exception as e:
+    except Exception:
         log.error("Unhandled error in tool %s", name, exc_info=True)
         from ..errors import error_json
         return error_json(

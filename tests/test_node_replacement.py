@@ -1,7 +1,7 @@
 """Tests for agent/tools/node_replacement.py — Node Replacement API integration."""
 
 import json
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 import pytest
 

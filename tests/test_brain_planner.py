@@ -5,7 +5,6 @@ import json
 import pytest
 
 from agent.brain import handle
-from agent.brain._sdk import BrainAgent
 from agent.brain.planner import PlannerAgent
 from agent.config import SESSIONS_DIR
 

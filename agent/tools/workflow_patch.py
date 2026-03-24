@@ -14,7 +14,7 @@ from pathlib import Path
 
 import jsonpatch
 
-from ._util import to_json, error_json
+from ._util import to_json
 
 # ---------------------------------------------------------------------------
 # Module-level state (one active workflow at a time)

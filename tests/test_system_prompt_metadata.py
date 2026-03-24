@@ -41,7 +41,7 @@ class TestSystemPromptMetadata:
         """session_context without last_output_path has no 'Last Output Context'."""
         session_ctx = {"name": "test_session"}
 
-        with patch("agent.tools.handle") as mock_handle:
+        with patch("agent.tools.handle"):
             prompt = build_system_prompt(session_context=session_ctx)
 
         assert "Last Output Context" not in prompt
