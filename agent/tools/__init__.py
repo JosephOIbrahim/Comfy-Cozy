@@ -92,6 +92,7 @@ def handle(
     *,
     session_id: str | None = None,
     progress: "object | None" = None,
+    ctx: "object | None" = None,
 ) -> str:
     """Dispatch a tool call to the right handler.
 
@@ -99,11 +100,17 @@ def handle(
         name: Tool name to dispatch.
         tool_input: Tool arguments dict.
         session_id: Optional session ID for workflow state isolation.
-                    Currently unused (default session), but enables future
-                    multi-session MCP usage.
+                    When ctx is not provided, this is used to look up
+                    the SessionContext from the global registry.
         progress: Optional progress reporter for long-running tools.
                   Passed through to handlers that support it.
+        ctx: Optional SessionContext for session-scoped state.
+             When None, falls back to the default session (v1 behavior).
     """
+    # Resolve session context if not provided
+    if ctx is None and session_id:
+        from ..session_context import get_session_context
+        ctx = get_session_context(session_id)
 
     # Check brain tools (lazy loaded)
     _ensure_brain()
