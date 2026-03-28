@@ -75,6 +75,12 @@ def _default_comfyui_output() -> str:
 
 COMFYUI_OUTPUT_DIR = Path(_default_comfyui_output())
 
+# Auto-initialization (see startup.py)
+AUTO_SCAN_MODELS = os.getenv("AUTO_SCAN_MODELS", "false").lower() == "true"
+AUTO_SCAN_WORKFLOWS = os.getenv("AUTO_SCAN_WORKFLOWS", "false").lower() == "true"
+AUTO_LOAD_WORKFLOW = os.getenv("AUTO_LOAD_WORKFLOW", "")
+AUTO_LOAD_SESSION = os.getenv("AUTO_LOAD_SESSION", "")
+
 # Project paths
 PROJECT_DIR = Path(__file__).parent.parent
 KNOWLEDGE_DIR = Path(__file__).parent / "knowledge"

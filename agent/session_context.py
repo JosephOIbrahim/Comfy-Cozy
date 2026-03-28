@@ -225,8 +225,26 @@ _registry = SessionRegistry()
 
 
 def get_session_context(session_id: str = "default") -> SessionContext:
-    """Get or create a session context. Convenience wrapper."""
-    return _registry.get_or_create(session_id)
+    """Get or create a session context. Convenience wrapper.
+
+    On first creation of the default session, runs auto-initialization
+    (model scan, workflow load, session restore) if configured via env vars.
+    """
+    is_new = _registry.get(session_id) is None
+    ctx = _registry.get_or_create(session_id)
+
+    # Auto-init on first default session creation
+    if is_new and session_id == "default":
+        try:
+            from .startup import run_auto_init
+            run_auto_init(ctx)
+        except Exception:
+            import logging
+            logging.getLogger(__name__).debug(
+                "Auto-init skipped or failed", exc_info=True,
+            )
+
+    return ctx
 
 
 def get_registry() -> SessionRegistry:
