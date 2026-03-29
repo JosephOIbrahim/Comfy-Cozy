@@ -2,7 +2,10 @@
 
 from pathlib import Path
 
-from .config import KNOWLEDGE_DIR, COMFYUI_DATABASE, CUSTOM_NODES_DIR, MODELS_DIR
+from .config import (
+    KNOWLEDGE_DIR, COMFYUI_DATABASE, CUSTOM_NODES_DIR, MODELS_DIR,
+    COMFYUI_INSTALL_DIR, COMFYUI_BLUEPRINTS_DIR, WORKFLOWS_DIR,
+)
 
 _RULES = """\
 RULES:
@@ -46,13 +49,14 @@ Execution:
   validate_before_execute, execute_workflow, get_execution_status
 
 Discovery:
-  discover (unified search across registry, CivitAI, HuggingFace for nodes and models),
+  discover (unified search across local catalog, registry, CivitAI, HuggingFace for nodes and models),
   find_missing_nodes (dependency analysis with install suggestions),
   check_node_updates (GitHub release tracking for installed packs),
   get_repo_releases (release history for a specific GitHub repo)
 
-Templates:
-  list_workflow_templates, get_workflow_template
+Templates & Workflows:
+  list_workflow_templates (built-in + user workflows + ComfyUI blueprints),
+  get_workflow_template (load any template/workflow/blueprint for editing)
 
 Session Memory:
   save_session, load_session, list_sessions, add_note
@@ -127,9 +131,12 @@ def build_system_prompt(session_context: dict | None = None) -> str:
         "You have tools to query the live ComfyUI API, scan the local filesystem, "
         "search for custom node packs and models in the ComfyUI Manager registry, "
         "and search HuggingFace Hub for broader model discovery.\n",
-        f"ComfyUI installation: {COMFYUI_DATABASE}\n"
+        f"ComfyUI installation: {COMFYUI_INSTALL_DIR}\n"
+        f"ComfyUI database: {COMFYUI_DATABASE}\n"
         f"Custom nodes: {CUSTOM_NODES_DIR}\n"
-        f"Models: {MODELS_DIR}\n",
+        f"Models: {MODELS_DIR}\n"
+        f"User workflows: {WORKFLOWS_DIR}\n"
+        f"ComfyUI blueprints: {COMFYUI_BLUEPRINTS_DIR}\n",
     ]
 
     # Inject session context (privileged position -- before knowledge)

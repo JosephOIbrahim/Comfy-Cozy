@@ -15,7 +15,7 @@ from pathlib import Path
 
 import httpx
 
-from ..config import COMFYUI_URL, CUSTOM_NODES_DIR, MODELS_DIR
+from ..config import COMFYUI_URL, CUSTOM_NODES_DIR, MODELS_DIR, MODEL_CATALOG_PATH
 from ..rate_limiter import HUGGINGFACE_LIMITER
 from ._util import to_json
 
@@ -110,9 +110,9 @@ TOOLS: list[dict] = [
     {
         "name": "discover",
         "description": (
-            "Unified search across ComfyUI Manager registry, CivitAI, and "
-            "HuggingFace for custom node packs and models. Returns results "
-            "ranked by relevance with installed status. Use this for any "
+            "Unified search across local model catalog, ComfyUI Manager registry, "
+            "CivitAI, and HuggingFace for custom node packs and models. Returns "
+            "results ranked by relevance with installed status. Use this for any "
             "'find me X' or 'what's available for Y' question."
         ),
         "input_schema": {
@@ -356,6 +356,85 @@ def _load_model_list() -> list[dict]:
         _cache["model_list"] = []
 
     return _cache["model_list"]
+
+
+# ---------------------------------------------------------------------------
+# Local model catalog (COMFYUI_Database/model_catalog.json)
+# ---------------------------------------------------------------------------
+
+_catalog_cache: list[dict] | None = None
+
+
+def _load_model_catalog() -> list[dict]:
+    """Load model_catalog.json — local enriched model metadata."""
+    global _catalog_cache
+    if _catalog_cache is not None:
+        return _catalog_cache
+
+    if not MODEL_CATALOG_PATH.exists():
+        _catalog_cache = []
+        return _catalog_cache
+
+    try:
+        data = json.loads(MODEL_CATALOG_PATH.read_text(encoding="utf-8"))
+        # Flatten categories into a single list
+        models = []
+        for category, info in data.get("categories", {}).items():
+            for model in info.get("models", []):
+                model["_category"] = category
+                models.append(model)
+        _catalog_cache = models
+    except Exception:
+        _catalog_cache = []
+
+    return _catalog_cache
+
+
+def _search_catalog_unified(
+    query: str, model_type: str | None, max_results: int,
+) -> list[dict]:
+    """Search model_catalog.json for locally known models."""
+    models = _load_model_catalog()
+    if not models:
+        return []
+
+    query_lower = query.lower()
+    query_words = query_lower.split()
+    scored = []
+
+    for model in models:
+        filename = model.get("filename", "")
+        category = model.get("_category", "")
+        optimized = " ".join(model.get("optimized", []))
+        searchable = f"{filename} {category} {optimized}".lower()
+
+        if model_type and model_type.lower() not in category.lower():
+            continue
+
+        word_hits = sum(1 for w in query_words if w in searchable)
+        if word_hits == 0:
+            continue
+
+        score = word_hits / max(len(query_words), 1)
+        if query_lower in filename.lower():
+            score = min(score + 0.5, 1.0)
+
+        # Catalog models are always installed (that's how they got cataloged)
+        size_gb = model.get("size", 0)
+        scored.append((score, _normalize_result(
+            name=filename,
+            result_type="model",
+            source="local_catalog",
+            relevance_score=score,
+            installed=True,
+            url="",
+            model_type=category or None,
+            size_gb=round(size_gb, 2) if size_gb else None,
+            optimization=optimized or None,
+        )))
+
+    scored.sort(key=lambda x: (-x[0], x[1]["name"]))
+    return [r for _, r in scored[:max_results]]
 
 
 def _is_pack_installed(reference_url: str) -> bool:
@@ -668,7 +747,15 @@ def _handle_discover(tool_input: dict) -> str:
         if "registry_models" not in sources_searched:
             sources_searched.append("registry_models")
 
-    # 3. CivitAI (models only)
+    # 3. Local model catalog (enriched metadata)
+    if search_registry and category in ("models", "all"):
+        catalog_results = _search_catalog_unified(query, model_type, max_results)
+        if catalog_results:
+            all_results.extend(catalog_results)
+            if "local_catalog" not in sources_searched:
+                sources_searched.append("local_catalog")
+
+    # 4. CivitAI (models only)
     if search_civitai and category in ("models", "all"):
         civitai_results, civitai_err = _search_civitai_unified(
             query, model_type, base_model, sort, max_results,
@@ -678,7 +765,7 @@ def _handle_discover(tool_input: dict) -> str:
         if civitai_err:
             errors.append({"source": "civitai", "error": civitai_err})
 
-    # 4. HuggingFace (models only)
+    # 5. HuggingFace (models only)
     if search_hf and category in ("models", "all"):
         hf_results, hf_err = _search_hf_unified(query, model_type, max_results)
         all_results.extend(hf_results)

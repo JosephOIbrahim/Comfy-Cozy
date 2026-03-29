@@ -279,7 +279,7 @@ class MoEDispatcher:
         return builder != verifier
 
     def dispatch(self, description: str) -> ChainState:
-        """Full dispatch: classify → create chain → start.
+        """Full dispatch: classify -> create chain -> start.
 
         Returns the initialized ChainState ready for execution.
         """

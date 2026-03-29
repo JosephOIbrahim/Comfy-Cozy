@@ -1,0 +1,280 @@
+# ============================================================================
+# WAN 2.x — Model Communication Profile
+# ============================================================================
+#
+# WAN (Alibaba) video generation models. Available in 2.1 and 2.2 variants.
+# Uses CLIP text encoder (standard) and supports ControlNet-style guidance.
+# Operates at much lower step counts and CFG than LTX-2.
+#
+# Key insight: WAN 2.2 uses a dual-noise architecture (high_noise + low_noise
+# model pairs) for smoother temporal transitions. This is unique to WAN.
+#
+# Three consumers read this profile:
+#   1. Intent Agent   — reads prompt_engineering
+#   2. Execution Agent — reads parameter_space
+#   3. Verify Agent   — reads quality_signatures
+#
+# ============================================================================
+
+meta:
+  model_id: "wan2"
+  model_class: "wan"
+  base_arch: "unet"               # UNet-based video with temporal layers
+  modality: "video"
+  display_name: "WAN 2.1 / 2.2"
+  variants:
+    - "wan2.1_vace_14B_fp16 (33GB) — VACE video autoencoder"
+    - "wan2.1_vace_1.3B_fp16 (4.1GB) — lightweight VACE"
+    - "wan2.1_flf2v_720p_14B (31GB) — first-last-frame to video"
+    - "wan2.2_fun_control_14B (14GB FP8) — ControlNet-style guided video"
+    - "wan2.2_i2v_14B (14GB FP8) — image-to-video (high/low noise pairs)"
+    - "wan2.2_ti2v_5B (9.4GB) — text+image to video"
+  text_encoder: "clip"
+  vae:
+    - "wan2.2_vae.safetensors"
+    - "wan_2.1_vae.safetensors"
+
+
+# ============================================================================
+# PROMPT ENGINEERING — consumed by the Intent Agent
+# ============================================================================
+# WAN uses standard CLIP text encoding with the 77-token limit.
+# Tag-based prompting works well, similar to SD1.5/SDXL but with
+# additional motion-specific keywords.
+# ============================================================================
+
+prompt_engineering:
+
+  style: "hybrid"                   # Both natural language and tags work
+
+  positive_prompt:
+    structure: "description_first"
+    keyword_sensitivity: 0.6
+
+    effective_patterns:
+      - "Describe motion first, then scene: 'A woman walks through a garden...'"
+      - "Include camera motion keywords: 'camera pans', 'tracking shot', 'static'"
+      - "Keep prompts concise — CLIP's 77-token limit applies"
+      - "For fun_control: describe the target motion/action, the Canny edges guide structure"
+      - "Motion modifiers: 'slow motion', 'time-lapse', 'smooth', 'dynamic'"
+
+    token_weighting: "parenthetical"
+    max_effective_tokens: 77        # CLIP limit
+
+  negative_prompt:
+    required_base: "lowres, bad anatomy, blurry, morphing, flickering, jitter"
+    style: "exclusion_list"
+    effectiveness: 0.5              # Moderate — helps more than with Flux/LTX
+    # WAN responds to negatives better than DiT-based video models because
+    # it uses standard classifier-free guidance.
+
+  intent_translations:
+
+    "dreamier":
+      cfg_direction: "lower"        # Toward 1.0-1.5
+      prompt_additions: "soft, ethereal, flowing, dreamy atmosphere"
+      denoise_direction: null
+
+    "sharper":
+      cfg_direction: "higher"       # Toward 3.0-3.5
+      prompt_additions: "sharp, crisp, detailed, clear"
+      denoise_direction: null
+
+    "smoother":
+      cfg_direction: null
+      steps_direction: "higher"     # 15-20 steps
+      prompt_additions: "smooth motion, fluid, continuous"
+
+    "more controlled":
+      cfg_direction: "higher"       # Toward 3.0-3.5
+      prompt_additions: null
+      # Suggest fun_control workflow with Canny edge guidance
+
+    "more cinematic":
+      cfg_direction: null
+      prompt_additions: "cinematic, film grain, shallow depth of field, dramatic lighting"
+
+    "faster":
+      cfg_direction: null
+      steps_direction: "lower"      # 4-8 steps with LightX2V LoRA
+      # Pair with distilled LoRA for 4-step generation
+
+
+# ============================================================================
+# PARAMETER SPACE — consumed by the Execution Agent
+# ============================================================================
+# WAN operates at very low step counts and CFG compared to LTX-2.
+# Similar operating range to Flux for image generation.
+# ============================================================================
+
+parameter_space:
+
+  steps:
+    default: 20
+    range: [4, 30]
+    sweet_spot: [12, 20]
+    diminishing_returns: 25
+    # With LightX2V distilled LoRA: 4 steps is sufficient
+    # Standard: 15-20 steps for production quality
+    notes: >
+      WAN is efficient — 20 steps produces high-quality video.
+      With LightX2V 4-step LoRA, quality at 4 steps approaches
+      standard 20-step output with ~5x speedup.
+
+  cfg:
+    # WAN uses standard classifier-free guidance like Flux.
+    # The range is very low — 1.0 to 3.5.
+    default: 2.5
+    range: [1.0, 5.0]
+    sweet_spot: [1.5, 3.5]
+    failure_modes:
+      - condition: "cfg > 5.0"
+        artifact: "Oversaturation, temporal flickering, color jitter"
+      - condition: "cfg < 0.5"
+        artifact: "Complete loss of prompt adherence, random noise"
+
+  sampler:
+    recommended:
+      - name: "euler"
+        notes: "Default and best for WAN. Fast, stable output."
+    avoid:
+      - name: "dpmpp_sde"
+        reason: "Stochastic noise causes temporal flickering"
+    scheduler:
+      recommended: "simple"
+      notes: "WAN uses 'simple' scheduler, not karras or normal"
+
+  resolution:
+    native: "640x640"               # Standard resolution
+    supported_ratios:
+      "1:1": "640x640"
+      "16:9": "832x480"
+      "9:16": "480x832"
+      "4:3": "736x544"
+    max_recommended: "720p"         # 1280x720 for 14B models
+    divisor: 16
+    notes: >
+      WAN 2.2 fun_control typically runs at 640x640. The 14B models
+      can handle up to 720p but with increased VRAM usage.
+
+  frame_count:
+    default: 49                     # ~3 seconds at 16fps
+    range: [17, 97]
+    notes: "Frame count should be reasonable for VRAM. 49-65 frames typical."
+
+  fps:
+    default: 16
+    range: [8, 24]
+    notes: "16fps is standard for WAN. 24fps for smoother output."
+
+  lora_behavior:
+    max_simultaneous: 2
+    strength_range: [0.1, 1.0]
+    default_strength: 0.7
+    interaction_model: "additive"
+    common_stacks:
+      - "LightX2V 4-step LoRA at 1.0 (replaces standard scheduling)"
+      - "CausVid temporal quality LoRA at 0.8"
+    known_conflicts:
+      - "LightX2V LoRA changes step count to 4 — do not use 20 steps with it"
+      - "High noise + low noise LoRA variants must match (both high or both low)"
+
+  denoise:
+    default: 1.0
+    img2img_sweet_spot: [0.3, 0.6]
+
+  # WAN 2.2 specific: dual-noise architecture
+  dual_noise:
+    description: >
+      WAN 2.2 i2v and fun_control use paired models: a high_noise variant
+      handles the early denoising steps and a low_noise variant handles
+      refinement. Both UNETs must be loaded.
+    high_noise_model: "wan2.2_i2v_high_noise_14B_fp8_scaled.safetensors"
+    low_noise_model: "wan2.2_i2v_low_noise_14B_fp8_scaled.safetensors"
+
+
+# ============================================================================
+# QUALITY SIGNATURES — consumed by the Verify Agent
+# ============================================================================
+
+quality_signatures:
+
+  expected_characteristics:
+    - "Temporal coherence across frames"
+    - "Smooth motion following prompt description"
+    - "Consistent subject identity"
+    - "Stable backgrounds without morphing"
+    - "Natural motion blur on moving subjects"
+    - "When using fun_control: output follows Canny edge structure"
+
+  known_artifacts:
+    - condition: "cfg > 4.0"
+      artifact: "Color jitter between frames, oversaturation"
+      fix: "Lower CFG to 2.0-3.0 range"
+      severity: "high"
+
+    - condition: "steps < 8 without distilled LoRA"
+      artifact: "Incomplete denoising, noisy frames, temporal flicker"
+      fix: "Use 15-20 steps, or add LightX2V LoRA for 4-step generation"
+      severity: "high"
+
+    - condition: "high_noise model used without low_noise model (WAN 2.2)"
+      artifact: "Rough, under-refined video with visible noise"
+      fix: "Load both high_noise and low_noise model variants"
+      severity: "critical"
+
+    - condition: "fun_control without Canny input"
+      artifact: "Random, uncontrolled motion"
+      fix: "Provide Canny edge guidance from source video/image"
+      severity: "high"
+
+    - condition: "long sequences (>65 frames)"
+      artifact: "Subject drift, gradual quality degradation"
+      fix: "Keep sequences to 49-65 frames. Use FLF2V for longer clips."
+      severity: "medium"
+
+  quality_floor:
+    description: >
+      At default settings (20 steps, CFG 2.5, euler, simple scheduler,
+      640x640, 16fps), WAN should produce temporally coherent video with
+      recognizable subjects and smooth motion. Fun_control mode should
+      follow the Canny edge structure closely.
+    reference_score: 0.6
+
+  iteration_signals:
+    needs_more_steps:
+      indicators:
+        - "Visible noise in flat areas"
+        - "Temporal flickering from incomplete denoising"
+        - "Soft, undefined details"
+      action: "Increase steps to 15-20. With LightX2V LoRA, 4 steps is sufficient."
+
+    needs_lower_cfg:
+      indicators:
+        - "Oversaturated colors between frames"
+        - "Harsh contrast with temporal jitter"
+        - "Color banding"
+      action: "Lower CFG to 1.5-2.5 range."
+
+    needs_higher_cfg:
+      indicators:
+        - "Output doesn't follow prompt"
+        - "Random motion unrelated to description"
+      action: "Raise CFG to 2.5-3.5. Stay below 4.0."
+
+    needs_reprompt:
+      indicators:
+        - "Wrong type of motion"
+        - "Missing described elements"
+      action: >
+        Keep prompts concise (CLIP 77-token limit). Focus on one clear
+        action. Separate camera from subject motion.
+
+    model_limitation:
+      indicators:
+        - "Cannot maintain fine detail at 640x640"
+        - "Hands and faces degrade in motion"
+        - "Complex multi-subject scenes produce morphing"
+      action: >
+        Consider: single-subject framing, shorter clips with cuts,
+        or switching to LTX-2 for higher resolution output.

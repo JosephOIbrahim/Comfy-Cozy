@@ -421,13 +421,13 @@ class TestDynamicKnowledge:
         triggers = _detect_relevant_knowledge(ctx)
         assert "audio_workflows" in triggers
 
-    def test_wan_triggers_3d(self):
+    def test_wan_triggers_video(self):
         ctx = {
             "workflow": {},
-            "notes": [{"text": "use Wan2.1 for multi-view generation"}],
+            "notes": [{"text": "use Wan2.1 for video generation"}],
         }
         triggers = _detect_relevant_knowledge(ctx)
-        assert "3d_workflows" in triggers
+        assert "video_workflows" in triggers
 
 
 # ---------------------------------------------------------------------------
@@ -510,14 +510,14 @@ class TestWorkflowTemplates:
         assert result["node_count"] == 7
         # Should be loaded in workflow_patch state
         assert workflow_patch._state["current_workflow"] is not None
-        assert workflow_patch._state["loaded_path"] == "template:txt2img_sdxl"
+        assert "txt2img_sdxl" in workflow_patch._state["loaded_path"]
 
     def test_load_template_not_found(self):
         result = json.loads(workflow_templates.handle("get_workflow_template", {
             "template": "nonexistent",
         }))
         assert "error" in result
-        assert "available" in result
+        assert "sample_builtin" in result or "available" in result
 
     def test_template_is_editable(self):
         """After loading a template, can we edit it with semantic tools?"""

@@ -1,0 +1,297 @@
+# ============================================================================
+# LTX-2 / LTX Video — Model Communication Profile
+# ============================================================================
+#
+# LTX-2 (Lightricks) is a large-scale video generation model family.
+# Models range from 13B to 22B parameters with FP8 quantized variants.
+# Uses Gemma-3 text encoder (NOT CLIP) with 1024-token context.
+#
+# Key insight: LTX-2 operates very differently from image diffusion models.
+# The step count (~121), CFG (~25), and resolution constraints are unique
+# to this architecture. Do NOT apply image model assumptions.
+#
+# Three consumers read this profile:
+#   1. Intent Agent   — reads prompt_engineering
+#   2. Execution Agent — reads parameter_space
+#   3. Verify Agent   — reads quality_signatures
+#
+# ============================================================================
+
+meta:
+  model_id: "ltx2"
+  model_class: "ltxvideo"
+  base_arch: "dit"                # Diffusion Transformer for video
+  modality: "video"
+  display_name: "LTX-2 / LTX Video"
+  variants:
+    - "ltx-2.3-22b-dev (43GB full, 28GB FP8) — latest, highest quality"
+    - "ltx-2-19b-dev (41GB full, 26GB FP8) — proven workhorse"
+  text_encoder: "gemma-3-12b"
+  upscalers:
+    - "ltxv-spatial-upscaler-0.9.8.safetensors"
+    - "ltxv-temporal-upscaler-0.9.8.safetensors"
+
+
+# ============================================================================
+# PROMPT ENGINEERING — consumed by the Intent Agent
+# ============================================================================
+# LTX-2 uses Gemma-3 12B as its text encoder — a full language model with
+# 1024-token context. This is even more capable than Flux's T5-XXL at
+# understanding natural language. The built-in prompt enhancement layer
+# rewrites user prompts into more detailed scene descriptions.
+# ============================================================================
+
+prompt_engineering:
+
+  style: "natural_language"
+
+  positive_prompt:
+    structure: "descriptive_paragraph"
+    keyword_sensitivity: "high_for_concrete_low_for_tags"
+
+    effective_patterns:
+      - "Describe the scene as a short paragraph with subject, action, and environment"
+      - "Specify camera motion explicitly: 'camera slowly pans left', 'dolly forward'"
+      - "Separate subject motion from camera motion for best results"
+      - "Include temporal cues: 'gradually', 'suddenly', 'over 5 seconds'"
+      - "Describe lighting changes over time: 'as the sun sets, shadows lengthen'"
+      - "Keep descriptions focused — one clear action per clip works best"
+      - "The built-in Gemma-3 enhancement layer will expand sparse prompts"
+
+    token_weighting: "parenthetical"
+    max_effective_tokens: 1024       # Gemma-3 context window
+
+  negative_prompt:
+    required_base: ""
+    style: "minimal_or_empty"
+    effectiveness: "low"
+    # LTX-2 uses guidance-based control, not negative conditioning.
+    # Negative prompts have minimal measurable effect.
+
+  intent_translations:
+
+    "dreamier":
+      cfg_direction: "lower"         # Toward 18-20
+      prompt_additions: "soft ethereal atmosphere, gentle motion, flowing"
+      denoise_direction: null
+
+    "sharper":
+      cfg_direction: "higher"        # Toward 28-30
+      prompt_additions: "crisp details, sharp focus, precise motion"
+      denoise_direction: null
+
+    "slower motion":
+      cfg_direction: null
+      prompt_additions: "slow, gentle, gradual movement"
+      steps_direction: "higher"      # More steps = finer temporal detail
+      # Also consider: longer frame count at same fps for slow motion effect
+
+    "faster motion":
+      cfg_direction: null
+      prompt_additions: "fast, dynamic, energetic movement"
+      steps_direction: null
+      # Consider: fewer frames at same fps for time-lapse feel
+
+    "more cinematic":
+      cfg_direction: null
+      prompt_additions: "cinematic composition, shallow depth of field, anamorphic, film color grading"
+      # Pair with camera control LoRA for dolly/tracking shots
+
+    "smoother":
+      cfg_direction: null
+      steps_direction: "higher"      # More steps improves temporal smoothness
+      prompt_additions: "smooth continuous motion, fluid movement"
+
+    "more dramatic":
+      cfg_direction: "slightly_higher"
+      prompt_additions: "dramatic lighting, strong shadows, dynamic action"
+      denoise_direction: null
+
+
+# ============================================================================
+# PARAMETER SPACE — consumed by the Execution Agent
+# ============================================================================
+# LTX-2 has a VERY different parameter space from image models.
+# The step count and CFG values are radically higher than what you'd expect.
+# These are not errors — they are the correct operating range for this model.
+# ============================================================================
+
+parameter_space:
+
+  steps:
+    # LTX-2 uses high step counts. 121 is the standard production setting.
+    # This is NOT excessive — the model's denoising schedule requires it
+    # for temporal coherence across video frames.
+    default: 121
+    range: [30, 241]
+    sweet_spot: [80, 121]
+    diminishing_returns: 160
+    # Fast inference: use distilled LoRA at 30-40 steps
+    # Quality: 121 steps is the proven sweet spot
+    # Maximum quality: 241 steps for final renders (2x time, marginal gain)
+
+  cfg:
+    # CRITICAL: LTX-2 uses guidance values around 25, NOT 3-7 like image models.
+    # This is the model's native operating range. Do NOT lower to image model
+    # values — it will produce incoherent, noisy output.
+    default: 25
+    range: [15.0, 35.0]
+    sweet_spot: [20.0, 28.0]
+    failure_modes:
+      - condition: "cfg < 15"
+        artifact: "Loss of temporal coherence, random frame-to-frame changes"
+      - condition: "cfg > 35"
+        artifact: "Oversaturation, harsh color shifts between frames"
+
+  sampler:
+    recommended:
+      - name: "euler"
+        notes: "Default for LTX-2. Stable temporal output."
+    avoid:
+      - name: "dpmpp_sde"
+        reason: "Stochastic noise causes temporal flickering in video"
+      - name: "euler_ancestral"
+        reason: "Random noise injection causes frame inconsistency"
+    scheduler:
+      recommended: "normal"
+      notes: "LTX-2 uses its own internal scheduling via LTXVScheduler node"
+
+  resolution:
+    native: "1280x720"              # 720p is the base resolution
+    supported_ratios:
+      "16:9": "1280x720"
+      "16:9_hd": "1920x1088"       # Close to 1080p (divisible by 32)
+    divisor: 32                     # Width and height must be divisible by 32
+    # Some workflows require divisibility by 64 when using certain LoRAs
+    notes: >
+      Resolution constraints are strict. Width and height MUST be divisible
+      by 32 (some configs need 64). The spatial upscaler can take 720p to
+      1080p+ in post-processing, so generate at 720p for speed.
+
+  frame_count:
+    # Frame count follows the pattern: (N * 8) + 1
+    # Valid values: 9, 17, 25, 33, 41, 49, 57, 65, 81, 121, 241
+    default: 121                    # ~5 seconds at 24fps
+    valid_pattern: "(N * 8) + 1"
+    common_values: [41, 81, 121, 241]
+    notes: >
+      Frame count MUST follow (N*8)+1 pattern. Using invalid frame counts
+      will produce errors or corrupted output. 121 frames at 24fps = ~5s.
+
+  fps:
+    default: 24
+    range: [16, 30]
+    notes: "24fps for cinematic, 30fps for smoother motion"
+
+  lora_behavior:
+    max_simultaneous: 4
+    strength_range: [0.3, 1.2]
+    default_strength: 0.8
+    interaction_model: "additive"
+    common_stacks:
+      - "Camera control (dolly/pan) at 1.0 + distilled at 0.6"
+      - "CausVid (temporal quality) at 1.0 + camera at 1.0"
+    known_conflicts:
+      - "Distilled LoRAs change the required step count (30-40 instead of 121)"
+      - "Camera control LoRAs are specific to model variant (19b vs 22b)"
+
+  denoise:
+    default: 1.0                    # Full denoise for t2v
+    img2img_sweet_spot: [0.4, 0.7]  # For i2v, start at 0.5-0.6
+
+
+# ============================================================================
+# QUALITY SIGNATURES — consumed by the Verify Agent
+# ============================================================================
+
+quality_signatures:
+
+  expected_characteristics:
+    - "Temporal coherence: subject identity consistent across all frames"
+    - "Smooth, natural motion without jitter or teleporting"
+    - "Consistent lighting across the entire sequence"
+    - "Camera motion (if prompted) is smooth and deliberate"
+    - "Background stability: static elements do not morph or shift"
+    - "Natural motion blur on fast-moving subjects"
+    - "Coherent depth: foreground/background relationship maintained"
+
+  known_artifacts:
+    - condition: "frame_count not following (N*8)+1 pattern"
+      artifact: "Corrupted final frames, generation failure"
+      fix: "Use valid frame counts: 41, 81, 121, 241"
+      severity: "critical"
+
+    - condition: "resolution not divisible by 32"
+      artifact: "Edge artifacts, misaligned features, crash"
+      fix: "Ensure dimensions are multiples of 32 (or 64 for some LoRAs)"
+      severity: "critical"
+
+    - condition: "cfg < 15"
+      artifact: "Temporal incoherence, random changes between frames"
+      fix: "Raise CFG to 20-25 range"
+      severity: "high"
+
+    - condition: "steps < 60 without distilled LoRA"
+      artifact: "Incomplete denoising, noisy/soft frames, temporal flicker"
+      fix: "Use 80-121 steps, or add distilled LoRA for fewer steps"
+      severity: "high"
+
+    - condition: "long sequences (>121 frames)"
+      artifact: "Subject drift, gradual identity change over time"
+      fix: "Use first-last-frame conditioning (FLF2V) to anchor endpoints"
+      severity: "medium"
+
+    - condition: "multiple subjects in scene"
+      artifact: "Identity blending, morphing between subjects"
+      fix: "Reduce to single subject or use stronger spatial prompting"
+      severity: "medium"
+
+  quality_floor:
+    description: >
+      At default settings (121 steps, CFG 25, euler, 1280x720, 24fps),
+      LTX-2 should produce temporally coherent video with smooth motion,
+      consistent subject identity, and stable backgrounds. If output shows
+      flickering or morphing, check the frame count pattern and step count.
+    reference_score: 0.65
+
+  iteration_signals:
+    needs_more_steps:
+      indicators:
+        - "Per-frame noise visible, especially in flat areas"
+        - "Temporal flickering from incomplete denoising"
+        - "Soft or undefined subject details"
+      action: "Increase steps to 121. If using distilled LoRA, try 40-60."
+
+    needs_lower_cfg:
+      indicators:
+        - "Oversaturated colors that shift between frames"
+        - "Harsh, unnatural contrast in video"
+        - "Color banding in gradients"
+      action: "Lower CFG by 3-5 points. Target 20-25 range."
+
+    needs_higher_cfg:
+      indicators:
+        - "Subject doesn't match prompt"
+        - "Random motion unrelated to description"
+        - "Composition changes between frames"
+      action: "Raise CFG by 2-3 points. Stay below 30."
+
+    needs_reprompt:
+      indicators:
+        - "Wrong type of motion (camera vs subject)"
+        - "Missing described elements"
+        - "Motion is too fast or too slow"
+      action: >
+        Separate camera motion from subject motion in the prompt.
+        Be explicit about speed: 'slowly', 'quickly', 'over 3 seconds'.
+        The Gemma-3 encoder handles temporal language well.
+
+    model_limitation:
+      indicators:
+        - "Hands and fingers degrade in motion"
+        - "Text in video is garbled or morphs"
+        - "Cannot maintain fine detail beyond ~5 seconds"
+      action: >
+        Consider: shorter clips with cuts, FLF2V for endpoint control,
+        spatial upscaler for detail recovery, or camera angles that
+        minimize problematic elements.

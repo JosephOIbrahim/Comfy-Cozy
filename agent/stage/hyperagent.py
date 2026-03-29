@@ -242,7 +242,7 @@ class MetaAgent:
         current_value = self._strategy.get(key)
         improvement = self.propose_improvement(
             category="modification_strategy",
-            description=f"Change strategy '{key}': {current_value} → {value}",
+            description=f"Change strategy '{key}': {current_value} -> {value}",
             proposed_change={
                 "key": key,
                 "current": current_value,

@@ -423,7 +423,7 @@ def orchestrate(
         help="Show debug logging",
     ),
 ):
-    """Autonomous pipeline: load → validate → execute → verify a workflow.
+    """Autonomous pipeline: load > validate > execute > verify a workflow.
 
     Loads a workflow, validates it against ComfyUI, executes it, and
     verifies the output. Results are saved to the session if provided.

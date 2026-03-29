@@ -558,7 +558,7 @@ def _validate_against_comfyui(nodes: dict, connections: list[dict]) -> dict:
             source_type = source_outputs[output_idx]
         else:
             errors.append(
-                f"Connection {source_class}[{output_idx}] → "
+                f"Connection {source_class}[{output_idx}] -> "
                 f"{target_class}.{target_input}: output index out of range."
             )
             continue
@@ -582,7 +582,7 @@ def _validate_against_comfyui(nodes: dict, connections: list[dict]) -> dict:
             ):
                 errors.append(
                     f"Type mismatch: {source_class}.out[{output_idx}] "
-                    f"({source_type}) → {target_class}.{target_input} "
+                    f"({source_type}) -> {target_class}.{target_input} "
                     f"(expects {target_type})."
                 )
 

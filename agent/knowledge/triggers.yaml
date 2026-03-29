@@ -67,9 +67,6 @@
     - Preview3D
     - SaveGLB
     - VNCCS
-    - Wan-I2V
-    - Wan-T2V
-    - Wan2.1
     - action director
     - camera angle
     - controlnet 3d
@@ -84,7 +81,6 @@
     - splat
     - triplane
     - vnccs
-    - wan2
 
 audio_workflows:
   priority: 2
@@ -143,12 +139,50 @@ flux_specifics:
     - FluxGuidance
     - FluxLoader
     - flux
+    - flux kontext
 
 video_workflows:
-  priority: 2
+  priority: 1
   keywords:
+    # LTX-2 / LTX Video (primary video models)
+    - LTX
+    - LTXVLoader
+    - LTXVGeneration
+    - LTXVScheduler
+    - LTXVImgToVideo
+    - ltx
+    - ltx-2
+    - ltx2
+    - ltxv
+    - ltxvideo
+    - text to video
+    - text-to-video
+    - t2v
+    - image to video
+    - image-to-video
+    - i2v
+    - first last frame
+    - flf2v
+    # WAN 2.x (video generation)
+    - Wan-I2V
+    - Wan-T2V
+    - Wan2.1
+    - Wan2.2
+    - WanVideoWrapper
+    - Wan22FunControlToVideo
+    - wan2
+    - wan video
+    - wan vace
+    - fun control
+    - CausVid
+    # HunyuanVideo
+    - HunyuanVideo
+    - hunyuanvideo
+    - hunyuan video
+    # General video
     - AnimateDiffLoader
     - VHS_
+    - VHS_VideoCombine
     - animatediff
     - animate
     - frame
@@ -156,6 +190,10 @@ video_workflows:
     - stable_video
     - svd
     - video
+    - CreateVideo
+    - mp4
+    - video generation
+    - camera motion
 
 workflow_optimization:
   priority: 2
@@ -173,3 +211,7 @@ workflow_optimization:
     - taking too long
     - tensorrt
     - too slow
+    - fp8
+    - dynamic vram
+    - vram
+    - RTX 4090

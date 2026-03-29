@@ -75,6 +75,26 @@ def _default_comfyui_output() -> str:
 
 COMFYUI_OUTPUT_DIR = Path(_default_comfyui_output())
 
+# ComfyUI installation directory (separate from database on this machine)
+def _default_comfyui_install() -> str:
+    """Default ComfyUI installation path. May differ from COMFYUI_DATABASE."""
+    env = os.getenv("COMFYUI_INSTALL_DIR")
+    if env:
+        return env
+    _sys = platform.system()
+    if _sys == "Windows":
+        candidate = Path("G:/COMFY/ComfyUI")
+        if candidate.exists():
+            return str(candidate)
+    return str(COMFYUI_DATABASE)
+
+
+COMFYUI_INSTALL_DIR = Path(_default_comfyui_install())
+COMFYUI_BLUEPRINTS_DIR = COMFYUI_INSTALL_DIR / "blueprints"
+
+# Model catalog (rich metadata about installed models)
+MODEL_CATALOG_PATH = COMFYUI_DATABASE / "model_catalog.json"
+
 # Auto-initialization (see startup.py)
 AUTO_SCAN_MODELS = os.getenv("AUTO_SCAN_MODELS", "false").lower() == "true"
 AUTO_SCAN_WORKFLOWS = os.getenv("AUTO_SCAN_WORKFLOWS", "false").lower() == "true"
