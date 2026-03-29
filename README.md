@@ -1,19 +1,20 @@
 # ComfyUI Agent
 
-An AI assistant for [ComfyUI](https://github.com/comfyanonymous/ComfyUI) that understands your workflows and helps you work faster through natural conversation.
+An AI co-pilot for [ComfyUI](https://github.com/comfyanonymous/ComfyUI) that understands your workflows and helps you work faster through natural conversation.
 
-Instead of manually editing JSON, hunting for node packs, or debugging broken workflows yourself, just describe what you want and the agent handles it.
+Instead of manually editing JSON, hunting for node packs, or debugging broken workflows yourself, just describe what you want and the agent handles it -- including installing missing nodes and downloading models.
 
 ## What It Does
 
-- **"What models do I have?"** — scans your installation instantly
-- **"Load this workflow and change the seed to 42"** — reads, modifies, and saves with undo support
-- **"What node pack do I need for IPAdapter?"** — searches 31,000+ node types to find the right pack
-- **"Run this with 30 steps instead of 20"** — patches the workflow and queues it to ComfyUI
-- **"Find me a good anime LoRA"** — searches ComfyUI Manager's registry, HuggingFace, and CivitAI
-- **"Is this model compatible with my workflow?"** — checks SD1.5/SDXL/Flux/SD3 family compatibility
-- **"Analyze this output — why does it look wrong?"** — uses Claude Vision to diagnose image issues
-- **"Remember that I prefer SDXL for landscapes"** — saves notes and learns from your outcomes over time
+- **"What models do I have?"** -- scans your installation instantly
+- **"Load this workflow and change the seed to 42"** -- reads, modifies, and saves with undo support
+- **"This workflow has missing nodes"** -- detects missing nodes, finds the packs, and installs them
+- **"Download the LTX-2 FP8 checkpoint"** -- downloads models directly to the correct directory
+- **"Run this with 30 steps instead of 20"** -- patches the workflow and queues it to ComfyUI
+- **"Find me a good anime LoRA"** -- searches local catalog, ComfyUI Manager registry, HuggingFace, and CivitAI
+- **"Is this model compatible with my workflow?"** -- checks SD1.5/SDXL/Flux/SD3/LTX-2/WAN family compatibility
+- **"Analyze this output -- why does it look wrong?"** -- uses Claude Vision to diagnose image issues
+- **"Remember that I prefer SDXL for landscapes"** -- saves notes and learns from your outcomes over time
 
 The agent talks to ComfyUI's API directly. It reads your actual installation, sees what's really installed, and works with your real workflows.
 
@@ -56,10 +57,16 @@ Open `.env` in any text editor and add your API key:
 ANTHROPIC_API_KEY=sk-ant-your-key-here
 ```
 
-If your ComfyUI is installed somewhere other than `G:/COMFYUI_Database`, also set:
+If your ComfyUI database is somewhere other than `G:/COMFYUI_Database`, also set:
 
 ```
-COMFYUI_DATABASE=/path/to/your/ComfyUI
+COMFYUI_DATABASE=/path/to/your/comfyui/database
+```
+
+If your ComfyUI installation is in a separate directory (e.g., `G:/COMFY/ComfyUI`), the agent auto-detects it on Windows. Override with:
+
+```
+COMFYUI_INSTALL_DIR=/path/to/ComfyUI
 ```
 
 ### Step 4: Run
@@ -96,21 +103,30 @@ agent sessions                        # See your saved sessions
 agent search "controlnet" --nodes           # Find node packs
 agent search "KSampler" --node-type         # Which pack provides this node?
 agent search "sdxl" --models                # Search model registry
-agent search "flux lora" --hf               # Search HuggingFace
+agent search "flux lora" --hf              # Search HuggingFace
 agent search "anime" --models --type lora   # Filter by model type
+```
+
+### Orchestration
+
+```bash
+agent orchestrate workflow.json             # Load > validate > execute > verify pipeline
+agent autoresearch "flux lora"              # Multi-source model/node discovery
+agent autoresearch --program program.md     # FORESIGHT autoresearch pipeline
 ```
 
 ## How It Works
 
-The agent uses Claude (Anthropic's AI) with 77 specialized tools across two tiers:
+The agent uses Claude (Anthropic's AI) with 106 specialized tools across three tiers:
 
-**Intelligence Layer (50 tools)**
+**Intelligence Layer (56 tools)**
 
 | Layer | Tools | What they do |
 |-------|-------|-------------|
 | **UNDERSTAND** | 13 | Parse workflows, scan models/nodes, query ComfyUI API, detect format |
-| **DISCOVER** | 12 | Search ComfyUI Manager (31k+ nodes), HuggingFace, CivitAI, model compatibility, install instructions, GitHub releases |
+| **DISCOVER** | 15 | Search local catalog + ComfyUI Manager (31k+ nodes) + HuggingFace + CivitAI, model compatibility, install instructions, GitHub releases |
 | **PILOT** | 16 | RFC6902 patch engine with undo, semantic node ops, session persistence, pipeline execution |
+| **PROVISION** | 3 | Install node packs (git clone), download models (httpx), disable node packs |
 | **VERIFY** | 9 | Validate, execute, WebSocket progress monitoring, post-execution verification, creative metadata embedding |
 
 **Brain Layer (27 tools)**
@@ -126,7 +142,79 @@ The agent uses Claude (Anthropic's AI) with 77 specialized tools across two tier
 | **Intent** | 4 | Artistic intent capture, MoE pipeline with iterative refinement |
 | **Iteration** | 3 | Refinement journey tracking across generation cycles |
 
+**Stage Layer (23 tools)**
+
+| Module | Tools | What they do |
+|--------|-------|-------------|
+| **Provisioner** | 3 | USD-native model provisioning with download/verify lifecycle |
+| **Stage** | 6 | Cognitive state read/write with delta composition and rollback |
+| **FORESIGHT** | 5 | Predictive experiment planning, experience recording, counterfactuals |
+| **Compositor** | 4 | USD scene composition, validation, conditioning extraction |
+| **Hyperagent** | 5 | Meta-layer self-improvement proposals, calibration tracking |
+
 When you ask a question, Claude decides which tools to use, calls them, reads the results, and responds. It streams text as it thinks, so you're never staring at a blank screen.
+
+## Model Profiles
+
+The agent ships with model-specific profiles that encode real behavioral knowledge:
+
+| Profile | Architecture | Key Insight |
+|---------|-------------|-------------|
+| **Flux.1 Dev** | DiT | CFG 2.5-4.5, T5-XXL encoder, negative prompts near-useless |
+| **SDXL** | UNet | CFG 5-9, CLIP encoder, tag-based prompts, LoRA ecosystem |
+| **SD 1.5** | UNet | CFG 7-12, 512x512 native, massive LoRA support |
+| **LTX-2** | DiT (video) | CFG ~25, 121 steps, Gemma-3 encoder, frame count must be (N*8)+1 |
+| **WAN 2.x** | UNet (video) | CFG 1-3.5, 4-20 steps, dual-noise architecture, CLIP encoder |
+| **Video (fallback)** | UNet | Conservative defaults for unknown video models |
+
+Each profile has three sections consumed by different agents:
+- **prompt_engineering** (Intent Agent) -- how to write prompts for this model
+- **parameter_space** (Execution Agent) -- correct CFG, steps, sampler, resolution ranges
+- **quality_signatures** (Verify Agent) -- how to judge output quality and suggest fixes
+
+## Workflow Sources
+
+The agent can load workflows from three locations:
+
+| Source | Path | Description |
+|--------|------|-------------|
+| **Built-in templates** | `agent/templates/` | Starter workflows (txt2img, img2img, LoRA) |
+| **User workflows** | `COMFYUI_Database/Workflows/` | Your saved workflow library |
+| **ComfyUI blueprints** | `ComfyUI/blueprints/` | Built-in ComfyUI workflow blueprints |
+
+Use `list_workflow_templates` to see all available workflows across sources.
+
+## SuperDuper Panel (ComfyUI Sidebar)
+
+When loaded as a ComfyUI extension, the agent provides an in-app AI sidebar:
+
+- **Chat interface** with real-time streaming responses
+- **Workflow-aware** -- automatically reads the current canvas
+- **Missing nodes detection** with one-click install panels
+- **Agent dispatch cards** showing which intelligence layer is active (ROUTER / INTENT / EXECUTION / VERIFY)
+- **Quick action chips** -- Run, Validate, Repair, Optimize with one click
+- **Node interaction pills** -- click to highlight nodes on the canvas
+
+## MCP Server (Primary Interface)
+
+All 106 tools are available via [Model Context Protocol](https://modelcontextprotocol.io/) for integration with Claude Code, Claude Desktop, or other MCP clients:
+
+```bash
+agent mcp
+```
+
+Configure in Claude Code / Claude Desktop:
+
+```json
+{
+  "mcpServers": {
+    "comfyui-agent": {
+      "command": "agent",
+      "args": ["mcp"]
+    }
+  }
+}
+```
 
 ## Configuration
 
@@ -137,8 +225,10 @@ All settings go in your `.env` file:
 | `ANTHROPIC_API_KEY` | (required) | Your API key for Claude |
 | `COMFYUI_HOST` | `127.0.0.1` | Where ComfyUI is running |
 | `COMFYUI_PORT` | `8188` | ComfyUI port |
-| `COMFYUI_DATABASE` | `G:/COMFYUI_Database` | Your ComfyUI installation folder |
-| `AGENT_MODEL` | `claude-sonnet-4-20250514` | Which Claude model to use (CLI mode only — MCP inherits from Claude Code) |
+| `COMFYUI_DATABASE` | `G:/COMFYUI_Database` | Your ComfyUI database folder (models, nodes, workflows) |
+| `COMFYUI_INSTALL_DIR` | auto-detected | ComfyUI installation directory (if separate from database) |
+| `COMFYUI_OUTPUT_DIR` | auto-detected | Where ComfyUI saves generated images |
+| `AGENT_MODEL` | `claude-sonnet-4-20250514` | Which Claude model to use (CLI mode only -- MCP inherits from Claude Code) |
 
 ## Session Memory
 
@@ -159,46 +249,29 @@ Sessions are saved as JSON files in the `sessions/` folder. You can list them wi
 
 ComfyUI exports workflows in different formats. The agent handles all of them:
 
-- **API format** — the JSON you get from "Save (API Format)" in ComfyUI. Full node data with inputs and connections. Best for the agent.
-- **UI format with API data** — the default "Save" export. Contains visual layout plus embedded API data. Agent extracts what it needs.
-- **UI-only format** — older exports with only visual layout. The agent can read the structure but can't modify or execute these.
-
-## MCP Server (Primary Interface)
-
-All 77 tools are available via [Model Context Protocol](https://modelcontextprotocol.io/) for integration with Claude Code, Claude Desktop, or other MCP clients:
-
-```bash
-pip install -e "."
-agent mcp
-```
-
-## Quick Start for Teams
-
-Sharing with coworkers? See [QUICKSTART.md](QUICKSTART.md) for a 5-minute setup guide.
-
-```bash
-python scripts/setup.py                   # Interactive first-time config
-python scripts/validate_project.py        # Verify everything is consistent
-scripts\comfyui_with_agent.bat            # Launch ComfyUI + agent together (Windows)
-```
+- **API format** -- the JSON you get from "Save (API Format)" in ComfyUI. Full node data with inputs and connections. Best for the agent.
+- **UI format with API data** -- the default "Save" export. Contains visual layout plus embedded API data. Agent extracts what it needs.
+- **UI-only format** -- older exports with only visual layout. The agent can read the structure but can't modify or execute these.
 
 ## Troubleshooting
 
-**"ANTHROPIC_API_KEY not set"** — Make sure your `.env` file exists and has the key. Run from the `comfyui-agent` directory.
+**"ANTHROPIC_API_KEY not set"** -- Make sure your `.env` file exists and has the key. Run from the `comfyui-agent` directory.
 
-**"Could not connect to ComfyUI"** — Start ComfyUI first. The agent needs it running to inspect nodes, execute workflows, and validate changes.
+**"Could not connect to ComfyUI"** -- Start ComfyUI first. The agent needs it running to inspect nodes, execute workflows, and validate changes.
 
-**"Node type not found"** — The workflow uses a custom node that isn't installed. Ask the agent: "find missing nodes in this workflow" and it will tell you which packs to install.
+**"Node type not found"** -- The workflow uses a custom node that isn't installed. Ask the agent: "find and install missing nodes" and it will detect, locate, and install the required packs.
+
+**Unicode/encoding crash on Windows** -- If you see `UnicodeEncodeError` with Rich, ensure you're running in a terminal that supports UTF-8 (Windows Terminal recommended).
 
 ## Testing
 
-Tests run without ComfyUI — everything is mocked:
+Tests run without ComfyUI -- everything is mocked:
 
 ```bash
 python -m pytest tests/ -v
-# 1100+ tests, all mocked, under 30 seconds
+# 2000+ tests, all mocked, under 60 seconds
 ```
 
 ## License
 
-[MIT](LICENSE) — use it however you want.
+[MIT](LICENSE) -- use it however you want.

@@ -15,7 +15,7 @@
 pip install -e ".[dev]"                    # Install
 agent run                                  # CLI agent (standalone fallback)
 agent mcp                                  # MCP server (primary interface)
-python -m pytest tests/ -v                 # 1241 tests, all mocked, <25s
+python -m pytest tests/ -v                 # 2000+ tests, all mocked, <60s
 ruff check agent/ tests/                   # Lint
 ruff format agent/ tests/                  # Format
 ```
@@ -126,15 +126,15 @@ agent/
   mcp_server.py    # MCP server exposing all 83 tools
   config.py        # .env loading (ANTHROPIC_API_KEY, COMFYUI_DATABASE, etc.)
   system_prompt.py # Session-aware prompt builder + knowledge detection
-  tools/           # Intelligence layer (53 tools, TOOLS+handle() pattern)
+  tools/           # Intelligence layer (56 tools, TOOLS+handle() pattern)
   brain/           # Brain layer (27 tools, BrainAgent SDK pattern)
-  profiles/        # YAML model profiles (Flux, SDXL + architecture fallbacks)
+  profiles/        # YAML model profiles (Flux, SDXL, LTX-2, WAN 2.x + architecture fallbacks)
   schemas/         # Schema system (loader, validator, generator)
   agents/          # MoE specialists (intent_agent, verify_agent, router)
   knowledge/       # Markdown reference files (loaded by keyword triggers)
   memory/          # Session persistence (JSONL outcomes, JSON state)
   templates/       # Starter workflow JSON files
-tests/             # 1241 tests, all mocked, pytest + pytest-asyncio
+tests/             # 2000+ tests, all mocked, pytest + pytest-asyncio
 ```
 
 **Tool module pattern:** Every module in `tools/` and `brain/` exports `TOOLS: list[dict]` + `handle(name, tool_input) -> str`. Registration in `tools/__init__.py` and `brain/__init__.py`.
