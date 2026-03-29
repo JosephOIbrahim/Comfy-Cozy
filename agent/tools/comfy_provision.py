@@ -110,6 +110,50 @@ TOOLS: list[dict] = [
             "required": ["name"],
         },
     },
+    {
+        "name": "repair_workflow",
+        "description": (
+            "One-shot workflow repair: detect missing nodes, find which packs "
+            "provide them, and install all required packs. Returns a full "
+            "report of what was found and installed. Requires ComfyUI running "
+            "and a workflow loaded in the PILOT engine."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "auto_install": {
+                    "type": "boolean",
+                    "description": (
+                        "If true (default), automatically install all found packs. "
+                        "If false, just report what's missing without installing."
+                    ),
+                },
+            },
+            "required": [],
+        },
+    },
+    {
+        "name": "reconfigure_workflow",
+        "description": (
+            "Scan the loaded workflow for model file references (checkpoints, "
+            "LoRAs, VAEs, etc.) and check which exist locally. For missing "
+            "models, suggest the closest local match or flag for download. "
+            "Optionally apply substitutions automatically."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "auto_fix": {
+                    "type": "boolean",
+                    "description": (
+                        "If true, automatically apply the best local substitution "
+                        "for each missing model. If false (default), just report."
+                    ),
+                },
+            },
+            "required": [],
+        },
+    },
 ]
 
 # ---------------------------------------------------------------------------
@@ -372,6 +416,261 @@ def _handle_uninstall_node_pack(tool_input: dict) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Model reference scanning (for reconfigure_workflow)
+# ---------------------------------------------------------------------------
+
+# Input fields that reference model files, mapped to their model type directory
+_MODEL_INPUT_FIELDS = {
+    "ckpt_name": "checkpoints",
+    "checkpoint_name": "checkpoints",
+    "model_name": "checkpoints",
+    "lora_name": "loras",
+    "vae_name": "vae",
+    "control_net_name": "controlnet",
+    "clip_name": "clip",
+    "unet_name": "unet",
+    "upscale_model": "upscale_models",
+    "embedding_name": "embeddings",
+    "motion_model": "animatediff_models",
+}
+
+
+def _scan_model_references(workflow: dict) -> list[dict]:
+    """Scan a workflow for model file references and check if they exist locally."""
+    refs = []
+    for node_id, node in sorted(workflow.items()):
+        if not isinstance(node, dict) or "class_type" not in node:
+            continue
+        inputs = node.get("inputs", {})
+        for field, value in inputs.items():
+            if not isinstance(value, str):
+                continue
+            # Check known model fields
+            model_type = _MODEL_INPUT_FIELDS.get(field)
+            if not model_type:
+                # Also check by extension
+                if any(value.lower().endswith(ext) for ext in _MODEL_EXTENSIONS):
+                    model_type = "checkpoints"  # best guess
+                else:
+                    continue
+
+            # Check if file exists
+            model_path = MODELS_DIR / model_type / value
+            exists = model_path.exists()
+
+            # Find closest local match if missing
+            best_match = None
+            if not exists:
+                type_dir = MODELS_DIR / model_type
+                if type_dir.exists():
+                    local_files = [
+                        f.name for f in type_dir.iterdir()
+                        if f.is_file() and f.suffix.lower() in _MODEL_EXTENSIONS
+                    ]
+                    if local_files:
+                        # Simple substring match
+                        stem = Path(value).stem.lower()
+                        scored = []
+                        for lf in local_files:
+                            lf_stem = Path(lf).stem.lower()
+                            score = 0
+                            # Exact stem match
+                            if lf_stem == stem:
+                                score = 100
+                            # Stem contains or contained by
+                            elif stem in lf_stem or lf_stem in stem:
+                                score = 60
+                            # Word overlap
+                            else:
+                                stem_words = set(stem.replace("-", "_").split("_"))
+                                lf_words = set(lf_stem.replace("-", "_").split("_"))
+                                overlap = stem_words & lf_words
+                                if overlap:
+                                    score = len(overlap) * 20
+                            if score > 0:
+                                scored.append((score, lf))
+                        if scored:
+                            scored.sort(key=lambda x: -x[0])
+                            best_match = scored[0][1]
+
+            refs.append({
+                "node_id": node_id,
+                "class_type": node.get("class_type", "?"),
+                "field": field,
+                "value": value,
+                "model_type": model_type,
+                "exists": exists,
+                "best_match": best_match,
+            })
+
+    return refs
+
+
+def _handle_repair_workflow(tool_input: dict) -> str:
+    """Find missing nodes and auto-install the packs that provide them."""
+    import json
+    auto_install = tool_input.get("auto_install", True)
+
+    # Step 1: Find missing nodes
+    try:
+        from .comfy_discover import handle as discover_handle
+        result_json = discover_handle("find_missing_nodes", {})
+        result = json.loads(result_json)
+    except Exception as e:
+        return to_json({"error": f"Could not check missing nodes: {e}"})
+
+    missing = result.get("missing", [])
+    if not missing:
+        return to_json({
+            "status": "clean",
+            "message": "No missing nodes detected. Workflow is ready to run.",
+            "missing_count": 0,
+        })
+
+    # Step 2: Collect unique packs to install
+    packs_to_install: dict[str, dict] = {}  # url -> {name, nodes}
+    unresolved = []
+    for m in missing:
+        class_type = m.get("class_type", "?")
+        pack_url = m.get("pack_url", "")
+        pack_name = m.get("pack_name", "")
+
+        if pack_url and pack_url not in packs_to_install:
+            packs_to_install[pack_url] = {
+                "name": pack_name or _folder_name_from_url(pack_url),
+                "url": pack_url,
+                "nodes": [],
+            }
+        if pack_url:
+            packs_to_install[pack_url]["nodes"].append(class_type)
+        else:
+            unresolved.append(class_type)
+
+    # Step 3: Install (if auto_install)
+    install_results = []
+    if auto_install and packs_to_install:
+        for url, pack_info in packs_to_install.items():
+            install_json = _handle_install_node_pack({"url": url, "name": pack_info["name"]})
+            install_result = json.loads(install_json)
+            install_results.append({
+                "pack": pack_info["name"],
+                "url": url,
+                "nodes_provided": pack_info["nodes"],
+                "success": "installed" in install_result,
+                "message": install_result.get("message", install_result.get("error", "")),
+            })
+
+    restart_needed = any(r["success"] for r in install_results)
+
+    return to_json({
+        "status": "repaired" if install_results else "report",
+        "missing_count": len(missing),
+        "packs_found": len(packs_to_install),
+        "packs_installed": sum(1 for r in install_results if r["success"]),
+        "unresolved_nodes": unresolved,
+        "install_results": install_results,
+        "restart_required": restart_needed,
+        "message": (
+            f"Found {len(missing)} missing node types across {len(packs_to_install)} packs. "
+            + (f"Installed {sum(1 for r in install_results if r['success'])} packs. "
+               "Restart ComfyUI to load new nodes."
+               if install_results else
+               "Use auto_install=true to install them.")
+            + (f" {len(unresolved)} node types could not be resolved to a pack."
+               if unresolved else "")
+        ),
+    })
+
+
+def _handle_reconfigure_workflow(tool_input: dict) -> str:
+    """Scan workflow model references and fix missing ones."""
+    auto_fix = tool_input.get("auto_fix", False)
+
+    # Get current workflow from PILOT state
+    try:
+        from .workflow_patch import _state
+        workflow = _state.get("current_workflow")
+        if not workflow:
+            return to_json({
+                "error": "No workflow loaded. Load a workflow first.",
+            })
+    except Exception as e:
+        return to_json({"error": f"Could not access workflow state: {e}"})
+
+    refs = _scan_model_references(workflow)
+    if not refs:
+        return to_json({
+            "status": "clean",
+            "message": "No model references found in workflow.",
+            "references": [],
+        })
+
+    missing_refs = [r for r in refs if not r["exists"]]
+    found_refs = [r for r in refs if r["exists"]]
+
+    # Apply auto-fix substitutions
+    fixes_applied = []
+    if auto_fix and missing_refs:
+        from .workflow_patch import _state as patch_state
+        wf = patch_state["current_workflow"]
+        for ref in missing_refs:
+            if ref["best_match"]:
+                node = wf.get(ref["node_id"])
+                if node and "inputs" in node:
+                    old_value = node["inputs"].get(ref["field"])
+                    node["inputs"][ref["field"]] = ref["best_match"]
+                    fixes_applied.append({
+                        "node_id": ref["node_id"],
+                        "class_type": ref["class_type"],
+                        "field": ref["field"],
+                        "old": old_value,
+                        "new": ref["best_match"],
+                    })
+
+    still_missing = [
+        r for r in missing_refs
+        if not any(f["node_id"] == r["node_id"] and f["field"] == r["field"]
+                   for f in fixes_applied)
+    ]
+
+    return to_json({
+        "status": "reconfigured" if fixes_applied else "report",
+        "total_references": len(refs),
+        "found": len(found_refs),
+        "missing": len(missing_refs),
+        "fixes_applied": len(fixes_applied),
+        "still_missing": len(still_missing),
+        "details": {
+            "found": [
+                {"node": r["class_type"], "field": r["field"], "model": r["value"]}
+                for r in found_refs
+            ],
+            "missing": [
+                {
+                    "node": r["class_type"],
+                    "field": r["field"],
+                    "model": r["value"],
+                    "model_type": r["model_type"],
+                    "best_match": r["best_match"],
+                }
+                for r in missing_refs
+            ],
+            "fixes": fixes_applied,
+        },
+        "message": (
+            f"{len(refs)} model references scanned. "
+            f"{len(found_refs)} found, {len(missing_refs)} missing. "
+            + (f"Applied {len(fixes_applied)} substitutions. "
+               if fixes_applied else "")
+            + (f"{len(still_missing)} models have no local match -- download needed."
+               if still_missing else
+               "All models resolved." if not missing_refs else
+               "Use auto_fix=true to apply best-match substitutions.")
+        ),
+    })
+
+
+# ---------------------------------------------------------------------------
 # Dispatch
 # ---------------------------------------------------------------------------
 
@@ -385,6 +684,10 @@ def handle(name: str, tool_input: dict) -> str:
             return _handle_download_model(tool_input)
         elif name == "uninstall_node_pack":
             return _handle_uninstall_node_pack(tool_input)
+        elif name == "repair_workflow":
+            return _handle_repair_workflow(tool_input)
+        elif name == "reconfigure_workflow":
+            return _handle_reconfigure_workflow(tool_input)
         else:
             return to_json({"error": f"Unknown tool: {name}"})
     except Exception as e:

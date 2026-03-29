@@ -115,7 +115,6 @@ def _inject_workflow(conv: ConversationState, workflow_data: dict) -> None:
     Runs find_missing_nodes on first injection (best-effort).
     """
     # Quick change detection via hash of sorted JSON
-    import hashlib
     from agent.tools._util import to_json as _to_json
     wf_hash = hash(_to_json(workflow_data))
 
@@ -414,7 +413,6 @@ def _panel_discovery(result: dict, tool_input: dict) -> dict | None:
     max_results = 5
     for item in results_list[:max_results]:
         name = item.get("name", item.get("title", "Unknown"))
-        desc = item.get("description", "")[:120]
         source = item.get("source", "")
         installed = item.get("installed", False)
 
@@ -587,6 +585,7 @@ _PANEL_TOOLS = {
     "discover",
     "find_missing_nodes",
     "install_node_pack", "download_model",
+    "repair_workflow", "reconfigure_workflow",
 }
 
 
@@ -614,8 +613,130 @@ def _build_panel_for_tool(name: str, tool_input: dict, result_json: str) -> dict
         return None
     elif name in ("install_node_pack", "download_model"):
         return _panel_install_result(result)
+    elif name == "repair_workflow":
+        return _panel_repair_report(result)
+    elif name == "reconfigure_workflow":
+        return _panel_reconfigure_report(result)
 
     return None
+
+
+def _panel_repair_report(result: dict) -> dict | None:
+    """Panel for repair_workflow results."""
+    if result.get("error"):
+        return None
+    status = result.get("status", "report")
+    sections = []
+    install_results = result.get("install_results", [])
+    if install_results:
+        rows = []
+        for ir in install_results:
+            icon = "OK" if ir.get("success") else "FAIL"
+            rows.append({
+                "label": f"[{icon}] {ir.get('pack', '?')}",
+                "value": ", ".join(ir.get("nodes_provided", [])[:3]),
+            })
+        sections.append({
+            "title": "Installed Packs",
+            "dotColor": "#00BB81" if any(ir["success"] for ir in install_results) else "#FF6E6E",
+            "count": len(install_results),
+            "defaultOpen": True,
+            "type": "detail_rows",
+            "data": {"rows": rows},
+        })
+    unresolved = result.get("unresolved_nodes", [])
+    if unresolved:
+        sections.append({
+            "title": "Unresolved Nodes",
+            "dotColor": "#FF6E6E",
+            "count": len(unresolved),
+            "defaultOpen": True,
+            "type": "slot_tags",
+            "data": {"tags": [{"label": n, "slotType": "model"} for n in unresolved]},
+        })
+    return {
+        "type": "repair_report",
+        "header": {
+            "label": "workflow \u00b7 repair",
+            "badge": "OK" if status == "repaired" else str(result.get("missing_count", 0)),
+            "title": "Workflow Repair Report",
+            "summary": result.get("message", ""),
+            "stats": [
+                {"value": str(result.get("missing_count", 0)), "label": "missing"},
+                {"value": str(result.get("packs_installed", 0)), "label": "installed"},
+            ],
+        },
+        "sections": sections,
+        "footer": {
+            "status": "restart_required" if result.get("restart_required") else "ready",
+            "actions": (
+                [{"label": "Restart ComfyUI", "variant": "primary",
+                  "action": "agent_message",
+                  "message": "How do I restart ComfyUI to load the new nodes?"}]
+                if result.get("restart_required") else []
+            ),
+        },
+    }
+
+
+def _panel_reconfigure_report(result: dict) -> dict | None:
+    """Panel for reconfigure_workflow results."""
+    if result.get("error"):
+        return None
+    details = result.get("details", {})
+    sections = []
+    # Fixes applied
+    fixes = details.get("fixes", [])
+    if fixes:
+        rows = [{"label": f"{f['class_type']}.{f['field']}", "value": f"{f['old']} -> {f['new']}"}
+                for f in fixes]
+        sections.append({
+            "title": "Substitutions Applied",
+            "dotColor": "#00BB81",
+            "count": len(fixes),
+            "defaultOpen": True,
+            "type": "detail_rows",
+            "data": {"rows": rows},
+        })
+    # Still missing
+    missing = details.get("missing", [])
+    still_missing = [m for m in missing if not any(
+        f["node_id"] == m.get("node_id") and f["field"] == m.get("field") for f in fixes)]  # noqa: E501
+    if still_missing:
+        rows = [{"label": f"{m['node']}.{m['field']}", "value": m["model"]}
+                for m in still_missing]
+        sections.append({
+            "title": "Models Needing Download",
+            "dotColor": "#FF6E6E",
+            "count": len(still_missing),
+            "defaultOpen": True,
+            "type": "detail_rows",
+            "data": {"rows": rows},
+        })
+    return {
+        "type": "reconfigure_report",
+        "header": {
+            "label": "workflow \u00b7 reconfigure",
+            "badge": str(result.get("total_references", 0)),
+            "title": "Model Reference Report",
+            "summary": result.get("message", ""),
+            "stats": [
+                {"value": str(result.get("found", 0)), "label": "found"},
+                {"value": str(result.get("missing", 0)), "label": "missing"},
+                {"value": str(result.get("fixes_applied", 0)), "label": "fixed"},
+            ],
+        },
+        "sections": sections,
+        "footer": {
+            "status": "ready" if not still_missing else "needs_download",
+            "actions": (
+                [{"label": "Download missing models", "variant": "primary",
+                  "action": "agent_message",
+                  "message": "Download the missing models for my workflow"}]
+                if still_missing else []
+            ),
+        },
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -787,6 +908,7 @@ def _infer_stage(tool_name: str) -> str:
         "check_node_updates", "get_repo_releases",
         "identify_model_family", "check_model_compatibility",
         "install_node_pack", "download_model", "uninstall_node_pack",
+        "repair_workflow", "reconfigure_workflow",
     }
     pilot = {
         "apply_workflow_patch", "preview_workflow_patch", "undo_workflow_patch",
@@ -891,6 +1013,190 @@ def _extract_nodes_touched(tool_name: str, tool_input: dict, conv: ConversationS
 
 
 # ---------------------------------------------------------------------------
+# Environment snapshot (sent on WebSocket connect)
+# ---------------------------------------------------------------------------
+
+def _build_environment() -> dict:
+    """Build a snapshot of the ComfyUI installation for the panel."""
+    try:
+        from agent.config import (
+            COMFYUI_DATABASE, COMFYUI_INSTALL_DIR, MODELS_DIR,
+            CUSTOM_NODES_DIR, WORKFLOWS_DIR, COMFYUI_BLUEPRINTS_DIR,
+            COMFYUI_OUTPUT_DIR,
+        )
+
+        # Count models by type
+        model_counts = {}
+        if MODELS_DIR.exists():
+            for subdir in sorted(MODELS_DIR.iterdir()):
+                if subdir.is_dir() and not subdir.name.startswith("."):
+                    count = sum(1 for f in subdir.iterdir()
+                                if f.is_file() and f.suffix.lower()
+                                in (".safetensors", ".ckpt", ".pt", ".pth", ".bin", ".gguf"))
+                    if count > 0:
+                        model_counts[subdir.name] = count
+
+        # Count custom nodes
+        node_count = 0
+        if CUSTOM_NODES_DIR.exists():
+            node_count = sum(
+                1 for d in CUSTOM_NODES_DIR.iterdir()
+                if d.is_dir() and not d.name.startswith((".", "_", "__"))
+            )
+
+        # Count workflows
+        workflow_count = 0
+        if WORKFLOWS_DIR.exists():
+            workflow_count = sum(1 for f in WORKFLOWS_DIR.glob("*.json"))
+
+        return {
+            "database": str(COMFYUI_DATABASE),
+            "install_dir": str(COMFYUI_INSTALL_DIR),
+            "models_dir": str(MODELS_DIR.resolve()),
+            "custom_nodes_dir": str(CUSTOM_NODES_DIR.resolve()),
+            "workflows_dir": str(WORKFLOWS_DIR),
+            "blueprints_dir": str(COMFYUI_BLUEPRINTS_DIR),
+            "output_dir": str(COMFYUI_OUTPUT_DIR),
+            "model_counts": model_counts,
+            "total_models": sum(model_counts.values()),
+            "node_packs": node_count,
+            "workflows": workflow_count,
+        }
+    except Exception as e:
+        log.warning("Environment snapshot failed: %s", e)
+        return {"error": str(e)}
+
+
+# ---------------------------------------------------------------------------
+# Direct action handler (executes tools without Claude API round-trip)
+# ---------------------------------------------------------------------------
+
+# Actions that execute tools directly (no Claude needed)
+_DIRECT_ACTIONS = {
+    "install_node_pack", "download_model", "uninstall_node_pack",
+    "repair_workflow", "reconfigure_workflow",
+    "validate", "repair", "reconfigure",
+}
+
+
+async def _handle_panel_action(ws, conv, loop, action, data):
+    """Handle panel action buttons by executing tools directly."""
+
+    if action == "agent_message":
+        # This one still routes through Claude (for open-ended questions)
+        message = data.get("message", "").strip()
+        if not message or conv.busy:
+            return
+        conv.busy = True
+        await ws.send_json({"type": "stage", "stage": "THINKING", "detail": ""})
+        msg_queue = queue.Queue()
+        thread = threading.Thread(
+            target=_run_agent_sync,
+            args=(conv, message, msg_queue),
+            daemon=True,
+        )
+        thread.start()
+        accumulated_text = []
+        while True:
+            try:
+                event = await loop.run_in_executor(
+                    None, lambda: msg_queue.get(timeout=0.1)
+                )
+            except queue.Empty:
+                if not thread.is_alive():
+                    while not msg_queue.empty():
+                        event = msg_queue.get_nowait()
+                        await _forward_event(ws, event, accumulated_text)
+                    break
+                continue
+            await _forward_event(ws, event, accumulated_text)
+            if event["type"] in ("done", "error"):
+                break
+        if accumulated_text:
+            await ws.send_json({
+                "type": "message", "role": "agent",
+                "content": "".join(accumulated_text),
+            })
+        conv.busy = False
+        return
+
+    # --- Direct tool execution (no Claude) ---
+
+    # Map shorthand actions to tool calls
+    tool_name = action
+    tool_input = {}
+
+    if action == "repair":
+        tool_name = "repair_workflow"
+        tool_input = {"auto_install": True}
+    elif action == "reconfigure":
+        tool_name = "reconfigure_workflow"
+        tool_input = {"auto_fix": True}
+    elif action == "validate":
+        tool_name = "validate_before_execute"
+        tool_input = {}
+    elif action == "install_node_pack":
+        tool_name = "install_node_pack"
+        tool_input = {"url": data.get("url", ""), "name": data.get("name", "")}
+    elif action == "download_model":
+        tool_name = "download_model"
+        tool_input = {
+            "url": data.get("url", ""),
+            "model_type": data.get("model_type", "checkpoints"),
+            "filename": data.get("filename", ""),
+        }
+
+    if tool_name not in _DIRECT_ACTIONS:
+        await ws.send_json({
+            "type": "error",
+            "message": f"Unknown action: {action}",
+        })
+        return
+
+    # Execute tool directly in executor (no API call)
+    await ws.send_json({
+        "type": "stage",
+        "stage": "DISCOVER" if "repair" in tool_name or "reconfigure" in tool_name else "PILOT",
+        "detail": f"Running {tool_name}...",
+    })
+
+    try:
+        from agent.tools.comfy_provision import handle as provision_handle
+        from agent.tools.comfy_execute import handle as execute_handle
+
+        if tool_name == "validate_before_execute":
+            result_json = await loop.run_in_executor(
+                None, execute_handle, tool_name, tool_input
+            )
+        else:
+            result_json = await loop.run_in_executor(
+                None, provision_handle, tool_name, tool_input
+            )
+
+        # Build and send panel
+        panel = _build_panel_for_tool(tool_name, tool_input, result_json)
+        if panel:
+            await ws.send_json({"type": "panel", "panel": panel})
+
+        # Also send the result as a text message for context
+        result = json.loads(result_json)
+        msg = result.get("message", result.get("error", "Done."))
+        await ws.send_json({
+            "type": "message", "role": "agent",
+            "content": msg,
+        })
+
+    except Exception as e:
+        log.error("Direct action failed: %s", e, exc_info=True)
+        await ws.send_json({
+            "type": "error",
+            "message": f"Action failed: {e}",
+        })
+
+    await ws.send_json({"type": "stage", "stage": "DONE", "detail": ""})
+
+
+# ---------------------------------------------------------------------------
 # WebSocket handler
 # ---------------------------------------------------------------------------
 
@@ -910,9 +1216,15 @@ async def websocket_handler(request):
     conv = ConversationState()
     _conversations[conv.id] = conv
 
+    # Send environment info on connect so panel has native awareness
+    try:
+        env = _build_environment()
+    except Exception:
+        env = {}
     await ws.send_json({
         "type": "connected",
         "conversation_id": conv.id,
+        "environment": env,
     })
 
     log.info("WebSocket connected: %s", conv.id)
@@ -1010,86 +1322,9 @@ async def websocket_handler(request):
                     pass
 
                 elif msg_type == "action":
-                    # Panel action button clicked — route to agent as a message
+                    # Panel action — execute tools DIRECTLY (no Claude round-trip)
                     action = data.get("action", "")
-                    if action == "agent_message":
-                        # Send a pre-formed message to the agent
-                        message = data.get("message", "").strip()
-                        if message and not conv.busy:
-                            conv.busy = True
-                            await ws.send_json({"type": "stage", "stage": "THINKING", "detail": ""})
-                            msg_queue = queue.Queue()
-                            thread = threading.Thread(
-                                target=_run_agent_sync,
-                                args=(conv, message, msg_queue),
-                                daemon=True,
-                            )
-                            thread.start()
-                            accumulated_text = []
-                            while True:
-                                try:
-                                    event = await loop.run_in_executor(
-                                        None, lambda: msg_queue.get(timeout=0.1)
-                                    )
-                                except queue.Empty:
-                                    if not thread.is_alive():
-                                        while not msg_queue.empty():
-                                            event = msg_queue.get_nowait()
-                                            await _forward_event(ws, event, accumulated_text)
-                                        break
-                                    continue
-                                await _forward_event(ws, event, accumulated_text)
-                                if event["type"] in ("done", "error"):
-                                    break
-                            if accumulated_text:
-                                await ws.send_json({
-                                    "type": "message",
-                                    "role": "agent",
-                                    "content": "".join(accumulated_text),
-                                })
-                            conv.busy = False
-
-                    elif action == "install_node_pack":
-                        # Direct install action from panel button
-                        url = data.get("url", "")
-                        name = data.get("name", "")
-                        if url:
-                            message = f"Install the custom node pack from {url}"
-                            if name:
-                                message = f"Install the '{name}' custom node pack from {url}"
-                            if not conv.busy:
-                                conv.busy = True
-                                await ws.send_json({"type": "stage", "stage": "THINKING", "detail": ""})
-                                msg_queue = queue.Queue()
-                                thread = threading.Thread(
-                                    target=_run_agent_sync,
-                                    args=(conv, message, msg_queue),
-                                    daemon=True,
-                                )
-                                thread.start()
-                                accumulated_text = []
-                                while True:
-                                    try:
-                                        event = await loop.run_in_executor(
-                                            None, lambda: msg_queue.get(timeout=0.1)
-                                        )
-                                    except queue.Empty:
-                                        if not thread.is_alive():
-                                            while not msg_queue.empty():
-                                                event = msg_queue.get_nowait()
-                                                await _forward_event(ws, event, accumulated_text)
-                                            break
-                                        continue
-                                    await _forward_event(ws, event, accumulated_text)
-                                    if event["type"] in ("done", "error"):
-                                        break
-                                if accumulated_text:
-                                    await ws.send_json({
-                                        "type": "message",
-                                        "role": "agent",
-                                        "content": "".join(accumulated_text),
-                                    })
-                                conv.busy = False
+                    await _handle_panel_action(ws, conv, loop, action, data)
 
             elif raw_msg.type == web.WSMsgType.ERROR:
                 log.error("WebSocket error: %s", ws.exception())

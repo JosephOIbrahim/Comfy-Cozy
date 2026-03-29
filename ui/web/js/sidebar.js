@@ -302,19 +302,29 @@ function buildSidebar(el) {
 
   // Quick action chips
   const quickActionsSlot = el.querySelector("#sd-quick-actions");
-  const ACTION_MESSAGES = {
+  // Direct actions bypass Claude API entirely (instant)
+  const DIRECT_ACTIONS = new Set(["validate", "repair", "reconfigure"]);
+  const ACTION_LABELS = {
     run: "Run the current workflow",
-    validate: "Validate the current workflow and check for issues",
+    validate: "Validating workflow...",
     changes: "What changes have been made to the workflow?",
     undo: "Undo the last workflow change",
     optimize: "Suggest optimizations for the current workflow",
-    repair: "Find and install missing nodes for this workflow",
+    repair: "Repairing workflow (finding + installing missing nodes)...",
   };
   const quickActionsEl = createQuickActions((actionId) => {
-    const message = ACTION_MESSAGES[actionId];
-    if (!message || busy) return;
-    messagesEl.appendChild(createMessageEl("user", message));
-    const sent = conn.send("action", { action: "agent_message", message });
+    if (busy) return;
+    const label = ACTION_LABELS[actionId] || actionId;
+    messagesEl.appendChild(createMessageEl("user", label));
+
+    let sent;
+    if (DIRECT_ACTIONS.has(actionId)) {
+      // Direct execution — no Claude round-trip
+      sent = conn.send("action", { action: actionId });
+    } else {
+      // Route through Claude for open-ended requests
+      sent = conn.send("action", { action: "agent_message", message: label });
+    }
     if (sent) {
       setBusy(true);
       _showThinking();
@@ -373,6 +383,11 @@ function buildSidebar(el) {
   function handleAgentMessage(data) {
     switch (data.type) {
       case "connected":
+        // Store environment info for native awareness
+        if (data.environment) {
+          window._sdEnvironment = data.environment;
+          console.log("[SUPER DUPER] Environment:", data.environment);
+        }
         break;
 
       case "text_delta":
@@ -658,7 +673,7 @@ function buildSidebar(el) {
 
   sendBtn.addEventListener("click", sendMessage);
 
-  // Panel action button delegation — sends action to agent via WebSocket
+  // Panel action button delegation — executes tools directly via WebSocket
   messagesEl.addEventListener("click", (e) => {
     const btn = e.target.closest("[data-action]");
     if (!btn || busy) return;
@@ -667,12 +682,17 @@ function buildSidebar(el) {
     const payload = { action };
 
     if (action === "agent_message" && btn.dataset.message) {
-      // Show the message as a user message in chat
       messagesEl.appendChild(createMessageEl("user", btn.dataset.message));
       payload.message = btn.dataset.message;
     } else if (action === "install_node_pack") {
+      messagesEl.appendChild(createMessageEl("user", `Installing ${btn.dataset.name || "node pack"}...`));
       if (btn.dataset.url) payload.url = btn.dataset.url;
       if (btn.dataset.name) payload.name = btn.dataset.name;
+    } else if (action === "download_model") {
+      messagesEl.appendChild(createMessageEl("user", `Downloading ${btn.dataset.filename || "model"}...`));
+      if (btn.dataset.url) payload.url = btn.dataset.url;
+      if (btn.dataset.modelType) payload.model_type = btn.dataset.modelType;
+      if (btn.dataset.filename) payload.filename = btn.dataset.filename;
     }
 
     const sent = conn.send("action", payload);

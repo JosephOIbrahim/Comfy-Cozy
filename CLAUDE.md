@@ -50,7 +50,7 @@ ruff format agent/ tests/                  # Format
 12. Never generate entire workflows from scratch. Make surgical, validated modifications.
 13. Every patch is validated before application. No exceptions.
 
-## Tool Overview (83 tools)
+## Tool Overview (85 tools)
 
 | Category | Tools |
 |----------|-------|
@@ -123,7 +123,7 @@ Patch engine operates on this format exclusively. Three input formats handled tr
 agent/
   main.py          # Agent loop (streaming, context management, retry)
   cli.py           # Typer CLI (run, mcp commands)
-  mcp_server.py    # MCP server exposing all 83 tools
+  mcp_server.py    # MCP server exposing all 85 tools
   config.py        # .env loading (ANTHROPIC_API_KEY, COMFYUI_DATABASE, etc.)
   system_prompt.py # Session-aware prompt builder + knowledge detection
   tools/           # Intelligence layer (56 tools, TOOLS+handle() pattern)
