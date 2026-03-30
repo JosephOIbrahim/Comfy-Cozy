@@ -7,8 +7,8 @@ import pytest
 
 pxr = pytest.importorskip("pxr", reason="usd-core not installed")
 
-from agent.stage.anchors import AnchorViolationError
-from agent.stage.cognitive_stage import (
+from agent.stage.anchors import AnchorViolationError  # noqa: E402
+from agent.stage.cognitive_stage import (  # noqa: E402
     STAGE_HIERARCHY,
     CognitiveWorkflowStage,
     StageError,

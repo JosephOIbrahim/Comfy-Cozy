@@ -228,7 +228,7 @@ class TestStatsAndQueries:
 
     def test_get_pending(self, meta: MetaAgent):
         imp1 = meta.propose_improvement("recipe", "t1", {})
-        imp2 = meta.propose_improvement("recipe", "t2", {})
+        meta.propose_improvement("recipe", "t2", {})
         meta.evaluate_improvement(imp1, 0.5, 0.7)
         pending = meta.get_pending()
         assert len(pending) == 1

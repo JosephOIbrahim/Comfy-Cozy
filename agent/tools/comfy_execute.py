@@ -496,7 +496,7 @@ def _execute_with_websocket(
                 for vid in node_out.get("gifs", []):
                     outputs.append({"type": "video", "filename": vid.get("filename"), "subfolder": vid.get("subfolder", "")})
     except Exception:
-        pass
+        log.warning("Failed to fetch outputs from history for prompt %s", prompt_id, exc_info=True)
 
     # Build node timing summary
     timing = []

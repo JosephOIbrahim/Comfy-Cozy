@@ -9,8 +9,8 @@ import pytest
 
 pxr = pytest.importorskip("pxr", reason="usd-core not installed")
 
-from agent.stage.cognitive_stage import CognitiveWorkflowStage
-from agent.stage.workflow_mapper import (
+from agent.stage.cognitive_stage import CognitiveWorkflowStage  # noqa: E402
+from agent.stage.workflow_mapper import (  # noqa: E402
     prims_to_workflow_json,
     workflow_json_to_prims,
 )

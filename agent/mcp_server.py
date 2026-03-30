@@ -170,8 +170,10 @@ def create_mcp_server() -> "Server":
                 from . import tool_count
                 intel_count, brain_count, total_count = tool_count()
             except Exception:
+                log.debug("tool_count() unavailable during ping", exc_info=True)
                 intel_count, brain_count, total_count = "?", "?", "?"
-            comfyui = _check_comfyui_reachable()
+            _loop = asyncio.get_running_loop()
+            comfyui = await _loop.run_in_executor(None, _check_comfyui_reachable)
             return [types.TextContent(type="text", text=to_json({
                 "status": "ok",
                 "server": "comfyui-agent",
@@ -244,8 +246,10 @@ async def run_stdio():
     """Run the MCP server using stdio transport."""
     server = create_mcp_server()
 
-    # Startup health check — log ComfyUI reachability immediately
-    comfyui_status = _check_comfyui_reachable()
+    # Startup health check — run sync HTTP call in executor to avoid
+    # blocking the event loop during startup.
+    loop = asyncio.get_running_loop()
+    comfyui_status = await loop.run_in_executor(None, _check_comfyui_reachable)
     if comfyui_status["reachable"]:
         log.info(
             "ComfyUI Agent MCP server starting (stdio) — "

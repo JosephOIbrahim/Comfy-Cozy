@@ -11,7 +11,6 @@ from agent.startup import (
     _scan_workflows_to_stage,
     _scan_workflows_from_disk,
     _safe_prim_name,
-    MODEL_EXTENSIONS,
 )
 import agent.startup as startup_mod
 
@@ -96,7 +95,7 @@ class TestRunAutoInit:
              patch.object(startup_mod, "_load_default_workflow",
                           return_value="loaded wf.json") as load, \
              patch.object(startup_mod, "_load_newest_favorite") as fav:
-            result = run_auto_init(mock_ctx)
+            run_auto_init(mock_ctx)
         load.assert_called_once_with(mock_ctx, "/some/wf.json")
         fav.assert_not_called()
 

@@ -6,7 +6,6 @@ import pytest
 
 from agent.stage.compositor import (
     CameraParams,
-    CompositorError,
     compose_scene_from_outputs,
     export_scene,
 )
@@ -143,10 +142,10 @@ class TestComposeScene:
 class TestExportScene:
     def test_export_usda(self, usd, tmp_path):
         stage = compose_scene_from_outputs()
-        path = export_scene(stage, tmp_path / "scene.usda", fmt="usda")
+        export_scene(stage, tmp_path / "scene.usda", fmt="usda")
         assert (tmp_path / "scene.usda").exists()
 
     def test_export_usdc(self, usd, tmp_path):
         stage = compose_scene_from_outputs()
-        path = export_scene(stage, tmp_path / "scene.usdc", fmt="usdc")
+        export_scene(stage, tmp_path / "scene.usdc", fmt="usdc")
         assert (tmp_path / "scene.usdc").exists()

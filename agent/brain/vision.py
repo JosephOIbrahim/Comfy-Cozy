@@ -406,6 +406,14 @@ class VisionAgent(BrainAgent):
                 "fallback": "Use compare_outputs for Vision API comparison.",
             })
 
+        # Validate both paths before opening (matches _read_image_as_base64 behavior)
+        err_a = self.cfg.validate_path(image_a, must_exist=True)
+        if err_a:
+            return self.to_json({"error": err_a})
+        err_b = self.cfg.validate_path(image_b, must_exist=True)
+        if err_b:
+            return self.to_json({"error": err_b})
+
         path_a = Path(image_a)
         path_b = Path(image_b)
 
@@ -459,7 +467,7 @@ class VisionAgent(BrainAgent):
 def _compute_average_hash(img, hash_size: int = 8) -> int:
     """Compute average hash (aHash) — resize to hash_size, compare to mean."""
     resized = img.convert("L").resize((hash_size, hash_size), Image.LANCZOS)
-    pixels = list(resized.getdata())
+    pixels = list(resized.get_flattened_data())
     mean = sum(pixels) / len(pixels)
     bits = 0
     for i, p in enumerate(pixels):
@@ -484,8 +492,8 @@ def _pixel_diff(img_a, img_b) -> dict:
     a = img_a.resize(size).convert("RGB")
     b = img_b.resize(size).convert("RGB")
 
-    pixels_a = list(a.getdata())
-    pixels_b = list(b.getdata())
+    pixels_a = list(a.get_flattened_data())
+    pixels_b = list(b.get_flattened_data())
     total = len(pixels_a)
 
     if total == 0:

@@ -128,7 +128,7 @@ def _scan_workflows_to_stage(ctx: SessionContext) -> str:
       3. /queue                                                 (running)
       4. /history                                               (recent executions)
     """
-    from .config import COMFYUI_URL, WORKFLOWS_DIR
+    from .config import WORKFLOWS_DIR
 
     stage = ctx.ensure_stage()
     if stage is None:
@@ -163,9 +163,7 @@ def _scan_workflows_to_stage(ctx: SessionContext) -> str:
     history_data = _fetch_json("/history?max_items=10")
     recently_executed: set[str] = set()
     if isinstance(history_data, dict):
-        for prompt_id, entry in history_data.items():
-            # History entries may contain the original workflow filename in metadata
-            outputs = entry.get("outputs", {})
+        for prompt_id, _entry in history_data.items():
             recently_executed.add(prompt_id)
 
     # --- Register in USD stage ---

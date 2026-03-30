@@ -31,6 +31,29 @@ def _sessions_dir() -> Path:
     return SESSIONS_DIR
 
 
+def _validate_session_name(name: str) -> str | None:
+    """Validate a session name to prevent path traversal.
+
+    Session names are used directly in filenames. This ensures the
+    resulting path stays within the sessions directory.
+    Returns None if valid, or an error message string if invalid.
+    """
+    if not name or not isinstance(name, str):
+        return "Session name must be a non-empty string."
+    # Reject path separators and directory traversal components
+    if "/" in name or "\\" in name:
+        return f"Invalid session name '{name}': must not contain path separators."
+    if name in (".", "..") or name.startswith(".."):
+        return f"Invalid session name '{name}': must not contain '..' components."
+    # Reject null bytes and other dangerous characters
+    if "\x00" in name:
+        return f"Invalid session name '{name}': must not contain null bytes."
+    # Reasonable length limit
+    if len(name) > 255:
+        return "Session name too long (max 255 characters)."
+    return None
+
+
 def save_session(
     name: str,
     *,
@@ -42,6 +65,10 @@ def save_session(
 
     Returns {"saved": path, "size_bytes": n} or {"error": msg}.
     """
+    name_err = _validate_session_name(name)
+    if name_err:
+        return {"error": name_err}
+
     path = _sessions_dir() / f"{name}.json"
 
     session_data = {
@@ -66,6 +93,10 @@ def load_session(name: str) -> dict:
 
     Returns the full session dict or {"error": msg}.
     """
+    name_err = _validate_session_name(name)
+    if name_err:
+        return {"error": name_err}
+
     path = _sessions_dir() / f"{name}.json"
 
     if not path.exists():
@@ -129,6 +160,10 @@ def add_note(name: str, note: str, *, note_type: str = "observation") -> dict:
 
     Returns {"added": True, "total_notes": n} or {"error": msg}.
     """
+    name_err = _validate_session_name(name)
+    if name_err:
+        return {"error": name_err}
+
     if note_type not in NOTE_TYPES:
         return {
             "error": f"Unknown note type: {note_type}",
@@ -258,6 +293,10 @@ def save_stage(name: str, stage: "object") -> dict:
     Returns:
         {"saved_stage": path} or {"error": msg}.
     """
+    name_err = _validate_session_name(name)
+    if name_err:
+        return {"error": name_err}
+
     path = _sessions_dir() / f"{name}.usda"
     try:
         stage.flush(path)
@@ -299,6 +338,10 @@ def save_ratchet(name: str, ratchet: "object") -> dict:
     Returns:
         {"saved_ratchet": path, "decisions": count} or {"error": msg}.
     """
+    name_err = _validate_session_name(name)
+    if name_err:
+        return {"error": name_err}
+
     path = _sessions_dir() / f"{name}.ratchet.json"
     try:
         history = []

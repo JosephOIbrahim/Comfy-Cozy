@@ -10,6 +10,8 @@ undo as needed, then save or execute.
 
 import copy
 import json
+import shutil
+import tempfile
 from pathlib import Path
 
 import jsonpatch
@@ -445,10 +447,25 @@ def _handle_save(tool_input: dict) -> str:
         return to_json({"error": path_err})
 
     try:
-        Path(output_path).write_text(
-            to_json(_state["current_workflow"], indent=2),
+        content = to_json(_state["current_workflow"], indent=2)
+        dest = Path(output_path)
+        fd = tempfile.NamedTemporaryFile(
+            mode="w",
             encoding="utf-8",
+            dir=dest.parent,
+            suffix=".tmp",
+            delete=False,
         )
+        try:
+            fd.write(content)
+            fd.close()
+            shutil.move(fd.name, str(dest))
+        except Exception:
+            try:
+                Path(fd.name).unlink(missing_ok=True)
+            except Exception:
+                pass
+            raise
     except Exception as e:
         return to_json({"error": f"Failed to save: {e}"})
 

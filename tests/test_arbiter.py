@@ -2,14 +2,12 @@
 
 from __future__ import annotations
 
-import pytest
 
 from agent.stage.arbiter import (
     CALIBRATION_STEP,
     DEFAULT_CONFIDENCE_HIGH,
     DEFAULT_CONFIDENCE_LOW,
     DEFAULT_IMPROVEMENT_LARGE,
-    MAX_EXPLICIT_PER_SESSION,
     Arbiter,
     ArbiterDecision,
     CalibrationFeedback,

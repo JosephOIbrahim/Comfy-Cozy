@@ -155,6 +155,132 @@ The agent uses Claude (Anthropic's AI) with 108 specialized tools across three t
 
 When you ask a question, Claude decides which tools to use, calls them, reads the results, and responds. It streams text as it thinks, so you're never staring at a blank screen.
 
+## Architecture
+
+### Tool Layer Architecture
+
+```mermaid
+graph TB
+    User([Artist / MCP Client]) --> MCP[MCP Server<br/>stdio transport]
+
+    MCP --> Router{Tool Router}
+
+    Router --> Intel[Intelligence Layer<br/>58 tools]
+    Router --> Brain[Brain Layer<br/>27 tools]
+    Router --> Stage[Stage Layer<br/>23 tools]
+
+    subgraph Intelligence ["Intelligence Layer"]
+        direction LR
+        U[UNDERSTAND<br/>Parse & Inspect] --> D[DISCOVER<br/>Search & Match]
+        D --> P[PILOT<br/>Patch & Build]
+        P --> PR[PROVISION<br/>Install & Download]
+        PR --> V[VERIFY<br/>Execute & Check]
+    end
+
+    subgraph BrainLayer ["Brain Layer"]
+        direction LR
+        Vision[Vision<br/>Image Analysis]
+        Planner[Planner<br/>Goal Decomposition]
+        Memory[Memory<br/>Pattern Learning]
+        Optimizer[Optimizer<br/>GPU Profiling]
+        Intent[Intent<br/>Artistic Capture]
+    end
+
+    subgraph StageLayer ["Stage Layer"]
+        direction LR
+        StageMod[Cognitive Stage<br/>USD State]
+        Foresight[FORESIGHT<br/>Predictions]
+        Compositor[Compositor<br/>Scene Composition]
+        HyperAgent[Hyperagent<br/>Self-Improvement]
+    end
+
+    Intel --> ComfyAPI[ComfyUI API<br/>localhost:8188]
+    Brain --> ComfyAPI
+
+    style MCP fill:#4a9eff,color:#fff
+    style Intel fill:#2d8659,color:#fff
+    style Brain fill:#8b5cf6,color:#fff
+    style Stage fill:#d97706,color:#fff
+    style ComfyAPI fill:#ef4444,color:#fff
+```
+
+### Workflow Lifecycle
+
+```mermaid
+flowchart LR
+    Load[Load Workflow] --> Validate[Validate<br/>Structure & Nodes]
+    Validate --> Fields[Get Editable<br/>Fields]
+    Fields --> Patch[Apply Patches<br/>RFC6902]
+    Patch --> PreExec[Pre-Execute<br/>Validation]
+    PreExec --> Execute[Queue to<br/>ComfyUI]
+    Execute --> Monitor[WebSocket<br/>Progress]
+    Monitor --> Verify[Verify<br/>Outputs]
+    Verify --> Save[Save Session<br/>+ Metadata]
+
+    Patch -->|Undo| Fields
+    Verify -->|Iterate| Patch
+
+    style Load fill:#3b82f6,color:#fff
+    style Execute fill:#ef4444,color:#fff
+    style Verify fill:#10b981,color:#fff
+```
+
+### Security Model
+
+```mermaid
+flowchart TB
+    Input([Tool Input]) --> PathVal{Path Validation}
+    Input --> URLVal{URL Validation}
+    Input --> NameVal{Name Validation}
+
+    PathVal -->|validate_path| SafeDirs[Allowed Directories<br/>COMFYUI_DATABASE<br/>Templates / Sessions]
+    PathVal -->|Traversal blocked| Reject1[Reject ⛔]
+
+    URLVal -->|_validate_download_url| HTTPS{HTTPS Only}
+    HTTPS -->|Private IP / localhost| Reject2[Reject ⛔]
+    HTTPS -->|Public host| Allow1[Allow ✓]
+
+    NameVal -->|_validate_session_name<br/>_safe_path_component| Clean{No separators<br/>No .. / No null}
+    Clean -->|Invalid| Reject3[Reject ⛔]
+    Clean -->|Valid| Allow2[Allow ✓]
+
+    SafeDirs --> Resolve[resolve + containment check]
+    Resolve --> Allow3[Allow ✓]
+
+    style Reject1 fill:#ef4444,color:#fff
+    style Reject2 fill:#ef4444,color:#fff
+    style Reject3 fill:#ef4444,color:#fff
+    style Allow1 fill:#10b981,color:#fff
+    style Allow2 fill:#10b981,color:#fff
+    style Allow3 fill:#10b981,color:#fff
+```
+
+### Error Handling
+
+```mermaid
+classDiagram
+    Exception <|-- AgentError
+    AgentError <|-- ToolError
+    AgentError <|-- TransportError
+    AgentError <|-- ValidationError
+
+    class AgentError {
+        Base for all agent exceptions
+    }
+    class ToolError {
+        Recoverable tool failures
+        User-actionable conditions
+    }
+    class TransportError {
+        Network / HTTP failures
+        Connection errors, timeouts
+    }
+    class ValidationError {
+        Schema mismatches
+        Missing required fields
+    }
+```
+
 ## Model Profiles
 
 The agent ships with model-specific profiles that encode real behavioral knowledge:
@@ -302,8 +428,20 @@ Tests run without ComfyUI -- everything is mocked:
 
 ```bash
 python -m pytest tests/ -v
-# 2000+ tests, all mocked, under 60 seconds
+# 2054+ tests, all mocked, under 60 seconds
 ```
+
+## Production Hardening
+
+The codebase has been hardened across five domains:
+
+| Domain | Changes |
+|--------|---------|
+| **Security** | Path traversal protection on all file operations, SSRF prevention for model downloads (HTTPS-only, private IP blocking), session name validation, `validate_path` coverage on all image reads |
+| **Error Handling** | Structured exception hierarchy (`AgentError` → `ToolError` / `TransportError` / `ValidationError`), eliminated silent exception swallowing on critical paths, added diagnostic logging |
+| **Async Safety** | Blocking calls in async context wrapped with `run_in_executor`, all httpx clients use context managers, explicit timeouts on every HTTP call |
+| **State Management** | Atomic file writes (write-tmp + rename) for workflow saves, TOCTOU race fix in node replacement cache, thread-safety audit across all singleton state |
+| **Code Quality** | Zero ruff lint errors, Pillow deprecation warnings eliminated, all tests passing |
 
 ## License
 

@@ -11,7 +11,6 @@ from agent.stage.experience import (
     DEFAULT_INITIAL_WEIGHT,
     ExperienceChunk,
     ExperienceError,
-    OUTCOME_AXES,
     _compute_prediction_accuracy,
     _generate_chunk_id,
     get_statistics,

@@ -5,8 +5,6 @@ from __future__ import annotations
 import pytest
 
 from agent.stage.cwm import (
-    PHASE_BLENDED,
-    PHASE_PRIOR_ONLY,
     PredictedOutcome,
     _blend_scores,
     _classify_change,

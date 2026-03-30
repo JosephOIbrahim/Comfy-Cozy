@@ -4,8 +4,8 @@ import pytest
 
 pxr = pytest.importorskip("pxr", reason="usd-core not installed")
 
-from agent.stage.cognitive_stage import CognitiveWorkflowStage, StageError
-from agent.stage.model_registry import (
+from agent.stage.cognitive_stage import CognitiveWorkflowStage, StageError  # noqa: E402
+from agent.stage.model_registry import (  # noqa: E402
     MODEL_TYPES,
     VALID_STATUSES,
     find_model,

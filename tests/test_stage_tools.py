@@ -484,7 +484,6 @@ class TestDispatch:
                 # Build minimal valid input from required fields
                 inp: dict = {}
                 for req in tool["input_schema"].get("required", []):
-                    props = tool["input_schema"]["properties"]
                     if req == "n_deltas":
                         inp[req] = 1
                     elif req == "delta":

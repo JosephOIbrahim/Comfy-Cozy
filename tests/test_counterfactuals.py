@@ -6,7 +6,6 @@ import pytest
 
 from agent.stage.counterfactuals import (
     DEFAULT_CONFIDENCE,
-    PROMOTION_THRESHOLD,
     Counterfactual,
     CounterfactualError,
     _generate_cf_id,

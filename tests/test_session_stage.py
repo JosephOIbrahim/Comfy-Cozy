@@ -14,8 +14,8 @@ import pytest
 
 pxr = pytest.importorskip("pxr", reason="usd-core not installed")
 
-from agent.session_context import SessionContext, SessionRegistry, get_session_context
-from agent.stage import CognitiveWorkflowStage
+from agent.session_context import SessionContext, SessionRegistry  # noqa: E402
+from agent.stage import CognitiveWorkflowStage  # noqa: E402
 
 
 class TestSessionContextStage:

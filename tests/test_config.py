@@ -26,11 +26,25 @@ class TestApiKeyValidation:
             assert "sk-ant-" in captured.err
 
     def test_missing_key_is_none(self):
-        """Missing ANTHROPIC_API_KEY defaults to None."""
-        with patch.dict(os.environ, {}, clear=False):
-            os.environ.pop("ANTHROPIC_API_KEY", None)
-            import importlib
-            import agent.config as config_mod
+        """Missing ANTHROPIC_API_KEY defaults to None.
+
+        load_dotenv() reads the .env file and re-injects the key even after
+        popping it from os.environ.  We must mock load_dotenv to be a no-op
+        so the reload sees a clean environment.
+        """
+        import importlib
+
+        import agent.config as config_mod
+
+        _real_getenv = os.getenv
+
+        def _getenv_no_key(key, *args):
+            if key == "ANTHROPIC_API_KEY":
+                return None
+            return _real_getenv(key, *args)
+
+        with patch("os.getenv", side_effect=_getenv_no_key), \
+             patch("dotenv.load_dotenv"):
             importlib.reload(config_mod)
             assert config_mod.ANTHROPIC_API_KEY is None
 

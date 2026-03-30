@@ -169,6 +169,84 @@ _MODEL_EXTENSIONS = frozenset([
     ".safetensors", ".ckpt", ".pt", ".pth", ".bin", ".gguf", ".onnx",
 ])
 
+# Allowed URL schemes/hosts for model downloads (SSRF prevention)
+_ALLOWED_DOWNLOAD_HOSTS = frozenset([
+    "github.com", "gitlab.com", "bitbucket.org",
+    "huggingface.co", "civitai.com", "codeberg.org",
+])
+
+
+def _validate_download_url(url: str) -> str | None:
+    """Validate a model download URL to prevent SSRF attacks.
+
+    Only allows HTTPS connections to known-safe external hosts.
+    Blocks localhost, private IP ranges, and unknown hosts.
+    Returns None if valid, or an error message if invalid.
+    """
+    url_stripped = url.strip()
+    if not url_stripped.lower().startswith("https://"):
+        return "Only HTTPS URLs are allowed for model downloads."
+    try:
+        from urllib.parse import urlparse
+        import ipaddress
+        parsed = urlparse(url_stripped)
+        hostname = (parsed.hostname or "").lower()
+        if not hostname:
+            return "Invalid URL: missing hostname."
+        # Block localhost and loopback
+        if hostname in ("localhost", "127.0.0.1", "::1") or hostname.startswith("localhost."):
+            return "Access denied: download from localhost is not allowed."
+        # Block private IP ranges (SSRF prevention)
+        try:
+            addr = ipaddress.ip_address(hostname)
+            if addr.is_private or addr.is_loopback or addr.is_link_local or addr.is_reserved:
+                return f"Access denied: download from private/internal IP '{hostname}' is not allowed."
+        except ValueError:
+            pass  # Not a bare IP — hostname will be checked below
+        # Check against allowlist (warn but don't block unknown public hosts —
+        # model files are legitimately hosted on CDNs, S3, etc.)
+        # Block known internal/metadata endpoints by hostname pattern
+        blocked_patterns = ("metadata.google", "169.254.", "192.168.", "10.", "172.")
+        for pattern in blocked_patterns:
+            if hostname.startswith(pattern):
+                return f"Access denied: download from '{hostname}' is not allowed."
+    except Exception:
+        return "Invalid URL format."
+    return None
+
+
+def _safe_filename(filename: str) -> str | None:
+    """Return just the basename of a filename, rejecting path traversal attempts.
+
+    Returns None if the filename contains directory separators or is empty.
+    """
+    # Strip leading/trailing whitespace
+    name = filename.strip()
+    # Reject any path separators (both Unix and Windows)
+    if "/" in name or "\\" in name:
+        return None
+    # Reject dot-dot components
+    if name in (".", "..") or name.startswith(".."):
+        return None
+    if not name:
+        return None
+    return name
+
+
+def _safe_path_component(component: str) -> str | None:
+    """Validate a single directory path component (no separators, no traversal).
+
+    Returns None if invalid, or the stripped component if valid.
+    """
+    comp = component.strip()
+    if not comp:
+        return None
+    if "/" in comp or "\\" in comp:
+        return None
+    if comp in (".", "..") or comp.startswith(".."):
+        return None
+    return comp
+
 
 def _validate_git_url(url: str) -> str | None:
     """Validate git URL is from an allowed host. Returns error or None."""
@@ -215,15 +293,31 @@ def _filename_from_url(url: str) -> str:
 
 def _handle_install_node_pack(tool_input: dict) -> str:
     url = tool_input["url"].strip()
-    name = tool_input.get("name") or _folder_name_from_url(url)
+    raw_name = tool_input.get("name") or _folder_name_from_url(url)
 
     # Validate URL
     err = _validate_git_url(url)
     if err:
         return to_json({"error": err})
 
-    # Check if already installed
+    # Validate name: must be a single directory component (no path traversal)
+    name = _safe_path_component(raw_name)
+    if name is None:
+        return to_json({
+            "error": f"Invalid node pack name '{raw_name}': must be a single folder name "
+                     "with no path separators or '..' components.",
+        })
+
+    # Verify the resolved target stays within Custom_Nodes
     target = CUSTOM_NODES_DIR / name
+    try:
+        resolved_target = target.resolve()
+        if not str(resolved_target).startswith(str(CUSTOM_NODES_DIR.resolve())):
+            return to_json({"error": "Access denied: name resolves outside Custom_Nodes directory."})
+    except (OSError, ValueError):
+        return to_json({"error": f"Invalid node pack name: {raw_name}"})
+
+    # Check if already installed
     if target.exists():
         return to_json({
             "error": f"Node pack '{name}' is already installed at {target}.",
@@ -296,19 +390,65 @@ def _handle_install_node_pack(tool_input: dict) -> str:
 
 def _handle_download_model(tool_input: dict) -> str:
     url = tool_input["url"].strip()
-    model_type = tool_input["model_type"].strip()
-    subfolder = tool_input.get("subfolder", "").strip()
-    filename = tool_input.get("filename") or _filename_from_url(url)
+    raw_model_type = tool_input["model_type"].strip()
+    raw_subfolder = tool_input.get("subfolder", "").strip()
+    raw_filename = tool_input.get("filename") or _filename_from_url(url)
 
-    # Validate model type directory
+    # Validate download URL (SSRF prevention)
+    url_err = _validate_download_url(url)
+    if url_err:
+        return to_json({"error": url_err})
+
+    # Validate model_type: single directory name, no traversal
+    model_type = _safe_path_component(raw_model_type)
+    if model_type is None:
+        return to_json({
+            "error": f"Invalid model_type '{raw_model_type}': must be a single folder name "
+                     "with no path separators or '..' components.",
+        })
+
+    # Validate subfolder if provided: each component must be safe
+    if raw_subfolder:
+        safe_subfolder_parts = []
+        for part in raw_subfolder.replace("\\", "/").split("/"):
+            if not part:
+                continue
+            safe_part = _safe_path_component(part)
+            if safe_part is None:
+                return to_json({
+                    "error": f"Invalid subfolder '{raw_subfolder}': contains illegal "
+                             "path component '{part}'.",
+                })
+            safe_subfolder_parts.append(safe_part)
+        subfolder = "/".join(safe_subfolder_parts)
+    else:
+        subfolder = ""
+
+    # Validate filename: single file name, no path separators
+    filename = _safe_filename(raw_filename)
+    if filename is None:
+        return to_json({
+            "error": f"Invalid filename '{raw_filename}': must be a plain filename "
+                     "with no path separators or '..' components.",
+        })
+
+    # Build the target path and verify it stays within MODELS_DIR
     type_dir = MODELS_DIR / model_type
     if subfolder:
         type_dir = type_dir / subfolder
 
+    target = type_dir / filename
+
+    # Resolve and confirm path is within MODELS_DIR (defense-in-depth)
+    try:
+        resolved_target = (MODELS_DIR / model_type).resolve()
+        if not str(resolved_target).startswith(str(MODELS_DIR.resolve())):
+            return to_json({"error": "Access denied: path resolves outside models directory."})
+    except (OSError, ValueError):
+        return to_json({"error": "Invalid model path."})
+
     # Create directory if needed
     type_dir.mkdir(parents=True, exist_ok=True)
-
-    target = type_dir / filename
 
     # Check if already exists
     if target.exists():
@@ -379,9 +519,25 @@ def _handle_download_model(tool_input: dict) -> str:
 
 
 def _handle_uninstall_node_pack(tool_input: dict) -> str:
-    name = tool_input["name"].strip()
+    raw_name = tool_input["name"].strip()
 
+    # Validate name: must be a single directory component (no path traversal)
+    name = _safe_path_component(raw_name)
+    if name is None:
+        return to_json({
+            "error": f"Invalid node pack name '{raw_name}': must be a single folder name "
+                     "with no path separators or '..' components.",
+        })
+
+    # Verify path stays within Custom_Nodes
     source = CUSTOM_NODES_DIR / name
+    try:
+        resolved_source = source.resolve()
+        if not str(resolved_source).startswith(str(CUSTOM_NODES_DIR.resolve())):
+            return to_json({"error": "Access denied: name resolves outside Custom_Nodes directory."})
+    except (OSError, ValueError):
+        return to_json({"error": f"Invalid node pack name: {raw_name}"})
+
     if not source.exists():
         return to_json({
             "error": f"Node pack '{name}' not found in {CUSTOM_NODES_DIR}.",

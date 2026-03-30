@@ -10,6 +10,7 @@ Includes freshness tracking to detect stale registry data and suggest updates.
 """
 
 import json
+import logging
 import time
 from pathlib import Path
 
@@ -18,6 +19,8 @@ import httpx
 from ..config import COMFYUI_URL, CUSTOM_NODES_DIR, MODELS_DIR, MODEL_CATALOG_PATH
 from ..rate_limiter import HUGGINGFACE_LIMITER
 from ._util import to_json
+
+log = logging.getLogger(__name__)
 
 
 def _check_deprecated(class_type: str) -> dict | None:
@@ -294,6 +297,7 @@ def _load_custom_nodes() -> list[dict]:
         _cache["custom_nodes"] = data.get("custom_nodes", [])
         _freshness["custom_nodes_loaded_at"] = time.time()
     except Exception:
+        log.warning("Failed to load custom-node-list.json — registry will be empty", exc_info=True)
         _cache["custom_nodes"] = []
 
     return _cache["custom_nodes"]
@@ -312,6 +316,7 @@ def _load_extension_map() -> dict:
         _cache["extension_map"] = json.loads(path.read_text(encoding="utf-8"))
         _freshness["extension_map_loaded_at"] = time.time()
     except Exception:
+        log.warning("Failed to load extension-node-map.json — node-to-pack index will be empty", exc_info=True)
         _cache["extension_map"] = {}
 
     return _cache["extension_map"]
@@ -353,6 +358,7 @@ def _load_model_list() -> list[dict]:
         _cache["model_list"] = data.get("models", [])
         _freshness["model_list_loaded_at"] = time.time()
     except Exception:
+        log.warning("Failed to load model-list.json — model registry will be empty", exc_info=True)
         _cache["model_list"] = []
 
     return _cache["model_list"]
@@ -385,6 +391,7 @@ def _load_model_catalog() -> list[dict]:
                 models.append(model)
         _catalog_cache = models
     except Exception:
+        log.warning("Failed to load model_catalog.json — local catalog will be empty", exc_info=True)
         _catalog_cache = []
 
     return _catalog_cache

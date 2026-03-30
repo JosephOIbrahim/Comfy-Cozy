@@ -14,7 +14,6 @@ from agent.stage.moe_profiles import (
     PROVISIONER,
     SCOUT,
     VISION,
-    AgentProfile,
     filter_tools,
     get_allowed_tools,
     get_profile,

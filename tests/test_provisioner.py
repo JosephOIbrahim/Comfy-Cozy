@@ -3,17 +3,14 @@
 from __future__ import annotations
 
 import hashlib
-import io
-import threading
 from pathlib import Path
-from unittest.mock import MagicMock, patch, PropertyMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from agent.stage.cognitive_stage import CognitiveWorkflowStage
 from agent.stage.model_registry import register_model, get_model
 from agent.stage.provisioner import (
-    DEFAULT_CHUNK_BYTES,
     DownloadHandle,
     Provisioner,
     ProvisionerError,

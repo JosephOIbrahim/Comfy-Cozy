@@ -5,7 +5,6 @@ from __future__ import annotations
 import pytest
 
 from agent.stage.moe_dispatcher import (
-    ChainState,
     HandoffArtifact,
     MoEDispatcher,
     TASK_CHAINS,

@@ -27,28 +27,38 @@ _CACHE_TTL = 300.0  # 5 minutes
 
 
 def _fetch_replacements() -> dict:
-    """Fetch node replacements from ComfyUI, with caching."""
+    """Fetch node replacements from ComfyUI, with caching.
+
+    Thread-safe: the cache is checked inside the lock. Network I/O is
+    performed outside the lock to avoid blocking readers, but the result
+    is only stored if the cache is still stale (double-check prevents
+    a slow fetch from overwriting a fresher one that finished first).
+    """
     global _replacement_cache, _cache_timestamp
 
     with _cache_lock:
         now = time.monotonic()
         if _replacement_cache is not None and (now - _cache_timestamp) < _CACHE_TTL:
             return _replacement_cache
+        # Snapshot the timestamp so we can detect a concurrent update below.
+        snapshot_ts = _cache_timestamp
 
-    # Fetch from ComfyUI
+    # Fetch from ComfyUI outside the lock so we don't block other threads.
     try:
         from .comfy_api import _get
         data = _get("/api/node_replacements")
         if data is None:
-            return {}
+            return _replacement_cache or {}
     except Exception as e:
         log.warning("Failed to fetch node replacements: %s", e)
-        return {}
+        return _replacement_cache or {}
 
+    # Only store if no concurrent fetch already updated the cache.
     with _cache_lock:
-        _replacement_cache = data if isinstance(data, dict) else {}
-        _cache_timestamp = time.monotonic()
-        return _replacement_cache
+        if _cache_timestamp == snapshot_ts:
+            _replacement_cache = data if isinstance(data, dict) else {}
+            _cache_timestamp = time.monotonic()
+        return _replacement_cache or {}
 
 
 def _invalidate_cache():
