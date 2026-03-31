@@ -1,23 +1,168 @@
 # ComfyUI Agent
 
-AI co-pilot for [ComfyUI](https://github.com/comfyanonymous/ComfyUI) -- 108 tools that understand your workflows and help you work faster through natural conversation.
+**The first AI generation tool that gets better at your job by doing your job.**
 
-Instead of manually editing JSON, hunting for node packs, or debugging broken workflows yourself, just describe what you want. The agent inspects, repairs, reconfigures, and executes -- including installing missing nodes, downloading models, and fixing broken model references.
+AI co-pilot for [ComfyUI](https://github.com/comfyanonymous/ComfyUI) — 108 tools, a cognitive architecture that learns from every generation, and a Pentagram-inspired UI panel. Instead of manually editing JSON, hunting for node packs, or debugging broken workflows, just describe what you want.
+
+```mermaid
+graph LR
+    Artist([VFX Artist]) --> Panel[SuperDuper Panel<br/>ComfyUI Sidebar]
+    Artist --> CLI[CLI / MCP]
+    Panel --> Agent[Agent<br/>108 Tools]
+    CLI --> Agent
+    Agent --> Cognitive[Cognitive Brain<br/>LIVRPS Engine]
+    Agent --> ComfyUI[ComfyUI<br/>localhost:8188]
+    Cognitive --> Experience[(Experience<br/>Accumulator)]
+    Cognitive --> CWM[CWM<br/>Prediction]
+
+    style Panel fill:#0066FF,color:#fff
+    style Cognitive fill:#8b5cf6,color:#fff
+    style ComfyUI fill:#ef4444,color:#fff
+```
 
 ## What It Does
 
-- **"What models do I have?"** -- scans your installation instantly
-- **"Load this workflow and change the seed to 42"** -- reads, modifies, and saves with undo support
-- **"Repair this workflow"** -- one-shot: detects missing nodes, finds the packs, installs them all
-- **"Reconfigure for my local models"** -- scans model references, finds missing files, substitutes closest local match
-- **"Download the LTX-2 FP8 checkpoint"** -- downloads models directly to the correct directory
-- **"Run this with 30 steps instead of 20"** -- patches the workflow and queues it to ComfyUI
-- **"Find me a good anime LoRA"** -- searches local catalog, ComfyUI Manager registry, HuggingFace, and CivitAI
-- **"Is this model compatible with my workflow?"** -- checks SD1.5/SDXL/Flux/SD3/LTX-2/WAN family compatibility
-- **"Analyze this output -- why does it look wrong?"** -- uses Claude Vision to diagnose image issues
-- **"Remember that I prefer SDXL for landscapes"** -- saves notes and learns from your outcomes over time
+- **"Cinematic portrait, golden hour, film grain"** — composes a workflow from capability matching, predicts quality, generates
+- **"Load this workflow and change the seed to 42"** — reads, modifies via non-destructive delta layers, saves with full undo
+- **"Repair this workflow"** — detects missing nodes, finds the packs, installs them all in one shot
+- **"Reconfigure for my local models"** — scans model references, fuzzy-matches closest local alternative
+- **"Download the LTX-2 FP8 checkpoint"** — downloads models directly to the correct directory
+- **"Run this with 30 steps"** — patches via LIVRPS composition, validates against schema, queues to ComfyUI
+- **"Analyze this output"** — Claude Vision diagnoses image issues with parameter-aware suggestions
+- **"Optimize this portrait workflow overnight"** — autoresearch ratchet iterates parameters, quality only goes up
 
-The agent talks to ComfyUI's API directly. It reads your actual installation, sees what's really installed, and works with your real workflows -- including component/subgraph workflows with nested node graphs.
+The agent gets measurably better over time. Session 1 is a capable tool. Session 100 is a capable tool that knows your style.
+
+## Architecture
+
+### Cognitive Brain (The Scaffolded Brain)
+
+The agent is built on a cognitive architecture with six layers. Each layer adds capability on top of the previous:
+
+```mermaid
+graph TB
+    subgraph Phase1 ["Phase 1: State Spine"]
+        Engine[CognitiveGraphEngine<br/>LIVRPS Composition]
+        Delta[Delta Layers<br/>SHA-256 Integrity]
+        Models[ComfyNode / WorkflowGraph<br/>Typed Models]
+    end
+
+    subgraph Phase2 ["Phase 2: Transport"]
+        Schema[SchemaCache<br/>Mutation Validation]
+        Events[ExecutionEvent<br/>Typed WS Messages]
+        Interrupt[Interrupt<br/>Mid-Execution Abort]
+    end
+
+    subgraph Phase3 ["Phase 3: Macro-Tools"]
+        Analyze[analyze_workflow]
+        Mutate[mutate_workflow]
+        Compose[compose_workflow]
+        Execute[execute_workflow]
+        Research[autoresearch]
+    end
+
+    subgraph Phase4 ["Phase 4: Experience"]
+        Chunk[ExperienceChunk<br/>Params → Outcome]
+        Sig[ContextSignature<br/>Fast Matching]
+        Acc[Accumulator<br/>3-Phase Learning]
+    end
+
+    subgraph Phase5 ["Phase 5: Prediction"]
+        CWM[Cognitive World Model<br/>LIVRPS Prediction]
+        Arbiter[Simulation Arbiter<br/>Silent / Soft / Explicit]
+        CF[Counterfactuals<br/>What-If Experiments]
+    end
+
+    subgraph Phase6 ["Phase 6: Autonomous Pipeline"]
+        Pipeline[Intent → Compose → Predict<br/>→ Execute → Evaluate → Learn]
+    end
+
+    Phase1 --> Phase2 --> Phase3
+    Phase3 --> Phase4 --> Phase5 --> Phase6
+
+    style Phase1 fill:#1a1a2e,color:#F0F0F0
+    style Phase2 fill:#1a1a2e,color:#F0F0F0
+    style Phase3 fill:#1a1a2e,color:#F0F0F0
+    style Phase4 fill:#1a1a2e,color:#F0F0F0
+    style Phase5 fill:#1a1a2e,color:#F0F0F0
+    style Phase6 fill:#1a1a2e,color:#F0F0F0
+```
+
+### LIVRPS Composition
+
+All workflow mutations are non-destructive delta layers. When opinions conflict, LIVRPS determines who wins:
+
+```mermaid
+graph LR
+    P["P (Payloads)<br/>Priority 1"] --> R["R (References)<br/>Priority 2"]
+    R --> V["V (VariantSets)<br/>Priority 3"]
+    V --> I["I (Inherits)<br/>Priority 4"]
+    I --> L["L (Local)<br/>Priority 5"]
+    L --> S["S (Safety)<br/>Priority 6"]
+
+    P -.->|"weakest"| Weakest[ ]
+    S -.->|"strongest — always wins"| Strongest[ ]
+
+    style P fill:#555,color:#fff
+    style R fill:#777,color:#fff
+    style V fill:#96c,color:#fff
+    style I fill:#06f,color:#fff
+    style L fill:#f0f0f0,color:#000
+    style S fill:#f34,color:#fff
+    style Weakest fill:none,stroke:none
+    style Strongest fill:none,stroke:none
+```
+
+- **Your edit** says CFG 9 (Local, priority 5)
+- **Experience** says CFG 7.5 works better (Inherits, priority 4)
+- **Safety** says CFG above 30 is degenerate (Safety, priority 6)
+- Resolution: Safety overrides everything. Then your local edits. Then experience. Every conflict is deterministic, transparent, and reversible.
+
+### Experience Loop
+
+Every generation is an experiment with a typed result:
+
+```mermaid
+flowchart LR
+    Capture1[Capture<br/>Initial State] --> Predict[Predict<br/>Quality]
+    Predict --> Generate[Generate<br/>Execute Workflow]
+    Generate --> Capture2[Capture<br/>Outcome]
+    Capture2 --> Compare[Compare<br/>Predicted vs Actual]
+    Compare --> Store[Store<br/>ExperienceChunk]
+    Store --> CF[Generate<br/>Counterfactual]
+    CF --> Capture1
+
+    style Predict fill:#0066FF,color:#fff
+    style Generate fill:#ef4444,color:#fff
+    style Store fill:#10b981,color:#fff
+```
+
+Three learning phases:
+- **Phase 1** (0–30 generations): Prior rules only
+- **Phase 2** (30–100): Blended prior + experience
+- **Phase 3** (100+): Experience-dominant — the agent knows your style
+
+### Autonomous Pipeline
+
+```mermaid
+flowchart TB
+    Intent[INTENT<br/>Parse creative request] --> Compose[COMPOSE<br/>Build workflow from<br/>intent + experience]
+    Compose --> Predict[PREDICT<br/>CWM quality estimate]
+    Predict --> Gate{GATE<br/>Arbiter Decision}
+    Gate -->|"Silent / Soft<br/>(proceed)"| Execute[EXECUTE<br/>Queue to ComfyUI]
+    Gate -->|"Explicit<br/>(interrupt)"| Warn[Surface Warning<br/>to Artist]
+    Warn -->|"Override"| Execute
+    Execute --> Evaluate[EVALUATE<br/>Quality Assessment]
+    Evaluate --> Learn[LEARN<br/>Store Experience +<br/>Counterfactual]
+    Learn -->|"Quality < threshold"| Compose
+    Learn -->|"Quality OK"| Done([Complete])
+
+    style Intent fill:#1a1a2e,color:#F0F0F0
+    style Predict fill:#0066FF,color:#fff
+    style Gate fill:#FF9900,color:#000
+    style Execute fill:#ef4444,color:#fff
+    style Learn fill:#10b981,color:#fff
+```
 
 ## Installation
 
@@ -62,12 +207,6 @@ If your ComfyUI database is somewhere other than `G:/COMFYUI_Database`, also set
 
 ```
 COMFYUI_DATABASE=/path/to/your/comfyui/database
-```
-
-If your ComfyUI installation is in a separate directory (e.g., `G:/COMFY/ComfyUI`), the agent auto-detects it on Windows. Override with:
-
-```
-COMFYUI_INSTALL_DIR=/path/to/ComfyUI
 ```
 
 ### Step 4: Run
@@ -120,43 +259,6 @@ agent autoresearch --program program.md     # FORESIGHT autoresearch pipeline
 
 The agent uses Claude (Anthropic's AI) with 108 specialized tools across three tiers:
 
-**Intelligence Layer (58 tools)**
-
-| Layer | Tools | What they do |
-|-------|-------|-------------|
-| **UNDERSTAND** | 13 | Parse workflows (including component/subgraph format), scan models/nodes, query ComfyUI API, detect format |
-| **DISCOVER** | 15 | Search local catalog + ComfyUI Manager (31k+ nodes) + HuggingFace + CivitAI, model compatibility, install instructions, GitHub releases |
-| **PILOT** | 16 | RFC6902 patch engine with undo, semantic node ops (AUTOGROW_V3 support), session persistence, pipeline execution |
-| **PROVISION** | 5 | Install node packs (git clone), download models (httpx), disable node packs, one-shot workflow repair, model reference reconfiguration |
-| **VERIFY** | 9 | Validate, execute, WebSocket progress monitoring, post-execution verification, creative metadata embedding |
-
-**Brain Layer (27 tools)**
-
-| Module | Tools | What they do |
-|--------|-------|-------------|
-| **Vision** | 4 | Analyze generated images, A/B comparison, perceptual hashing |
-| **Planner** | 4 | Goal decomposition, step tracking, replanning |
-| **Memory** | 4 | Outcome learning with temporal decay, cross-session patterns |
-| **Orchestrator** | 2 | Parallel sub-tasks with filtered tool access |
-| **Optimizer** | 4 | GPU profiling, TensorRT detection, auto-apply optimizations |
-| **Demo** | 2 | Guided walkthroughs for streams and podcasts |
-| **Intent** | 4 | Artistic intent capture, MoE pipeline with iterative refinement |
-| **Iteration** | 3 | Refinement journey tracking across generation cycles |
-
-**Stage Layer (23 tools)**
-
-| Module | Tools | What they do |
-|--------|-------|-------------|
-| **Provisioner** | 3 | USD-native model provisioning with download/verify lifecycle |
-| **Stage** | 6 | Cognitive state read/write with delta composition and rollback |
-| **FORESIGHT** | 5 | Predictive experiment planning, experience recording, counterfactuals |
-| **Compositor** | 4 | USD scene composition, validation, conditioning extraction |
-| **Hyperagent** | 5 | Meta-layer self-improvement proposals, calibration tracking |
-
-When you ask a question, Claude decides which tools to use, calls them, reads the results, and responds. It streams text as it thinks, so you're never staring at a blank screen.
-
-## Architecture
-
 ### Tool Layer Architecture
 
 ```mermaid
@@ -204,81 +306,81 @@ graph TB
     style ComfyAPI fill:#ef4444,color:#fff
 ```
 
-### Workflow Lifecycle
+**Intelligence Layer (58 tools)**
+
+| Layer | Tools | What they do |
+|-------|-------|-------------|
+| **UNDERSTAND** | 13 | Parse workflows (including component/subgraph format), scan models/nodes, query ComfyUI API, detect format |
+| **DISCOVER** | 15 | Search local catalog + ComfyUI Manager (31k+ nodes) + HuggingFace + CivitAI, model compatibility, install instructions, GitHub releases |
+| **PILOT** | 16 | Non-destructive delta patches via CognitiveGraphEngine, semantic node ops, session persistence |
+| **PROVISION** | 5 | Install node packs (git clone), download models (httpx), disable node packs, one-shot workflow repair, model reference reconfiguration |
+| **VERIFY** | 9 | Schema-validated execution, WebSocket progress monitoring, post-execution verification, creative metadata embedding |
+
+**Brain Layer (27 tools)**
+
+| Module | Tools | What they do |
+|--------|-------|-------------|
+| **Vision** | 4 | Analyze generated images, A/B comparison, perceptual hashing |
+| **Planner** | 4 | Goal decomposition, step tracking, replanning |
+| **Memory** | 4 | Outcome learning with temporal decay, cross-session patterns |
+| **Orchestrator** | 2 | Parallel sub-tasks with filtered tool access |
+| **Optimizer** | 4 | GPU profiling, TensorRT detection, auto-apply optimizations |
+| **Demo** | 2 | Guided walkthroughs for streams and podcasts |
+| **Intent** | 4 | Artistic intent capture, MoE pipeline with iterative refinement |
+| **Iteration** | 3 | Refinement journey tracking across generation cycles |
+
+**Stage Layer (23 tools)**
+
+| Module | Tools | What they do |
+|--------|-------|-------------|
+| **Provisioner** | 3 | USD-native model provisioning with download/verify lifecycle |
+| **Stage** | 6 | Cognitive state read/write with delta composition and rollback |
+| **FORESIGHT** | 5 | Predictive experiment planning, experience recording, counterfactuals |
+| **Compositor** | 4 | USD scene composition, validation, conditioning extraction |
+| **Hyperagent** | 5 | Meta-layer self-improvement proposals, calibration tracking |
+
+## Cognitive Layer
+
+The cognitive layer (`src/cognitive/`) adds structured learning on top of the 108 tools:
+
+```
+src/cognitive/
+├── core/           # CognitiveGraphEngine, DeltaLayer, LIVRPS resolver
+├── transport/      # SchemaCache, ExecutionEvent types, interrupt
+├── tools/          # 8 macro-tools (analyze, mutate, compose, execute, research...)
+├── experience/     # ExperienceChunk, ContextSignature, 3-phase accumulator
+├── prediction/     # Cognitive World Model, Simulation Arbiter, counterfactuals
+└── pipeline/       # Autonomous pipeline: intent → compose → predict → execute → learn
+```
+
+**Key properties:**
+- **Non-destructive mutations** — every workflow change is a delta layer, never an in-place edit
+- **SHA-256 integrity** — tamper detection on all delta layers
+- **Link preservation** — `["node_id", output_index]` connection arrays survive all operations
+- **Temporal decay** — recent experience weights more heavily (7-day half-life)
+- **Safety overrides** — degenerate parameter combinations are blocked at the LIVRPS Safety tier
+- **Graceful degradation** — if the cognitive module isn't available, tools work unchanged
+
+## Workflow Lifecycle
 
 ```mermaid
 flowchart LR
-    Load[Load Workflow] --> Validate[Validate<br/>Structure & Nodes]
+    Load[Load Workflow] --> Validate[Validate<br/>Schema + Structure]
     Validate --> Fields[Get Editable<br/>Fields]
-    Fields --> Patch[Apply Patches<br/>RFC6902]
-    Patch --> PreExec[Pre-Execute<br/>Validation]
+    Fields --> Mutate[Mutate via<br/>Delta Layer]
+    Mutate --> PreExec[Pre-Execute<br/>Validation]
     PreExec --> Execute[Queue to<br/>ComfyUI]
     Execute --> Monitor[WebSocket<br/>Progress]
     Monitor --> Verify[Verify<br/>Outputs]
-    Verify --> Save[Save Session<br/>+ Metadata]
+    Verify --> Learn[Record<br/>Experience]
 
-    Patch -->|Undo| Fields
-    Verify -->|Iterate| Patch
+    Mutate -->|Rollback| Fields
+    Verify -->|Iterate| Mutate
 
     style Load fill:#3b82f6,color:#fff
     style Execute fill:#ef4444,color:#fff
     style Verify fill:#10b981,color:#fff
-```
-
-### Security Model
-
-```mermaid
-flowchart TB
-    Input([Tool Input]) --> PathVal{Path Validation}
-    Input --> URLVal{URL Validation}
-    Input --> NameVal{Name Validation}
-
-    PathVal -->|validate_path| SafeDirs[Allowed Directories<br/>COMFYUI_DATABASE<br/>Templates / Sessions]
-    PathVal -->|Traversal blocked| Reject1[Reject ⛔]
-
-    URLVal -->|_validate_download_url| HTTPS{HTTPS Only}
-    HTTPS -->|Private IP / localhost| Reject2[Reject ⛔]
-    HTTPS -->|Public host| Allow1[Allow ✓]
-
-    NameVal -->|_validate_session_name<br/>_safe_path_component| Clean{No separators<br/>No .. / No null}
-    Clean -->|Invalid| Reject3[Reject ⛔]
-    Clean -->|Valid| Allow2[Allow ✓]
-
-    SafeDirs --> Resolve[resolve + containment check]
-    Resolve --> Allow3[Allow ✓]
-
-    style Reject1 fill:#ef4444,color:#fff
-    style Reject2 fill:#ef4444,color:#fff
-    style Reject3 fill:#ef4444,color:#fff
-    style Allow1 fill:#10b981,color:#fff
-    style Allow2 fill:#10b981,color:#fff
-    style Allow3 fill:#10b981,color:#fff
-```
-
-### Error Handling
-
-```mermaid
-classDiagram
-    Exception <|-- AgentError
-    AgentError <|-- ToolError
-    AgentError <|-- TransportError
-    AgentError <|-- ValidationError
-
-    class AgentError {
-        Base for all agent exceptions
-    }
-    class ToolError {
-        Recoverable tool failures
-        User-actionable conditions
-    }
-    class TransportError {
-        Network / HTTP failures
-        Connection errors, timeouts
-    }
-    class ValidationError {
-        Schema mismatches
-        Missing required fields
-    }
+    style Learn fill:#8b5cf6,color:#fff
 ```
 
 ## Model Profiles
@@ -292,62 +394,82 @@ The agent ships with model-specific profiles that encode real behavioral knowled
 | **SD 1.5** | UNet | CFG 7-12, 512x512 native, massive LoRA support |
 | **LTX-2** | DiT (video) | CFG ~25, 121 steps, Gemma-3 encoder, frame count must be (N*8)+1 |
 | **WAN 2.x** | UNet (video) | CFG 1-3.5, 4-20 steps, dual-noise architecture, CLIP encoder |
-| **Video (fallback)** | UNet | Conservative defaults for unknown video models |
 
 Each profile has three sections consumed by different agents:
-- **prompt_engineering** (Intent Agent) -- how to write prompts for this model
-- **parameter_space** (Execution Agent) -- correct CFG, steps, sampler, resolution ranges
-- **quality_signatures** (Verify Agent) -- how to judge output quality and suggest fixes
-
-## Workflow Sources
-
-The agent can load workflows from three locations:
-
-| Source | Path | Description |
-|--------|------|-------------|
-| **Built-in templates** | `agent/templates/` | Starter workflows (txt2img, img2img, LoRA) |
-| **User workflows** | `COMFYUI_Database/Workflows/` | Your saved workflow library |
-| **ComfyUI blueprints** | `ComfyUI/blueprints/` | Built-in ComfyUI workflow blueprints |
-
-Use `list_workflow_templates` to see all available workflows across sources.
-
-## Component Workflow Support
-
-ComfyUI 0.16+ introduced component nodes -- workflows-within-workflows where a single node on the canvas contains an entire subgraph internally. The agent handles these natively:
-
-- **Detects** component instance nodes (UUID-style class types)
-- **Parses** `definitions.subgraphs` to inspect internal node graphs
-- **Validates** nodes inside components (catches missing nodes in subgraphs)
-- **Supports** `COMFY_AUTOGROW_V3` dynamic inputs (dotted names like `values.a`)
+- **prompt_engineering** (Intent Agent) — how to write prompts for this model
+- **parameter_space** (Execution Agent) — correct CFG, steps, sampler, resolution ranges
+- **quality_signatures** (Verify Agent) — how to judge output quality and suggest fixes
 
 ## SuperDuper Panel (ComfyUI Sidebar)
 
-When loaded as a ComfyUI extension, the agent provides an in-app AI sidebar:
+Pentagram-inspired UI panel inside ComfyUI with two modes:
 
-- **Chat interface** with real-time streaming responses
-- **Workflow-aware** -- automatically reads the current canvas
-- **Missing nodes detection** with one-click install panels
-- **Direct execution** -- Repair, Validate, Install, Download bypass Claude API for instant results
-- **Agent dispatch cards** showing which intelligence layer is active (ROUTER / INTENT / EXECUTION / VERIFY)
-- **Quick action chips** -- Run, Validate, Repair, Optimize with one click
-- **Node interaction pills** -- click to highlight nodes on the canvas
-- **Environment awareness** -- receives full installation snapshot (resolved paths, model counts, node packs) on connect
+**APP Mode** — Chat interface with streaming responses, tool cards, and prediction overlays
+**GRAPH Mode** — Live workflow inspector showing delta layers, LIVRPS opinions per parameter, and inline editing
 
-### Repair Flow
+Plus dedicated views:
+- **Experience Dashboard** — learning phase progress, quality stats, top patterns, prediction accuracy chart
+- **Autoresearch Monitor** — quality trajectory, winning parameters, apply-with-one-click
+- **Prediction Overlay** — inline cards when the Simulation Arbiter surfaces a recommendation
 
-When you load a workflow with missing nodes, SuperDuper:
-1. Detects missing nodes (including inside component subgraphs)
-2. Shows a repair panel listing each missing type and its source pack
-3. One click installs all required packs via `git clone`
-4. Reports which packs succeeded and if a restart is needed
+```mermaid
+graph TB
+    subgraph Panel ["SuperDuper Panel"]
+        direction TB
+        Pill["SD Pill Button"] --> Shell[Panel Shell<br/>380px sidebar]
+        Shell --> APP[APP Mode<br/>Chat + Streaming]
+        Shell --> GRAPH[GRAPH Mode<br/>Workflow Inspector]
+        APP --> Exp[Experience Dashboard]
+        APP --> Res[Autoresearch Monitor]
+        APP --> Pred[Prediction Overlay]
+    end
 
-### Reconfigure Flow
+    subgraph Backend ["Agent Backend"]
+        Routes[REST Routes] --> Tools[108 Tools]
+        Routes --> Engine[CognitiveGraphEngine]
+        Routes --> AccEng[ExperienceAccumulator]
+    end
 
-When a workflow references models you don't have:
-1. Scans all model references (checkpoints, LoRAs, VAEs, ControlNets)
-2. Checks which files exist locally
-3. Fuzzy-matches the closest local alternative (stem/word overlap scoring)
-4. Applies substitutions automatically or shows a report
+    Shell <-->|HTTP| Routes
+    GRAPH <-->|2s poll| Engine
+
+    style Panel fill:#0D0D0D,color:#F0F0F0,stroke:#2A2A2A
+    style APP fill:#1A1A1A,color:#F0F0F0,stroke:#2A2A2A
+    style GRAPH fill:#1A1A1A,color:#F0F0F0,stroke:#2A2A2A
+    style Pill fill:#0066FF,color:#fff
+```
+
+Design system: monochrome + one accent (#0066FF on #0D0D0D). Inter typography. No gradients, no shadows, 4px max radius. 1px borders. Every pixel earns its place.
+
+## Security Model
+
+```mermaid
+flowchart TB
+    Input([Tool Input]) --> PathVal{Path Validation}
+    Input --> URLVal{URL Validation}
+    Input --> NameVal{Name Validation}
+
+    PathVal -->|validate_path| SafeDirs[Allowed Directories<br/>COMFYUI_DATABASE<br/>Templates / Sessions]
+    PathVal -->|Traversal blocked| Reject1[Reject]
+
+    URLVal -->|_validate_download_url| HTTPS{HTTPS Only}
+    HTTPS -->|Private IP / localhost| Reject2[Reject]
+    HTTPS -->|Public host| Allow1[Allow]
+
+    NameVal -->|_validate_session_name<br/>_safe_path_component| Clean{No separators<br/>No .. / No null}
+    Clean -->|Invalid| Reject3[Reject]
+    Clean -->|Valid| Allow2[Allow]
+
+    SafeDirs --> Resolve[resolve + containment check]
+    Resolve --> Allow3[Allow]
+
+    style Reject1 fill:#ef4444,color:#fff
+    style Reject2 fill:#ef4444,color:#fff
+    style Reject3 fill:#ef4444,color:#fff
+    style Allow1 fill:#10b981,color:#fff
+    style Allow2 fill:#10b981,color:#fff
+    style Allow3 fill:#10b981,color:#fff
+```
 
 ## MCP Server (Primary Interface)
 
@@ -382,53 +504,48 @@ All settings go in your `.env` file:
 | `COMFYUI_DATABASE` | `G:/COMFYUI_Database` | Your ComfyUI database folder (models, nodes, workflows) |
 | `COMFYUI_INSTALL_DIR` | auto-detected | ComfyUI installation directory (if separate from database) |
 | `COMFYUI_OUTPUT_DIR` | auto-detected | Where ComfyUI saves generated images |
-| `AGENT_MODEL` | `claude-sonnet-4-20250514` | Which Claude model to use (CLI mode only -- MCP inherits from Claude Code) |
+| `AGENT_MODEL` | `claude-sonnet-4-20250514` | Which Claude model to use (CLI mode only — MCP inherits from Claude Code) |
 
-## Session Memory
+## Component Workflow Support
 
-Sessions let the agent remember your workflow state and notes between conversations:
+ComfyUI 0.16+ introduced component nodes — workflows-within-workflows where a single node on the canvas contains an entire subgraph internally. The agent handles these natively:
 
-```bash
-# Start a session
-agent run --session portrait-project
-
-# The agent remembers your loaded workflow, patches, and notes
-# Next time, just load the same session:
-agent run --session portrait-project
-```
-
-Sessions are saved as JSON files in the `sessions/` folder. You can list them with `agent sessions`.
-
-## Workflow Formats
-
-ComfyUI exports workflows in different formats. The agent handles all of them:
-
-- **API format** -- the JSON you get from "Save (API Format)" in ComfyUI. Full node data with inputs and connections. Best for the agent.
-- **UI format with API data** -- the default "Save" export. Contains visual layout plus embedded API data. Agent extracts what it needs.
-- **UI-only format** -- older exports with only visual layout. The agent can read the structure but can't modify or execute these.
-- **Component format** -- workflows containing subgraph definitions (`definitions.subgraphs`). The agent parses both the top-level instances and the internal node graphs.
-
-## Troubleshooting
-
-**"ANTHROPIC_API_KEY not set"** -- Make sure your `.env` file exists and has the key. Run from the `comfyui-agent` directory.
-
-**"Could not connect to ComfyUI"** -- Start ComfyUI first. The agent needs it running to inspect nodes, execute workflows, and validate changes.
-
-**"Node type not found"** -- The workflow uses a custom node that isn't installed. Ask the agent: "repair this workflow" and it will detect, locate, and install the required packs in one shot.
-
-**Unicode/encoding crash on Windows** -- If you see `UnicodeEncodeError` with Rich, ensure you're running in a terminal that supports UTF-8 (Windows Terminal recommended).
-
-**"Port 8188 already in use"** -- Another ComfyUI instance is running. Kill it first or use a different port via `COMFYUI_PORT`.
-
-**Disabled node packs still showing errors** -- ComfyUI scans all directories in `custom_nodes/`, including those with `.disabled_` prefixes. Move disabled packs to a folder outside `custom_nodes/` (e.g., `Custom_Nodes_Disabled/`) to eliminate startup tracebacks.
+- **Detects** component instance nodes (UUID-style class types)
+- **Parses** `definitions.subgraphs` to inspect internal node graphs
+- **Validates** nodes inside components (catches missing nodes in subgraphs)
+- **Supports** `COMFY_AUTOGROW_V3` dynamic inputs (dotted names like `values.a`)
 
 ## Testing
 
-Tests run without ComfyUI -- everything is mocked:
+Tests run without ComfyUI — everything is mocked:
 
 ```bash
 python -m pytest tests/ -v
-# 2054+ tests, all mocked, under 60 seconds
+# 2350+ tests (2140 original + 210 cognitive), all mocked, under 60 seconds
+```
+
+## Project Structure
+
+```
+comfyui-agent/
+├── agent/                  # Agent package (108 tools)
+│   ├── tools/              # Intelligence layer (58 tools)
+│   ├── brain/              # Brain layer (27 tools)
+│   ├── stage/              # Stage layer (23 tools)
+│   ├── mcp_server.py       # MCP server exposing all tools
+│   ├── cli.py              # CLI entry points
+│   └── session_context.py  # Per-session state management
+├── src/cognitive/          # Cognitive architecture
+│   ├── core/               # CognitiveGraphEngine, DeltaLayer, WorkflowGraph
+│   ├── transport/          # SchemaCache, ExecutionEvent, interrupt
+│   ├── tools/              # 8 macro-tools
+│   ├── experience/         # ExperienceChunk, signatures, accumulator
+│   ├── prediction/         # CWM, Arbiter, counterfactuals
+│   └── pipeline/           # Autonomous end-to-end pipeline
+├── tests/                  # 2350+ tests, all mocked
+├── PRODUCT_VISION.md       # What this product feels like
+├── SYSTEM_DESIGN_REVIEW.md # Architecture findings (SOLID/ROUGH/BROKEN)
+└── PANEL_DESIGN.md         # SuperDuper Panel component architecture
 ```
 
 ## Production Hardening
@@ -437,12 +554,12 @@ The codebase has been hardened across five domains:
 
 | Domain | Changes |
 |--------|---------|
-| **Security** | Path traversal protection on all file operations, SSRF prevention for model downloads (HTTPS-only, private IP blocking), session name validation, `validate_path` coverage on all image reads |
-| **Error Handling** | Structured exception hierarchy (`AgentError` → `ToolError` / `TransportError` / `ValidationError`), eliminated silent exception swallowing on critical paths, added diagnostic logging |
-| **Async Safety** | Blocking calls in async context wrapped with `run_in_executor`, all httpx clients use context managers, explicit timeouts on every HTTP call |
-| **State Management** | Atomic file writes (write-tmp + rename) for workflow saves, TOCTOU race fix in node replacement cache, thread-safety audit across all singleton state |
-| **Code Quality** | Zero ruff lint errors, Pillow deprecation warnings eliminated, all tests passing |
+| **Security** | Path traversal protection, SSRF prevention (HTTPS-only, private IP blocking), session name validation |
+| **Error Handling** | Structured exception hierarchy (`AgentError` → `ToolError` / `TransportError` / `ValidationError`) |
+| **Async Safety** | Blocking calls wrapped with `run_in_executor`, explicit timeouts on every HTTP call |
+| **State Management** | Atomic file writes, TOCTOU race fixes, thread-safety audit across singletons |
+| **Cognitive Integrity** | SHA-256 on all delta layers, LIVRPS composition with safety overrides, link preservation verified across 54 adversarial tests |
 
 ## License
 
-[MIT](LICENSE) -- use it however you want.
+[MIT](LICENSE) — use it however you want.
