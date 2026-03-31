@@ -1,6 +1,6 @@
 """ComfyUI Agent — AI co-pilot for ComfyUI workflows."""
 
-__version__ = "0.4.0"
+__version__ = "3.0.0"
 
 
 def tool_count() -> tuple[int, int, int]:
