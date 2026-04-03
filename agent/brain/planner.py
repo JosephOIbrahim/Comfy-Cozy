@@ -7,6 +7,8 @@ speed and determinism. State persists to disk for cross-session continuity.
 
 import json
 import logging
+import os
+import tempfile
 import time
 from pathlib import Path
 
@@ -333,12 +335,22 @@ class PlannerAgent(BrainAgent):
             return None
 
     def _save_plan(self, session: str, plan: dict) -> None:
-        """Save a plan to disk."""
+        """Save a plan to disk (atomic write via temp file + rename)."""
         path = self._goals_path(session)
-        path.write_text(
-            json.dumps(plan, indent=2, sort_keys=True),
-            encoding="utf-8",
-        )
+        path.parent.mkdir(parents=True, exist_ok=True)
+        fd, tmp = tempfile.mkstemp(dir=str(path.parent), suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                f.write(json.dumps(plan, indent=2, sort_keys=True))
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp, str(path))
+        except Exception:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+            raise
 
     # --- Decomposition ---
 

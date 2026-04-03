@@ -1,7 +1,7 @@
 [project]
 name = "comfyui-agent"
 version = "3.0.0"
-description = "AI co-pilot for ComfyUI — 108 tools, cognitive architecture that learns from every generation, Pentagram-inspired UI"
+description = "AI co-pilot for ComfyUI — 108 tools, cognitive architecture that learns from every generation, minimal typography-forward UI"
 readme = "README.md"
 license = {text = "MIT"}
 authors = [{name = "Joseph Ibrahim"}]
@@ -37,6 +37,7 @@ dependencies = [
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
+    "pytest-cov>=4.0",
     "ruff>=0.3.0",
 ]
 
@@ -58,6 +59,14 @@ packages = ["agent"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+
+[tool.coverage.run]
+source = ["agent"]
+omit = ["tests/*"]
+
+[tool.coverage.report]
+show_missing = true
+skip_empty = true
 
 [tool.ruff]
 line-length = 99

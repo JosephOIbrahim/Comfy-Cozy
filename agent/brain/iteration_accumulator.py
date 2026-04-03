@@ -16,6 +16,8 @@ from ._sdk import BrainAgent, BrainConfig
 
 log = logging.getLogger(__name__)
 
+_MAX_STEPS = 200
+
 # ---------------------------------------------------------------------------
 # Tool schemas
 # ---------------------------------------------------------------------------
@@ -158,6 +160,12 @@ class IterationAccumulatorAgent(BrainAgent):
         }
         with self._lock:
             self._steps.append(step)
+            if len(self._steps) > _MAX_STEPS:
+                log.warning(
+                    "Iteration steps exceeded %d limit, trimming oldest entries",
+                    _MAX_STEPS,
+                )
+                self._steps = self._steps[-_MAX_STEPS:]
             step_count = len(self._steps)
         return {
             "status": "recorded",

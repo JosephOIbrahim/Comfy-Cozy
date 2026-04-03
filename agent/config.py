@@ -39,6 +39,12 @@ COMFYUI_HOST = os.getenv("COMFYUI_HOST", "127.0.0.1")
 _port_raw = os.getenv("COMFYUI_PORT", "8188")
 try:
     COMFYUI_PORT = int(_port_raw)
+    if not (1 <= COMFYUI_PORT <= 65535):
+        print(
+            f"WARNING: COMFYUI_PORT={COMFYUI_PORT} out of range (1-65535). Using 8188.",
+            file=sys.stderr,
+        )
+        COMFYUI_PORT = 8188
 except ValueError:
     print(
         f"WARNING: COMFYUI_PORT='{_port_raw}' is not a valid integer. "
@@ -91,7 +97,6 @@ def _default_comfyui_install() -> str:
         return env
     # Auto-detect: check common locations for the actual ComfyUI install
     candidates = [
-        Path("G:/COMFY/ComfyUI"),
         COMFYUI_DATABASE / "ComfyUI",
         Path.home() / "ComfyUI",
     ]

@@ -16,6 +16,8 @@ from ._sdk import BrainAgent, BrainConfig
 
 log = logging.getLogger(__name__)
 
+_MAX_INTENT_HISTORY = 100
+
 # ---------------------------------------------------------------------------
 # Tool schemas
 # ---------------------------------------------------------------------------
@@ -113,6 +115,8 @@ class IntentCollectorAgent(BrainAgent):
         with self._lock:
             self._current_intent = intent
             self._intent_history.append(intent)
+            if len(self._intent_history) > _MAX_INTENT_HISTORY:
+                self._intent_history = self._intent_history[-_MAX_INTENT_HISTORY:]
         return intent
 
     def get_current(self) -> dict | None:

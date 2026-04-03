@@ -4,7 +4,7 @@
  * Shows a compact node list with slot-colored dots, value previews,
  * and bidirectional canvas-sidebar synchronization.
  *
- * Part of the v2.0 Pentagram-caliber UI redesign.
+ * Part of the v2.0 production-grade UI redesign.
  */
 
 import { slotColorForNode } from "./tokens.js";

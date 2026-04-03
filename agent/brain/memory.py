@@ -11,6 +11,7 @@ import hashlib
 import json
 import logging
 import math
+import os
 import time
 from collections import defaultdict
 from pathlib import Path
@@ -252,6 +253,8 @@ class MemoryAgent(BrainAgent):
                 pass
         with open(path, "a", encoding="utf-8") as f:
             f.write(json.dumps(outcome, sort_keys=True) + "\n")
+            f.flush()
+            os.fsync(f.fileno())
 
     # --- Handlers ---
 

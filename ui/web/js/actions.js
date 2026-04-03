@@ -4,7 +4,7 @@
  * Appears below the input bar with contextual actions based on
  * the current workflow and agent state.
  *
- * Part of the v2.0 Pentagram-caliber UI redesign.
+ * Part of the v2.0 production-grade UI redesign.
  */
 
 let _containerEl = null;

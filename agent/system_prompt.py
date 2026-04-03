@@ -1,5 +1,6 @@
 """Build the agent's system prompt from knowledge files and context."""
 
+import threading
 from pathlib import Path
 
 from .config import (
@@ -69,21 +70,25 @@ Session Memory:
 
 # Keyword -> knowledge file mapping loaded from YAML
 _TRIGGERS_PATH = Path(__file__).parent / "knowledge" / "triggers.yaml"
+_triggers_lock = threading.Lock()
 _triggers_cache: dict | None = None
 
 
 def _load_triggers() -> dict:
-    """Load knowledge triggers from YAML. Cached after first load."""
+    """Load knowledge triggers from YAML. Cached after first load (thread-safe)."""
     global _triggers_cache
     if _triggers_cache is not None:
         return _triggers_cache
-    if _TRIGGERS_PATH.exists():
-        import yaml
-        with open(_TRIGGERS_PATH, encoding="utf-8") as f:
-            _triggers_cache = yaml.safe_load(f) or {}
-    else:
-        _triggers_cache = {}
-    return _triggers_cache
+    with _triggers_lock:
+        if _triggers_cache is not None:
+            return _triggers_cache
+        if _TRIGGERS_PATH.exists():
+            import yaml
+            with open(_TRIGGERS_PATH, encoding="utf-8") as f:
+                _triggers_cache = yaml.safe_load(f) or {}
+        else:
+            _triggers_cache = {}
+        return _triggers_cache
 
 
 def _detect_relevant_knowledge(session_context: dict | None) -> set[str]:

@@ -12,6 +12,15 @@ from aiohttp import web
 
 log = logging.getLogger("superduper-panel")
 
+_MAX_REQUEST_BYTES = 10 * 1024 * 1024  # 10 MB
+
+
+def _too_large(request):
+    """Return a 413 response if the request body exceeds _MAX_REQUEST_BYTES, else None."""
+    if request.content_length and request.content_length > _MAX_REQUEST_BYTES:
+        return web.json_response({"error": "Payload too large"}, status=413)
+    return None
+
 
 def _tool_call(tool_name, tool_input):
     """Call an agent tool and return the JSON string result."""
@@ -76,7 +85,8 @@ def setup_routes():
 
             return web.json_response(result)
         except Exception as e:
-            return web.json_response({"error": str(e)}, status=500)
+            log.error("Route %s error: %s", request.path, e, exc_info=True)
+            return web.json_response({"error": "Internal server error"}, status=500)
 
     # ── Workflow Loading ───────────────────────────────────────────
 
@@ -84,11 +94,15 @@ def setup_routes():
     async def load_workflow(request):
         """Load a workflow from a file path."""
         try:
+            rejected = _too_large(request)
+            if rejected:
+                return rejected
             body = await request.json()
             result = _tool_call("load_workflow", body)
             return web.Response(text=result, content_type="application/json")
         except Exception as e:
-            return web.json_response({"error": str(e)}, status=500)
+            log.error("Route %s error: %s", request.path, e, exc_info=True)
+            return web.json_response({"error": "Internal server error"}, status=500)
 
     @routes.post("/superduper-panel/load-workflow-data")
     async def load_workflow_data(request):
@@ -99,6 +113,9 @@ def setup_routes():
         and execute the workflow.
         """
         try:
+            rejected = _too_large(request)
+            if rejected:
+                return rejected
             body = await request.json()
             workflow_data = body.get("data", {})
             source = body.get("source", "<panel>")
@@ -133,7 +150,8 @@ def setup_routes():
 
             return web.json_response(result)
         except Exception as e:
-            return web.json_response({"error": str(e)}, status=500)
+            log.error("Route %s error: %s", request.path, e, exc_info=True)
+            return web.json_response({"error": "Internal server error"}, status=500)
 
     # ── Workflow Mutation ──────────────────────────────────────────
 
@@ -141,41 +159,57 @@ def setup_routes():
     async def set_input(request):
         """Push a delta layer via set_input tool."""
         try:
+            rejected = _too_large(request)
+            if rejected:
+                return rejected
             body = await request.json()
             result = _tool_call("set_input", body)
             return web.Response(text=result, content_type="application/json")
         except Exception as e:
-            return web.json_response({"error": str(e)}, status=500)
+            log.error("Route %s error: %s", request.path, e, exc_info=True)
+            return web.json_response({"error": "Internal server error"}, status=500)
 
     @routes.post("/superduper-panel/add-node")
     async def add_node(request):
         """Add a new node to the workflow."""
         try:
+            rejected = _too_large(request)
+            if rejected:
+                return rejected
             body = await request.json()
             result = _tool_call("add_node", body)
             return web.Response(text=result, content_type="application/json")
         except Exception as e:
-            return web.json_response({"error": str(e)}, status=500)
+            log.error("Route %s error: %s", request.path, e, exc_info=True)
+            return web.json_response({"error": "Internal server error"}, status=500)
 
     @routes.post("/superduper-panel/connect-nodes")
     async def connect_nodes(request):
         """Connect two nodes in the workflow."""
         try:
+            rejected = _too_large(request)
+            if rejected:
+                return rejected
             body = await request.json()
             result = _tool_call("connect_nodes", body)
             return web.Response(text=result, content_type="application/json")
         except Exception as e:
-            return web.json_response({"error": str(e)}, status=500)
+            log.error("Route %s error: %s", request.path, e, exc_info=True)
+            return web.json_response({"error": "Internal server error"}, status=500)
 
     @routes.post("/superduper-panel/apply-patch")
     async def apply_patch(request):
         """Apply RFC6902 patches to the workflow."""
         try:
+            rejected = _too_large(request)
+            if rejected:
+                return rejected
             body = await request.json()
             result = _tool_call("apply_workflow_patch", body)
             return web.Response(text=result, content_type="application/json")
         except Exception as e:
-            return web.json_response({"error": str(e)}, status=500)
+            log.error("Route %s error: %s", request.path, e, exc_info=True)
+            return web.json_response({"error": "Internal server error"}, status=500)
 
     @routes.post("/superduper-panel/rollback")
     async def rollback(request):
@@ -184,7 +218,8 @@ def setup_routes():
             result = _tool_call("undo_workflow_patch", {})
             return web.Response(text=result, content_type="application/json")
         except Exception as e:
-            return web.json_response({"error": str(e)}, status=500)
+            log.error("Route %s error: %s", request.path, e, exc_info=True)
+            return web.json_response({"error": "Internal server error"}, status=500)
 
     @routes.post("/superduper-panel/reset")
     async def reset(request):
@@ -193,7 +228,8 @@ def setup_routes():
             result = _tool_call("reset_workflow", {})
             return web.Response(text=result, content_type="application/json")
         except Exception as e:
-            return web.json_response({"error": str(e)}, status=500)
+            log.error("Route %s error: %s", request.path, e, exc_info=True)
+            return web.json_response({"error": "Internal server error"}, status=500)
 
     @routes.get("/superduper-panel/diff")
     async def diff(request):
@@ -202,7 +238,8 @@ def setup_routes():
             result = _tool_call("get_workflow_diff", {})
             return web.Response(text=result, content_type="application/json")
         except Exception as e:
-            return web.json_response({"error": str(e)}, status=500)
+            log.error("Route %s error: %s", request.path, e, exc_info=True)
+            return web.json_response({"error": "Internal server error"}, status=500)
 
     @routes.get("/superduper-panel/editable-fields")
     async def editable_fields(request):
@@ -211,7 +248,8 @@ def setup_routes():
             result = _tool_call("get_editable_fields", {})
             return web.Response(text=result, content_type="application/json")
         except Exception as e:
-            return web.json_response({"error": str(e)}, status=500)
+            log.error("Route %s error: %s", request.path, e, exc_info=True)
+            return web.json_response({"error": "Internal server error"}, status=500)
 
     # ── Execution ─────────────────────────────────────────────────
 
@@ -222,17 +260,22 @@ def setup_routes():
             result = _tool_call("validate_before_execute", {})
             return web.Response(text=result, content_type="application/json")
         except Exception as e:
-            return web.json_response({"error": str(e)}, status=500)
+            log.error("Route %s error: %s", request.path, e, exc_info=True)
+            return web.json_response({"error": "Internal server error"}, status=500)
 
     @routes.post("/superduper-panel/execute")
     async def execute(request):
         """Execute the loaded workflow on ComfyUI."""
         try:
+            rejected = _too_large(request)
+            if rejected:
+                return rejected
             body = await request.json() if request.content_length else {}
             result = _tool_call("execute_workflow", body)
             return web.Response(text=result, content_type="application/json")
         except Exception as e:
-            return web.json_response({"error": str(e)}, status=500)
+            log.error("Route %s error: %s", request.path, e, exc_info=True)
+            return web.json_response({"error": "Internal server error"}, status=500)
 
     @routes.get("/superduper-panel/execution-status")
     async def execution_status(request):
@@ -242,7 +285,8 @@ def setup_routes():
             result = _tool_call("get_execution_status", {"prompt_id": prompt_id})
             return web.Response(text=result, content_type="application/json")
         except Exception as e:
-            return web.json_response({"error": str(e)}, status=500)
+            log.error("Route %s error: %s", request.path, e, exc_info=True)
+            return web.json_response({"error": "Internal server error"}, status=500)
 
     # ── Discovery ─────────────────────────────────────────────────
 
@@ -254,7 +298,8 @@ def setup_routes():
             result = _tool_call("get_node_info", {"node_type": node_type})
             return web.Response(text=result, content_type="application/json")
         except Exception as e:
-            return web.json_response({"error": str(e)}, status=500)
+            log.error("Route %s error: %s", request.path, e, exc_info=True)
+            return web.json_response({"error": "Internal server error"}, status=500)
 
     @routes.get("/superduper-panel/models")
     async def models(request):
@@ -264,7 +309,8 @@ def setup_routes():
             result = _tool_call("list_models", {"model_type": model_type, "format": "summary"})
             return web.Response(text=result, content_type="application/json")
         except Exception as e:
-            return web.json_response({"error": str(e)}, status=500)
+            log.error("Route %s error: %s", request.path, e, exc_info=True)
+            return web.json_response({"error": "Internal server error"}, status=500)
 
     @routes.get("/superduper-panel/system-stats")
     async def system_stats(request):
@@ -273,7 +319,8 @@ def setup_routes():
             result = _tool_call("get_system_stats", {})
             return web.Response(text=result, content_type="application/json")
         except Exception as e:
-            return web.json_response({"error": str(e)}, status=500)
+            log.error("Route %s error: %s", request.path, e, exc_info=True)
+            return web.json_response({"error": "Internal server error"}, status=500)
 
     # ── Cognitive Layer ────────────────────────────────────────────
 
@@ -292,7 +339,8 @@ def setup_routes():
                 "message": "Cognitive module not available",
             })
         except Exception as e:
-            return web.json_response({"error": str(e)}, status=500)
+            log.error("Route %s error: %s", request.path, e, exc_info=True)
+            return web.json_response({"error": "Internal server error"}, status=500)
 
     @routes.get("/superduper-panel/autoresearch")
     async def autoresearch(request):

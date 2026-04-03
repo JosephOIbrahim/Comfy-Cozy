@@ -18,7 +18,7 @@ Add to the MOE routing matrix:
 │              │ Authority: what the product FEELS like,       │
 │              │ what the user SEES, what the creative         │
 │              │ director APPROVES.                            │
-│              │ Frozen boundary: Pentagram design language.   │
+│              │ Frozen boundary: Comfy Cozy design language.   │
 │              │ Note: This expert serves the Creative         │
 │              │ Director (Joe). It proposes; Joe decides.     │
 └──────────────┴──────────────────────────────────────────────┘
@@ -120,11 +120,11 @@ Joe reviews findings. Rough items become Phase 8 tasks. Broken items become imme
 
 ---
 
-## 7C: VISUAL DESIGN (The Pentagram Phase)
+## 7C: VISUAL DESIGN (The Design Phase)
 
 **Agent Configuration:** `[DESIGN × ARCHITECT]` → GATE → `[DESIGN × FORGE]` → `[DESIGN × CRUCIBLE]`
 
-This is where the cognitive architecture gets a face. The design language is established. Joe's Pentagram reference is the north star.
+This is where the cognitive architecture gets a face. The design language is established.
 
 ### Design Language (Established — From Prior Work)
 
@@ -346,7 +346,7 @@ G:\COMFYUI_Database\Custom_Nodes\ComfyUI-SuperDuper-Panel\
 │       ├── graphMode.js          # Workflow inspector
 │       ├── experienceDash.js     # Experience dashboard
 │       ├── autoresearchMonitor.js # Overnight results
-│       └── styles.css            # Pentagram design system
+│       └── styles.css            # Comfy Cozy design system
 └── README.md
 ```
 
@@ -369,7 +369,7 @@ The design crucible doesn't test code — it tests the design against the produc
 
 1. **First-use test:** Can a new user understand what to do in 30 seconds?
 2. **Information density test:** Is every element on screen earning its space?
-3. **Pentagram test:** Would Pentagram ship this? No gradients? No decorative elements? High contrast? Minimal chrome?
+3. **Design test:** Would this ship? No gradients? No decorative elements? High contrast? Minimal chrome?
 4. **Mobile/compressed test:** Does GRAPH mode work when the panel is narrow?
 5. **Flow state test:** During rapid generation (burst mode), does the UI stay out of the way?
 6. **Prediction trust test:** Does the prediction overlay build confidence or create anxiety?
@@ -394,7 +394,7 @@ VERIFICATION:
   □ Autoresearch monitor renders from real autoresearch results
   □ Prediction overlay appears on Soft/Explicit arbiter decisions
   □ All 429+ original tests still pass
-  □ Pentagram design test passes (no gradients, no shadows, minimal chrome)
+  □ Design test passes (no gradients, no shadows, minimal chrome)
 ```
 
 ---
@@ -412,7 +412,7 @@ The Creative Director (Joe) has final authority on all design decisions.
 The DESIGN expert proposes; Joe approves. No design ships without
 explicit Creative Director approval at the human gate.
 
-Design language reference: Pentagram-inspired.
+Design language reference: minimal, typography-forward.
   - Monochrome + one accent (#0066FF on #0D0D0D)
   - Inter typography. No gradients. No shadows. 4px max radius.
   - 1px borders. High contrast. Content fills space.

@@ -9,7 +9,7 @@
 
 An existing `ComfyUI-SuperDuper` extension provides a working chat sidebar with WebSocket streaming, quick actions, readability controls, and a v2 design system using ComfyUI's native blue (#4e9bcd). This new extension (`ComfyUI-SuperDuper-Panel`) is a ground-up rebuild with:
 
-- The Pentagram design spec (#0066FF on #0D0D0D)
+- The design spec (#0066FF on #0D0D0D)
 - GRAPH mode (workflow inspector with delta layers)
 - Experience Dashboard
 - Autoresearch Monitor
@@ -34,7 +34,7 @@ G:\COMFYUI_Database\Custom_Nodes\ComfyUI-SuperDuper-Panel\
 │       ├── autoresearchMonitor.js # Autoresearch results view
 │       ├── predictionOverlay.js   # Inline prediction cards
 │       ├── agentClient.js         # HTTP/SSE client for agent communication
-│       └── styles.css             # Pentagram design system
+│       └── styles.css             # Comfy Cozy design system
 ```
 
 8 files. No build step. No external dependencies. Every file loadable by ComfyUI's static serving.
@@ -45,7 +45,7 @@ G:\COMFYUI_Database\Custom_Nodes\ComfyUI-SuperDuper-Panel\
 
 ```css
 :root {
-  /* Pentagram Palette */
+  /* Core Palette */
   --p-bg:           #0D0D0D;
   --p-surface:      #1A1A1A;
   --p-border:       #2A2A2A;
@@ -565,6 +565,6 @@ These routes are thin wrappers that call into the existing tool handlers. No new
 
 3. **Prediction Overlay accent border.** This is the only element with a `--p-accent` colored border, making it visually distinct. The Explicit variant adds a `--p-danger` left stripe. This breaks the "1px `--p-border` everywhere" rule deliberately for attention hierarchy. Accept?
 
-4. **APP mode has no user message bubbles/backgrounds.** Messages are differentiated only by the label ("You" / "Agent") and vertical position. This is maximum Pentagram (content-only, zero decoration). It may feel too sparse. Accept, or add a subtle `--p-surface` background to agent messages?
+4. **APP mode has no user message bubbles/backgrounds.** Messages are differentiated only by the label ("You" / "Agent") and vertical position. This is maximum restraint (content-only, zero decoration). It may feel too sparse. Accept, or add a subtle `--p-surface` background to agent messages?
 
 5. **Existing ComfyUI-SuperDuper relationship.** This new extension runs alongside the old one. They use different WebSocket/HTTP paths (`/superduper/ws` vs `/superduper-panel/*`). No conflict. But: should the old one be deprecated, or do both co-exist long-term?

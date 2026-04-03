@@ -79,6 +79,14 @@ function createPanelShell() {
     tabEls[tab.id] = btn;
   }
 
+  // Queue Prompt button
+  const queueBtn = document.createElement("button");
+  queueBtn.className = "sdp-queue-btn";
+  queueBtn.textContent = "Queue";
+  queueBtn.setAttribute("aria-label", "Queue prompt in ComfyUI");
+  queueBtn.addEventListener("click", () => _queuePrompt(queueBtn));
+  header.appendChild(queueBtn);
+
   const spacer = document.createElement("div");
   spacer.className = "sdp-header__spacer";
   header.appendChild(spacer);
@@ -221,6 +229,32 @@ function _setupResize(handle) {
     document.removeEventListener("mousemove", onMove);
     document.removeEventListener("mouseup", onUp);
     localStorage.setItem("sd-panel-width", panel.style.width);
+  }
+}
+
+/* ── Queue Prompt ─────────────────────────────────────────────── */
+
+async function _queuePrompt(btn) {
+  const originalText = btn.textContent;
+  try {
+    btn.textContent = "Queuing\u2026";
+    btn.classList.add("sdp-queue-btn--running");
+
+    // Use ComfyUI's native queuePrompt — identical to the built-in button.
+    // arg 0 = queue at end (positive = front, 0 = end)
+    // arg 1 = batch count (default 1)
+    await app.queuePrompt(0, 1);
+
+    btn.textContent = "Queued";
+    setTimeout(() => {
+      btn.textContent = originalText;
+      btn.classList.remove("sdp-queue-btn--running");
+    }, 1500);
+  } catch (e) {
+    console.error("[Comfy Cozy Panel] Queue prompt failed:", e);
+    btn.textContent = "Error";
+    btn.classList.remove("sdp-queue-btn--running");
+    setTimeout(() => { btn.textContent = originalText; }, 2000);
   }
 }
 

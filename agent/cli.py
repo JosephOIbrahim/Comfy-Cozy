@@ -139,8 +139,8 @@ def run(
                     )
                     if pngs:
                         session_context["last_output_path"] = str(pngs[0])
-                except Exception:
-                    pass
+                except OSError as e:
+                    log.debug("Failed to detect last output image: %s", e)
 
     console.print("[dim]Type your question or command. 'quit' to exit.[/dim]\n")
 
@@ -526,8 +526,8 @@ def orchestrate(
                         )
                 else:
                     console.print(f"  [dim]Scene composition skipped: {comp_result.get('error', '?')}[/dim]")
-    except ImportError:
-        pass
+    except ImportError as e:
+        log.debug("USD scene composition unavailable: %s", e)
 
     # Step 6: Record experience (if FORESIGHT available)
     if scene_composed:
@@ -541,8 +541,8 @@ def orchestrate(
                     change_context={"action": "orchestrate_pipeline"},
                 )
                 console.print("  [green]Experience recorded[/green]")
-        except Exception:
-            pass
+        except Exception as e:
+            log.debug("Failed to record FORESIGHT experience: %s", e)
     elif not scene_composed:
         console.print("[dim]Steps 5-6 skipped (usd-core not available)[/dim]")
 
@@ -639,8 +639,8 @@ def autoresearch(
             from .session_context import get_session_context
             ctx = get_session_context("default")
             cws = ctx.ensure_stage()
-        except Exception:
-            pass
+        except Exception as e:
+            log.debug("Could not initialize CWS for autoresearch: %s", e)
 
         console.print("[bold]FORESIGHT Autoresearch[/bold]")
         console.print(f"  Program: {program}")

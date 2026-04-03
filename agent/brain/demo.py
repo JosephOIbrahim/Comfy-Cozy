@@ -13,6 +13,8 @@ from ._sdk import BrainAgent, BrainConfig
 
 log = logging.getLogger(__name__)
 
+_MAX_CHECKPOINTS = 100
+
 # ---------------------------------------------------------------------------
 # Demo scenarios
 # ---------------------------------------------------------------------------
@@ -381,6 +383,10 @@ class DemoAgent(BrainAgent):
             "notes": notes,
             "timestamp": time.time(),
         })
+        if len(self._demo_state["checkpoints"]) > _MAX_CHECKPOINTS:
+            self._demo_state["checkpoints"] = (
+                self._demo_state["checkpoints"][-_MAX_CHECKPOINTS:]
+            )
 
         # Advance to next step
         self._demo_state["current_step_idx"] += 1

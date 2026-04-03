@@ -145,7 +145,7 @@ export function createAppMode(container, client) {
     body.className = "sdp-msg__body";
 
     if (role === "agent") {
-      body.innerHTML = _renderMarkdown(text);
+      body.innerHTML = _renderMarkdown(text);  // sanitized via _sanitizeHtml
     } else {
       body.textContent = text;
     }
@@ -162,6 +162,9 @@ export function createAppMode(container, client) {
   }
 
   // Simple markdown rendering (bold, italic, code, code blocks)
+  // Safety chain: _esc() converts all HTML to entities first, then regex
+  // produces only allowlisted tags. _sanitizeHtml() strips anything else
+  // as a defense-in-depth measure before innerHTML assignment.
   function _renderMarkdown(text) {
     let html = _esc(text);
     // Code blocks
@@ -174,7 +177,16 @@ export function createAppMode(container, client) {
     html = html.replace(/\*(.+?)\*/g, "<em>$1</em>");
     // Line breaks
     html = html.replace(/\n/g, "<br>");
-    return html;
+    return _sanitizeHtml(html);
+  }
+
+  function _sanitizeHtml(html) {
+    // Allow only safe formatting tags produced by _renderMarkdown.
+    // Strips any tag not in the allowlist (defense-in-depth against XSS).
+    const ALLOWED = /^(pre|code|strong|em|br|p|span)$/i;
+    return html.replace(/<\/?([a-zA-Z][a-zA-Z0-9]*)[^>]*>/g, (match, tag) => {
+      return ALLOWED.test(tag) ? match : "";
+    });
   }
 
   function _esc(s) {

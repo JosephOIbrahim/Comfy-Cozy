@@ -196,7 +196,7 @@ Every change is undoable. Every generation teaches the agent something.
 
 ## Comfy Cozy Panel (ComfyUI Sidebar)
 
-A Pentagram-inspired sidebar that lives right inside ComfyUI:
+A minimal, typography-forward sidebar that lives right inside ComfyUI:
 
 - **APP Mode** -- Chat with the agent, see tool cards and streaming responses
 - **GRAPH Mode** -- Inspect your workflow's delta layers and LIVRPS opinions per parameter
