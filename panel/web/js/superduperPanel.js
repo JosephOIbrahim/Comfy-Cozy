@@ -15,7 +15,7 @@ import { createAutoresearchMonitor } from "./autoresearchMonitor.js";
 
 const fontLink = document.createElement("link");
 fontLink.rel = "stylesheet";
-fontLink.href = "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap";
+fontLink.href = "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&family=Nunito:wght@700;800&display=swap";
 document.head.appendChild(fontLink);
 
 const cssLink = document.createElement("link");
@@ -63,6 +63,12 @@ function createPanelShell() {
   // Header
   const header = document.createElement("div");
   header.className = "sdp-header";
+
+  // Brand title
+  const brand = document.createElement("span");
+  brand.className = "sdp-brand";
+  brand.textContent = "Comfy Cozy";
+  header.appendChild(brand);
 
   const tabs = [
     { id: "app", label: "APP" },

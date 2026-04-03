@@ -131,12 +131,23 @@
 .sdp-header {
   display: flex;
   align-items: center;
-  height: 40px;
+  height: 48px;
   padding: 0 var(--p-4);
   background: var(--p-surface);
   border-bottom: 1px solid var(--p-border);
   flex-shrink: 0;
-  gap: var(--p-1);
+  gap: var(--p-2);
+}
+
+.sdp-brand {
+  font-family: 'Nunito', var(--p-sans);
+  font-size: 22px;
+  font-weight: 800;
+  color: var(--p-accent);
+  letter-spacing: -0.02em;
+  margin-right: var(--p-2);
+  white-space: nowrap;
+  user-select: none;
 }
 
 .sdp-tab {
