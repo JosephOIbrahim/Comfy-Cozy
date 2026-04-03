@@ -16,11 +16,12 @@ COPY sessions/ sessions/ 2>/dev/null || true
 # Fix permissions for non-root user
 RUN chown -R agent:agent /app
 
-# ComfyUI runs on host — connect via host.docker.internal
-ENV COMFYUI_HOST=host.docker.internal
-ENV COMFYUI_PORT=8188
+# ComfyUI connection — overridable at runtime via docker-compose or -e flags
+ENV COMFYUI_HOST=${COMFYUI_HOST:-localhost}
+ENV COMFYUI_PORT=${COMFYUI_PORT:-8188}
 
-# Volumes for persistent data
+# Create and declare volume directories
+RUN mkdir -p /app/sessions /app/logs
 VOLUME ["/app/sessions", "/app/logs"]
 
 # Health check — verify agent can start and reach ComfyUI

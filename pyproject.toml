@@ -59,6 +59,9 @@ packages = ["agent"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+markers = [
+    "integration: end-to-end integration tests exercising the full tool pipeline",
+]
 
 [tool.coverage.run]
 source = ["agent"]

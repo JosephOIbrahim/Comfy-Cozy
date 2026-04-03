@@ -1,0 +1,26 @@
+services:
+  agent:
+    build: .
+    environment:
+      - COMFYUI_HOST=${COMFYUI_HOST:-host.docker.internal}
+      - COMFYUI_PORT=${COMFYUI_PORT:-8188}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - LLM_PROVIDER=${LLM_PROVIDER:-anthropic}
+      - AGENT_MODEL=${AGENT_MODEL:-}
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434/v1}
+      - MCP_AUTH_TOKEN=${MCP_AUTH_TOKEN:-}
+      - LOG_FORMAT=${LOG_FORMAT:-json}
+    volumes:
+      - ./sessions:/app/sessions
+      - ./logs:/app/logs
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8189/superduper-panel/health', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      start_period: 10s
+      retries: 3
