@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/comfy-cozy-logo.jpg" alt="Comfy Cozy" width="600">
+</p>
+
 # Comfy Cozy
 
 **Talk to ComfyUI like a colleague. It talks back.**
