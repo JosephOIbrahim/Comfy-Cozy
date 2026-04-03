@@ -216,9 +216,15 @@ class TestScopeChecks:
         assert result.checks["scope"] is False
 
     def test_system_path_blocked(self):
+        import sys
+        # Use platform-appropriate system path
+        if sys.platform == "win32":
+            bad_path = "C:\\Windows\\System32\\evil.dll"
+        else:
+            bad_path = "/etc/passwd"
         result = pre_dispatch_check(
             "set_input",
-            {"file_path": "C:\\Windows\\System32\\evil.dll"},
+            {"file_path": bad_path},
             session_active=True,
             has_undo=True,
         )
