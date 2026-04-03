@@ -9,22 +9,27 @@ import logging
 
 from aiohttp import web
 
+from .middleware import check_auth, check_rate_limit, check_size
+
 log = logging.getLogger("superduper-panel")
-
-_MAX_REQUEST_BYTES = 10 * 1024 * 1024  # 10 MB
-
-
-def _too_large(request):
-    """Return a 413 response if the request body exceeds _MAX_REQUEST_BYTES, else None."""
-    if request.content_length and request.content_length > _MAX_REQUEST_BYTES:
-        return web.json_response({"error": "Payload too large"}, status=413)
-    return None
 
 
 def _tool_call(tool_name, tool_input):
     """Call an agent tool and return the JSON string result."""
     from agent.tools import handle
     return handle(tool_name, tool_input)
+
+
+def _guard(request, category, *, post=False):
+    """Combined auth + rate limit + size guard. Returns rejection response or None."""
+    rejected = check_auth(request) or check_rate_limit(category)
+    if rejected:
+        return rejected
+    if post:
+        rejected = check_size(request)
+        if rejected:
+            return rejected
+    return None
 
 
 def setup_routes():
@@ -48,6 +53,9 @@ def setup_routes():
     async def graph_state(request):
         """Read CognitiveGraphEngine state."""
         try:
+            rejected = _guard(request, "read")
+            if rejected:
+                return rejected
             from agent.tools.workflow_patch import get_current_workflow, get_engine
             workflow = get_current_workflow()
             engine = get_engine()
@@ -97,6 +105,9 @@ def setup_routes():
         agent-side mutations back onto the ComfyUI canvas.
         """
         try:
+            rejected = _guard(request, "read")
+            if rejected:
+                return rejected
             from agent.tools.workflow_patch import get_current_workflow
             workflow = get_current_workflow()
             if workflow is None:
@@ -112,7 +123,7 @@ def setup_routes():
     async def load_workflow(request):
         """Load a workflow from a file path."""
         try:
-            rejected = _too_large(request)
+            rejected = _guard(request, "mutation", post=True)
             if rejected:
                 return rejected
             body = await request.json()
@@ -131,7 +142,7 @@ def setup_routes():
         and execute the workflow.
         """
         try:
-            rejected = _too_large(request)
+            rejected = _guard(request, "mutation", post=True)
             if rejected:
                 return rejected
             body = await request.json()
@@ -177,7 +188,7 @@ def setup_routes():
     async def set_input(request):
         """Push a delta layer via set_input tool."""
         try:
-            rejected = _too_large(request)
+            rejected = _guard(request, "mutation", post=True)
             if rejected:
                 return rejected
             body = await request.json()
@@ -191,7 +202,7 @@ def setup_routes():
     async def add_node(request):
         """Add a new node to the workflow."""
         try:
-            rejected = _too_large(request)
+            rejected = _guard(request, "mutation", post=True)
             if rejected:
                 return rejected
             body = await request.json()
@@ -205,7 +216,7 @@ def setup_routes():
     async def connect_nodes(request):
         """Connect two nodes in the workflow."""
         try:
-            rejected = _too_large(request)
+            rejected = _guard(request, "mutation", post=True)
             if rejected:
                 return rejected
             body = await request.json()
@@ -219,7 +230,7 @@ def setup_routes():
     async def apply_patch(request):
         """Apply RFC6902 patches to the workflow."""
         try:
-            rejected = _too_large(request)
+            rejected = _guard(request, "mutation", post=True)
             if rejected:
                 return rejected
             body = await request.json()
@@ -233,6 +244,9 @@ def setup_routes():
     async def rollback(request):
         """Undo the last delta layer."""
         try:
+            rejected = _guard(request, "mutation")
+            if rejected:
+                return rejected
             result = _tool_call("undo_workflow_patch", {})
             return web.Response(text=result, content_type="application/json")
         except Exception as e:
@@ -243,6 +257,9 @@ def setup_routes():
     async def reset(request):
         """Reset workflow to base state."""
         try:
+            rejected = _guard(request, "mutation")
+            if rejected:
+                return rejected
             result = _tool_call("reset_workflow", {})
             return web.Response(text=result, content_type="application/json")
         except Exception as e:
@@ -253,6 +270,9 @@ def setup_routes():
     async def diff(request):
         """Get diff from base workflow."""
         try:
+            rejected = _guard(request, "read")
+            if rejected:
+                return rejected
             result = _tool_call("get_workflow_diff", {})
             return web.Response(text=result, content_type="application/json")
         except Exception as e:
@@ -263,6 +283,9 @@ def setup_routes():
     async def editable_fields(request):
         """Get editable fields of the loaded workflow."""
         try:
+            rejected = _guard(request, "read")
+            if rejected:
+                return rejected
             result = _tool_call("get_editable_fields", {})
             return web.Response(text=result, content_type="application/json")
         except Exception as e:
@@ -275,6 +298,9 @@ def setup_routes():
     async def validate(request):
         """Pre-execution validation."""
         try:
+            rejected = _guard(request, "execute")
+            if rejected:
+                return rejected
             result = _tool_call("validate_before_execute", {})
             return web.Response(text=result, content_type="application/json")
         except Exception as e:
@@ -285,7 +311,7 @@ def setup_routes():
     async def execute(request):
         """Execute the loaded workflow on ComfyUI."""
         try:
-            rejected = _too_large(request)
+            rejected = _guard(request, "execute", post=True)
             if rejected:
                 return rejected
             body = await request.json() if request.content_length else {}
@@ -299,6 +325,9 @@ def setup_routes():
     async def execution_status(request):
         """Check execution status."""
         try:
+            rejected = _guard(request, "read")
+            if rejected:
+                return rejected
             prompt_id = request.query.get("prompt_id", "")
             result = _tool_call("get_execution_status", {"prompt_id": prompt_id})
             return web.Response(text=result, content_type="application/json")
@@ -312,6 +341,9 @@ def setup_routes():
     async def node_info(request):
         """Get info for a specific node type."""
         try:
+            rejected = _guard(request, "discover")
+            if rejected:
+                return rejected
             node_type = request.query.get("node_type", "")
             result = _tool_call("get_node_info", {"node_type": node_type})
             return web.Response(text=result, content_type="application/json")
@@ -323,6 +355,9 @@ def setup_routes():
     async def models(request):
         """List models by type."""
         try:
+            rejected = _guard(request, "read")
+            if rejected:
+                return rejected
             model_type = request.query.get("model_type", "checkpoints")
             result = _tool_call("list_models", {"model_type": model_type, "format": "summary"})
             return web.Response(text=result, content_type="application/json")
@@ -334,6 +369,9 @@ def setup_routes():
     async def system_stats(request):
         """Get ComfyUI system stats."""
         try:
+            rejected = _guard(request, "read")
+            if rejected:
+                return rejected
             result = _tool_call("get_system_stats", {})
             return web.Response(text=result, content_type="application/json")
         except Exception as e:
@@ -346,6 +384,9 @@ def setup_routes():
     async def experience(request):
         """Read ExperienceAccumulator stats."""
         try:
+            rejected = _guard(request, "read")
+            if rejected:
+                return rejected
             from src.cognitive.experience.accumulator import ExperienceAccumulator
             acc = ExperienceAccumulator()
             return web.json_response(acc.get_stats())
@@ -363,6 +404,9 @@ def setup_routes():
     @routes.get("/superduper-panel/autoresearch")
     async def autoresearch(request):
         """Read autoresearch results."""
+        rejected = _guard(request, "read")
+        if rejected:
+            return rejected
         return web.json_response({
             "status": "idle",
             "message": "No autoresearch run active",
@@ -374,7 +418,7 @@ def setup_routes():
     async def discover(request):
         """Search for models, nodes, or workflows."""
         try:
-            rejected = _too_large(request)
+            rejected = _guard(request, "discover", post=True)
             if rejected:
                 return rejected
             body = await request.json()
@@ -388,6 +432,9 @@ def setup_routes():
     async def list_custom_nodes(request):
         """List installed custom node packs."""
         try:
+            rejected = _guard(request, "read")
+            if rejected:
+                return rejected
             result = _tool_call("list_custom_nodes", {})
             return web.Response(text=result, content_type="application/json")
         except Exception as e:
@@ -398,6 +445,9 @@ def setup_routes():
     async def models_summary(request):
         """Get summary of all installed models."""
         try:
+            rejected = _guard(request, "read")
+            if rejected:
+                return rejected
             result = _tool_call("get_models_summary", {})
             return web.Response(text=result, content_type="application/json")
         except Exception as e:
@@ -408,6 +458,9 @@ def setup_routes():
     async def queue_status(request):
         """Get ComfyUI queue status."""
         try:
+            rejected = _guard(request, "read")
+            if rejected:
+                return rejected
             result = _tool_call("get_queue_status", {})
             return web.Response(text=result, content_type="application/json")
         except Exception as e:
@@ -418,6 +471,9 @@ def setup_routes():
     async def history(request):
         """Get execution history."""
         try:
+            rejected = _guard(request, "read")
+            if rejected:
+                return rejected
             max_items = int(request.query.get("max_items", "10"))
             result = _tool_call("get_history", {"max_items": max_items})
             return web.Response(text=result, content_type="application/json")
@@ -431,7 +487,7 @@ def setup_routes():
     async def install_node_pack(request):
         """Install a custom node pack from a URL."""
         try:
-            rejected = _too_large(request)
+            rejected = _guard(request, "download", post=True)
             if rejected:
                 return rejected
             body = await request.json()
@@ -445,7 +501,7 @@ def setup_routes():
     async def download_model(request):
         """Download a model from a URL."""
         try:
-            rejected = _too_large(request)
+            rejected = _guard(request, "download", post=True)
             if rejected:
                 return rejected
             body = await request.json()
@@ -459,7 +515,7 @@ def setup_routes():
     async def uninstall_node_pack(request):
         """Uninstall a custom node pack."""
         try:
-            rejected = _too_large(request)
+            rejected = _guard(request, "download", post=True)
             if rejected:
                 return rejected
             body = await request.json()
@@ -475,7 +531,7 @@ def setup_routes():
     async def repair_workflow(request):
         """Repair workflow by finding and installing missing nodes."""
         try:
-            rejected = _too_large(request)
+            rejected = _guard(request, "mutation", post=True)
             if rejected:
                 return rejected
             body = await request.json()
@@ -489,7 +545,7 @@ def setup_routes():
     async def reconfigure_workflow(request):
         """Reconfigure workflow to fix compatibility issues."""
         try:
-            rejected = _too_large(request)
+            rejected = _guard(request, "mutation", post=True)
             if rejected:
                 return rejected
             body = await request.json()
@@ -503,6 +559,9 @@ def setup_routes():
     async def check_deprecations(request):
         """Check for deprecated nodes in the loaded workflow."""
         try:
+            rejected = _guard(request, "read")
+            if rejected:
+                return rejected
             result = _tool_call("check_workflow_deprecations", {})
             return web.Response(text=result, content_type="application/json")
         except Exception as e:
@@ -513,7 +572,7 @@ def setup_routes():
     async def migrate_deprecated(request):
         """Migrate deprecated nodes to replacements."""
         try:
-            rejected = _too_large(request)
+            rejected = _guard(request, "mutation", post=True)
             if rejected:
                 return rejected
             body = await request.json() if request.content_length else {}
@@ -529,7 +588,7 @@ def setup_routes():
     async def save_session(request):
         """Save current session state."""
         try:
-            rejected = _too_large(request)
+            rejected = _guard(request, "mutation", post=True)
             if rejected:
                 return rejected
             body = await request.json()
@@ -543,7 +602,7 @@ def setup_routes():
     async def load_session_data(request):
         """Load a saved session."""
         try:
-            rejected = _too_large(request)
+            rejected = _guard(request, "mutation", post=True)
             if rejected:
                 return rejected
             body = await request.json()
@@ -557,6 +616,9 @@ def setup_routes():
     async def list_sessions(request):
         """List all saved sessions."""
         try:
+            rejected = _guard(request, "read")
+            if rejected:
+                return rejected
             result = _tool_call("list_sessions", {})
             return web.Response(text=result, content_type="application/json")
         except Exception as e:
@@ -569,7 +631,7 @@ def setup_routes():
     async def save_workflow(request):
         """Save workflow to a file path."""
         try:
-            rejected = _too_large(request)
+            rejected = _guard(request, "mutation", post=True)
             if rejected:
                 return rejected
             body = await request.json()
@@ -583,7 +645,7 @@ def setup_routes():
     async def preview_patch(request):
         """Preview a patch without applying it."""
         try:
-            rejected = _too_large(request)
+            rejected = _guard(request, "read", post=True)
             if rejected:
                 return rejected
             body = await request.json()
@@ -597,6 +659,9 @@ def setup_routes():
     async def classify_workflow(request):
         """Classify the loaded workflow type."""
         try:
+            rejected = _guard(request, "read")
+            if rejected:
+                return rejected
             result = _tool_call("classify_workflow", {})
             return web.Response(text=result, content_type="application/json")
         except Exception as e:
@@ -607,6 +672,9 @@ def setup_routes():
     async def workflow_templates(request):
         """List available workflow templates."""
         try:
+            rejected = _guard(request, "read")
+            if rejected:
+                return rejected
             result = _tool_call("list_workflow_templates", {})
             return web.Response(text=result, content_type="application/json")
         except Exception as e:
@@ -619,6 +687,9 @@ def setup_routes():
     async def civitai_model(request):
         """Get CivitAI model details."""
         try:
+            rejected = _guard(request, "discover")
+            if rejected:
+                return rejected
             model_id = request.query.get("model_id", "")
             result = _tool_call("get_civitai_model", {"model_id": model_id})
             return web.Response(text=result, content_type="application/json")
@@ -630,6 +701,9 @@ def setup_routes():
     async def trending_models(request):
         """Get trending models from CivitAI."""
         try:
+            rejected = _guard(request, "discover")
+            if rejected:
+                return rejected
             params = {}
             for key in ("model_type", "base_model", "period", "max_results"):
                 val = request.query.get(key)
@@ -647,7 +721,7 @@ def setup_routes():
     async def check_compatibility(request):
         """Check compatibility between models."""
         try:
-            rejected = _too_large(request)
+            rejected = _guard(request, "read", post=True)
             if rejected:
                 return rejected
             body = await request.json()
@@ -663,7 +737,7 @@ def setup_routes():
     async def wire_model(request):
         """Wire a downloaded model into the loaded workflow."""
         try:
-            rejected = _too_large(request)
+            rejected = _guard(request, "mutation", post=True)
             if rejected:
                 return rejected
             body = await request.json()
@@ -677,6 +751,9 @@ def setup_routes():
     async def suggest_wiring(request):
         """Analyze workflow and suggest model wiring."""
         try:
+            rejected = _guard(request, "read")
+            if rejected:
+                return rejected
             result = _tool_call("suggest_wiring", {})
             return web.Response(text=result, content_type="application/json")
         except Exception as e:
@@ -689,7 +766,7 @@ def setup_routes():
     async def provision_model(request):
         """One-step model provisioning: discover, download, verify, wire."""
         try:
-            rejected = _too_large(request)
+            rejected = _guard(request, "download", post=True)
             if rejected:
                 return rejected
             body = await request.json()
@@ -703,6 +780,9 @@ def setup_routes():
     async def provision_pipeline_status(request):
         """Check what the workflow needs vs what is installed."""
         try:
+            rejected = _guard(request, "read")
+            if rejected:
+                return rejected
             result = _tool_call("provision_pipeline_status", {})
             return web.Response(text=result, content_type="application/json")
         except Exception as e:
@@ -713,7 +793,7 @@ def setup_routes():
     async def provision_pipeline_verify(request):
         """Verify a model file exists and check compatibility."""
         try:
-            rejected = _too_large(request)
+            rejected = _guard(request, "read", post=True)
             if rejected:
                 return rejected
             body = await request.json()
@@ -723,4 +803,11 @@ def setup_routes():
             log.error("Route %s error: %s", request.path, e, exc_info=True)
             return web.json_response({"error": "Internal server error"}, status=500)
 
-    log.info("Comfy Cozy Panel routes mounted (%d routes)", 49)
+    # ── Chat WebSocket ─────────────────────────────────────────────
+    try:
+        from .chat import websocket_handler as chat_ws_handler
+        routes.get("/superduper-panel/ws")(chat_ws_handler)
+    except Exception as e:
+        log.debug("Chat WebSocket not available: %s", e)
+
+    log.info("Comfy Cozy Panel routes mounted (%d routes)", 50)

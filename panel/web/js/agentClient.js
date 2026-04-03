@@ -217,6 +217,61 @@ export class AgentClient {
     return r.json();
   }
 
+  // ── WebSocket (chat streaming) ────────────────────────────────
+
+  connectWs() {
+    const proto = location.protocol === "https:" ? "wss:" : "ws:";
+    const url = `${proto}//${location.host}/superduper-panel/ws`;
+
+    this._ws = new WebSocket(url);
+    this._wsListeners = {};
+    this._wsReconnectTimer = null;
+
+    this._ws.onopen = () => {
+      console.debug("[Comfy Cozy] WebSocket connected");
+    };
+
+    this._ws.onmessage = (evt) => {
+      try {
+        const data = JSON.parse(evt.data);
+        const listeners = this._wsListeners[data.type] || [];
+        for (const fn of listeners) fn(data);
+      } catch (e) {
+        console.debug("[Comfy Cozy] Bad WS message:", evt.data);
+      }
+    };
+
+    this._ws.onclose = () => {
+      console.debug("[Comfy Cozy] WebSocket closed, reconnecting in 2s");
+      this._wsReconnectTimer = setTimeout(() => this.connectWs(), 2000);
+    };
+
+    this._ws.onerror = () => {
+      // onclose will fire after this, triggering reconnect
+    };
+
+    return this;
+  }
+
+  on(eventType, callback) {
+    if (!this._wsListeners) this._wsListeners = {};
+    if (!this._wsListeners[eventType]) this._wsListeners[eventType] = [];
+    this._wsListeners[eventType].push(callback);
+    return this;
+  }
+
+  sendChat(text) {
+    if (this._ws && this._ws.readyState === WebSocket.OPEN) {
+      this._ws.send(JSON.stringify({ type: "chat", content: text }));
+    }
+  }
+
+  sendWorkflow(data) {
+    if (this._ws && this._ws.readyState === WebSocket.OPEN) {
+      this._ws.send(JSON.stringify({ type: "workflow", data }));
+    }
+  }
+
   // ── CivitAI ──────────────────────────────────────────────────
 
   async getTrendingModels(opts = {}) {

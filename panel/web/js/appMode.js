@@ -78,13 +78,9 @@ export function createAppMode(container, client) {
     }
 
     _showTyping();
-    // Agent communication would happen here via SSE
-    // For now, show a placeholder response
-    setTimeout(() => {
-      _clearTyping();
-      _addAgent("Agent connected. Waiting for backend wiring.");
-      _setBusy(false);
-    }, 500);
+
+    // Send via WebSocket
+    client.sendChat(text);
   }
 
   function _setBusy(state) {
@@ -107,6 +103,73 @@ export function createAppMode(container, client) {
   function _addSystem(text) {
     _renderMessage("system", text);
   }
+
+  // ── Streaming agent message (updated incrementally) ──────────
+
+  let _streamingEl = null;
+
+  function _updateAgentMessage(text) {
+    if (!_streamingEl) {
+      _clearTyping();
+      _streamingEl = document.createElement("div");
+      _streamingEl.className = "sdp-msg sdp-msg--agent";
+
+      const label = document.createElement("span");
+      label.className = "sdp-msg__label";
+      label.textContent = "Agent";
+      _streamingEl.appendChild(label);
+
+      const body = document.createElement("div");
+      body.className = "sdp-msg__body";
+      _streamingEl.appendChild(body);
+
+      messagesEl.appendChild(_streamingEl);
+    }
+    const body = _streamingEl.querySelector(".sdp-msg__body");
+    body.innerHTML = _renderMarkdown(text);
+    _scrollToBottom();
+  }
+
+  function _finalizeAgentMessage(text) {
+    _streamingEl = null;
+    if (text) {
+      _saveMessage("agent", text);
+    }
+  }
+
+  // ── WebSocket event wiring ──────────────────────────────────
+
+  let _agentText = "";
+
+  client.connectWs();
+
+  client.on("text_delta", (data) => {
+    _agentText += data.text;
+    _updateAgentMessage(_agentText);
+  });
+
+  client.on("tool_call", (data) => {
+    _addSystem(`Using: ${data.name}`);
+  });
+
+  client.on("done", () => {
+    _clearTyping();
+    _finalizeAgentMessage(_agentText);
+    _agentText = "";
+    _setBusy(false);
+  });
+
+  client.on("error", (data) => {
+    _clearTyping();
+    _streamingEl = null;
+    _addAgent(`Error: ${data.message || "Unknown error"}`);
+    _agentText = "";
+    _setBusy(false);
+  });
+
+  client.on("connected", () => {
+    console.debug("[Comfy Cozy] Agent chat connected");
+  });
 
   let typingEl = null;
 

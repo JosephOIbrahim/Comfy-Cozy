@@ -18,21 +18,6 @@ def _mock_vision_response(text: str) -> LLMResponse:
     )
 
 
-@pytest.fixture
-def fake_image(tmp_path):
-    """Create a tiny PNG for testing."""
-    # Minimal valid PNG (1x1 red pixel)
-    png_data = (
-        b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01'
-        b'\x00\x00\x00\x01\x08\x02\x00\x00\x00\x90wS\xde\x00\x00'
-        b'\x00\x0cIDATx\x9cc\xf8\x0f\x00\x00\x01\x01\x00\x05\x18'
-        b'\xd8N\x00\x00\x00\x00IEND\xaeB`\x82'
-    )
-    img_path = tmp_path / "test_output.png"
-    img_path.write_bytes(png_data)
-    return str(img_path)
-
-
 def _patch_provider(response_text: str):
     """Patch get_provider to return a mock provider with the given response."""
     mock_provider = MagicMock()
