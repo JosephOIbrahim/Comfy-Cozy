@@ -1,4 +1,4 @@
-"""MoE Specialist Agents for the ComfyUI SUPER DUPER Agent.
+"""MoE Specialist Agents for the ComfyUI Comfy Cozy Agent.
 
 Specialist agents that the Router delegates to:
   IntentAgent   -- translates artistic language into parameter specs

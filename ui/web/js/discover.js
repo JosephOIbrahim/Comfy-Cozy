@@ -1,1 +1,1 @@
-/* SUPER DUPER -- DISCOVER results panel (Phase 3) */
+/* COMFY COZY -- DISCOVER results panel (Phase 3) */

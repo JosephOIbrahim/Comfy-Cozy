@@ -7,7 +7,7 @@
 
 ## The Sentence
 
-**SuperDuper is the first AI generation tool that gets better at your job by doing your job.**
+**Comfy Cozy is the first AI generation tool that gets better at your job by doing your job.**
 
 Not better at generating images. Better at generating *your* images — the ones with your taste, your constraints, your definition of "done." Every generation is practice. Every session is a lesson. By session 100, it's not suggesting defaults. It's suggesting what *you* would have chosen, faster than you could have chosen it.
 

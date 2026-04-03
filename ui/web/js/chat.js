@@ -1,4 +1,4 @@
-/* ── SUPER DUPER Chat Renderer ──────────────────────────────────────
+/* ── COMFY COZY Chat Renderer ───────────────────────────────────────
  *  Text rendering (Phase 1) + Panel component factories (Phase 2).
  *  No innerHTML anywhere — all DOM built via createElement + textContent.
  * ──────────────────────────────────────────────────────────────────── */

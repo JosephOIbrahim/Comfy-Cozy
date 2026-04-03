@@ -1,4 +1,4 @@
-/* ── SuperDuper Panel — Entry Point ───────────────────────────────
+/* ── Comfy Cozy Panel — Entry Point ──────────────────────────────
  *  Registers with ComfyUI's extension system.
  *  Creates the pill button and panel shell.
  *  Manages mode switching between APP, GRAPH, Experience, Research.
@@ -43,7 +43,7 @@ function createPillButton() {
   pill = document.createElement("button");
   pill.className = "sdp-pill";
   pill.textContent = "SD";
-  pill.setAttribute("aria-label", "Toggle SuperDuper Panel");
+  pill.setAttribute("aria-label", "Toggle Comfy Cozy Panel");
   pill.addEventListener("click", togglePanel);
   document.body.appendChild(pill);
 }
@@ -270,10 +270,10 @@ async function syncCanvasToAgent() {
       body: JSON.stringify({ data: apiWorkflow, source: "<canvas>" }),
     });
 
-    console.log("[SuperDuper Panel] Canvas synced to agent state");
+    console.log("[Comfy Cozy Panel] Canvas synced to agent state");
   } catch (e) {
     // Silent — sync is best-effort
-    console.debug("[SuperDuper Panel] Canvas sync failed:", e);
+    console.debug("[Comfy Cozy Panel] Canvas sync failed:", e);
   }
 }
 
@@ -331,9 +331,9 @@ app.registerExtension({
     // Health check
     try {
       await client.health();
-      console.log("[SuperDuper Panel] Connected to agent backend");
+      console.log("[Comfy Cozy Panel] Connected to agent backend");
     } catch (e) {
-      console.log("[SuperDuper Panel] Agent backend not available — UI-only mode");
+      console.log("[Comfy Cozy Panel] Agent backend not available — UI-only mode");
     }
 
     // Start canvas ↔ agent synchronization
@@ -359,7 +359,7 @@ app.registerExtension({
         });
       }
     } catch (e) {
-      console.debug("[SuperDuper Panel] API events not available");
+      console.debug("[Comfy Cozy Panel] API events not available");
     }
   },
 });

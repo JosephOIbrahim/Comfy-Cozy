@@ -1,4 +1,4 @@
-# Brain Layer Design — ComfyUI SUPER DUPER Agent v0.2.0
+# Brain Layer Design — ComfyUI Comfy Cozy Agent v0.2.0
 
 > **Date:** 2026-02-11
 > **Status:** Design — pending implementation
@@ -71,7 +71,7 @@ Tomorrow: serialized JSON between Agent SDK agents (same structure, different tr
 ### Full Architecture Diagram
 
 ```
-+-------------------- SUPER DUPER AGENT v0.2.0 ----------------------+
++-------------------- COMFY COZY AGENT v0.2.0 -----------------------+
 |                                                                      |
 |  BRAIN LAYER (new)                                                   |
 |  +--------+ +--------+ +--------+ +-------+ +-------+ +--------+    |

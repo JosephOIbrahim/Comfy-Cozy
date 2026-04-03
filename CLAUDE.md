@@ -1,4 +1,4 @@
-# CLAUDE.md — ComfyUI SUPER DUPER Agent
+# CLAUDE.md — ComfyUI Comfy Cozy Agent
 
 > AI co-pilot for VFX artists using ComfyUI. Driver, not generator.
 > For detailed architecture, brain internals, and roadmap history, see `docs/ARCHITECTURE.md`.

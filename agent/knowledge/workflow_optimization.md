@@ -81,7 +81,7 @@ After identifying the bottleneck with ProfilerX or built-in node timing:
 
 ## Built-In Timing
 
-ComfyUI SUPER DUPER Agent's `execute_with_progress` tool already provides per-node
+ComfyUI Comfy Cozy Agent's `execute_with_progress` tool already provides per-node
 timing data via WebSocket monitoring. After execution, check the `node_timing` and
 `slowest_node` fields in the result to see where time was spent — no extra nodes needed.
 

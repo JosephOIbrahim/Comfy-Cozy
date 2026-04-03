@@ -1,1 +1,1 @@
-"""SUPER DUPER UI -- Server routes and WebSocket bridge."""
+"""COMFY COZY UI -- Server routes and WebSocket bridge."""

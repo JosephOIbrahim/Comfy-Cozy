@@ -1,4 +1,4 @@
-"""Server routes for the SuperDuper Panel.
+"""Server routes for the Comfy Cozy Panel.
 
 Thin REST wrappers mounted on ComfyUI's PromptServer via aiohttp.
 Each route translates HTTP requests into agent tool calls.
@@ -302,4 +302,4 @@ def setup_routes():
             "message": "No autoresearch run active",
         })
 
-    log.info("SuperDuper Panel routes mounted (%d routes)", 20)
+    log.info("Comfy Cozy Panel routes mounted (%d routes)", 20)

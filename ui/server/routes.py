@@ -1,4 +1,4 @@
-"""SUPER DUPER UI -- aiohttp routes mounted on ComfyUI's PromptServer.
+"""COMFY COZY UI -- aiohttp routes mounted on ComfyUI's PromptServer.
 
 Provides:
   POST /superduper/chat   -- synchronous chat (request/response)
@@ -1455,13 +1455,13 @@ async def handle_status(request):
 # ---------------------------------------------------------------------------
 
 def setup_routes():
-    """Mount all SUPER DUPER routes on ComfyUI's PromptServer."""
+    """Mount all COMFY COZY routes on ComfyUI's PromptServer."""
     try:
         from server import PromptServer
         routes = PromptServer.instance.routes
         routes.post("/superduper/chat")(handle_chat)
         routes.get("/superduper/status")(handle_status)
         routes.get("/superduper/ws")(websocket_handler)
-        log.info("SUPER DUPER routes mounted: /superduper/chat, /superduper/status, /superduper/ws")
+        log.info("COMFY COZY routes mounted: /superduper/chat, /superduper/status, /superduper/ws")
     except Exception as e:
-        log.error("Failed to mount SUPER DUPER routes: %s", e)
+        log.error("Failed to mount COMFY COZY routes: %s", e)

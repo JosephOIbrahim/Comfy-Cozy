@@ -1,4 +1,4 @@
-/* ── SUPER DUPER Node FX ────────────────────────────────────────────
+/* ── COMFY COZY Node FX ─────────────────────────────────────────────
  *  Canvas-level visual effects on ComfyUI nodes:
  *    - Jade glow while executing
  *    - Green flash on completion
@@ -98,7 +98,7 @@ function drawNodeFX(node, ctx) {
 // ── Extension Registration ──────────────────────────────────────────
 
 app.registerExtension({
-  name: "SuperDuper.NodeFX",
+  name: "ComfyCozy.NodeFX",
 
   async setup() {
     // ── Workflow execution tracker ──

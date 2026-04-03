@@ -1,4 +1,4 @@
-"""Brain layer for the ComfyUI SUPER DUPER Agent.
+"""Brain layer for the ComfyUI Comfy Cozy Agent.
 
 Adds higher-order capabilities on top of the intelligence layers:
   Vision    — see and critique generated images

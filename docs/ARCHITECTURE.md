@@ -1,4 +1,4 @@
-# Architecture Reference — ComfyUI SUPER DUPER Agent
+# Architecture Reference — ComfyUI Comfy Cozy Agent
 
 > Detailed architecture, brain layer internals, agent loop, and historical roadmap.
 > For day-to-day coding guidance, see the project root `CLAUDE.md`.
@@ -8,7 +8,7 @@
 ## Architecture Diagram
 
 ```
-┌──────────────────── SUPER DUPER AGENT v0.4.0 ─────────────────────┐
+┌──────────────────── COMFY COZY AGENT v0.4.0 ──────────────────────┐
 │                                                                    │
 │  BRAIN LAYER (27 tools)                                            │
 │  ┌────────┐ ┌────────┐ ┌────────┐ ┌───────┐ ┌───────┐ ┌───────┐ │

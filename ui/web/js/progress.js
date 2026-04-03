@@ -1,4 +1,4 @@
-/* ── SUPER DUPER Progress Panel ─────────────────────────────────────
+/* ── COMFY COZY Progress Panel ──────────────────────────────────────
  *  Three-level progress visualization:
  *    L1: Agent pipeline indicator (ROUTER → INTENT → EXECUTION → VERIFY)
  *    L2: Execution progress bar (jade fill, indeterminate shimmer)

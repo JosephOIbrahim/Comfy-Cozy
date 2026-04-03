@@ -1,4 +1,4 @@
-/* ── SUPER DUPER Dispatch Card ──────────────────────────────────────
+/* ── COMFY COZY Dispatch Card ───────────────────────────────────────
  *  Agent deployment visualization for MoE routing.
  *  No innerHTML — all DOM built via createElement + textContent.
  * ──────────────────────────────────────────────────────────────────── */

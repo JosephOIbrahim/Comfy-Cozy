@@ -155,7 +155,7 @@ PRINCIPLES
   - Every pixel earns its place.
 ```
 
-### Component 1: SuperDuper Panel (ComfyUI Extension)
+### Component 1: Comfy Cozy Panel (ComfyUI Extension)
 
 The collapsible right sidebar inside ComfyUI. Two modes:
 

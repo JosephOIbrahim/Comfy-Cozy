@@ -32,7 +32,7 @@ Before building further on the viewport, we need ground truth on the agent's UI 
 
 ```
 AGENT TRACK                          VIEWPORT TRACK
-(ComfyUI-Agent / Super Duper)        (CarWash-2 / 3D Viewport)
+(ComfyUI-Agent / Comfy Cozy)        (CarWash-2 / 3D Viewport)
 ─────────────────────────────        ──────────────────────────
 Knowledge layer (Grafts A-D) ✅       Architecture blueprint
 68 tools                              Hydra + Qt + Storm

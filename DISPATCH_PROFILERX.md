@@ -12,7 +12,7 @@
 ```
 /COMFY_LEAD
 
-SHOW: SUPER DUPER UI — Graft F: ProfilerX in VERIFY
+SHOW: COMFY COZY UI — Graft F: ProfilerX in VERIFY
 You are the Lead TD. Quick knowledge enhancement to the VERIFY layer.
 
 CONTEXT: ComfyUI now has ProfilerX — a per-node execution profiler that

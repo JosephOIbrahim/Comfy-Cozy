@@ -1,7 +1,7 @@
 """Provisioning tools -- install node packs and download models.
 
 Bridges the gap between discovery (finding things) and usage (having them).
-These are the "make it happen" tools that SuperDuper's repair and download
+These are the "make it happen" tools that Comfy Cozy's repair and download
 actions invoke.
 """
 

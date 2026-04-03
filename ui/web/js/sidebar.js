@@ -4,13 +4,13 @@ import { createDispatchCard, updateAgentStatus } from "./dispatch.js";
 import { createProgressPanel, updateProgress } from "./progress.js";
 import { createQuickActions, updateQuickActions } from "./actions.js";
 
-/* ── SUPER DUPER Sidebar ─────────────────────────────────────────────
+/* ── COMFY COZY Sidebar ──────────────────────────────────────────────
  *  Registers a sidebar tab in ComfyUI's extension manager.
  *  Chat interface with WebSocket connection to agent brain.
  * ──────────────────────────────────────────────────────────────────── */
 
 const SIDEBAR_ID = "superduper";
-const SIDEBAR_TITLE = "Super Duper";
+const SIDEBAR_TITLE = "Comfy Cozy";
 
 /* ── Load fonts & stylesheet ──────────────────────────────────────── */
 
@@ -83,7 +83,7 @@ class AgentConnection {
         const data = JSON.parse(evt.data);
         this.onMessage(data);
       } catch (e) {
-        console.error("[SUPER DUPER] Bad message:", evt.data);
+        console.error("[Comfy Cozy] Bad message:", evt.data);
       }
     };
 
@@ -96,7 +96,7 @@ class AgentConnection {
     };
 
     this.ws.onerror = (err) => {
-      console.error("[SUPER DUPER] WebSocket error:", err);
+      console.error("[Comfy Cozy] WebSocket error:", err);
     };
   }
 
@@ -269,7 +269,7 @@ function buildSidebar(el) {
       <span class="sd-stage__label" id="sd-stage-label"></span>
       <span class="sd-stage__detail" id="sd-stage-detail"></span>
     </div>
-    <div class="sd-messages" id="sd-messages" role="log" aria-live="polite" aria-label="Chat with Super Duper AI">
+    <div class="sd-messages" id="sd-messages" role="log" aria-live="polite" aria-label="Chat with Comfy Cozy AI">
       <div class="sd-message sd-message--system">
         <span class="sd-message__body">What would you like to do with your workflow?</span>
       </div>
@@ -386,7 +386,7 @@ function buildSidebar(el) {
         // Store environment info for native awareness
         if (data.environment) {
           window._sdEnvironment = data.environment;
-          console.log("[SUPER DUPER] Environment:", data.environment);
+          console.log("[Comfy Cozy] Environment:", data.environment);
         }
         break;
 
@@ -593,7 +593,7 @@ function buildSidebar(el) {
         break;
 
       default:
-        console.log("[SUPER DUPER] Unknown event:", data);
+        console.log("[Comfy Cozy] Unknown event:", data);
     }
   }
 
@@ -650,7 +650,7 @@ function buildSidebar(el) {
         workflow = result.output;
       }
     } catch (e) {
-      console.warn("[SUPER DUPER] Could not capture workflow:", e);
+      console.warn("[Comfy Cozy] Could not capture workflow:", e);
     }
 
     // Send to agent via WebSocket (include workflow if captured)
@@ -724,7 +724,7 @@ function buildSidebar(el) {
         }
       }
     } catch (err) {
-      console.warn("[Super Duper] Could not highlight node:", err);
+      console.warn("[Comfy Cozy] Could not highlight node:", err);
     }
   });
 
@@ -827,7 +827,7 @@ app.extensionManager.registerSidebarTab({
   id: SIDEBAR_ID,
   icon: "pi pi-bolt",
   title: SIDEBAR_TITLE,
-  tooltip: "Super Duper AI Co-pilot",
+  tooltip: "Comfy Cozy AI Co-pilot",
   type: "custom",
   render(el) {
     buildSidebar(el);

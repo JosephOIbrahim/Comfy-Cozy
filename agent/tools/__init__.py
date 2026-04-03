@@ -1,4 +1,4 @@
-"""Tool registry for the ComfyUI SUPER DUPER Agent.
+"""Tool registry for the ComfyUI Comfy Cozy Agent.
 
 Each tool module exports:
   TOOLS: list[dict]    -- Anthropic tool schemas

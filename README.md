@@ -194,7 +194,7 @@ Every change is undoable. Every generation teaches the agent something.
 
 ---
 
-## SuperDuper Panel (ComfyUI Sidebar)
+## Comfy Cozy Panel (ComfyUI Sidebar)
 
 A Pentagram-inspired sidebar that lives right inside ComfyUI:
 

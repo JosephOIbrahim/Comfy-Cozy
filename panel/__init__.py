@@ -1,4 +1,4 @@
-"""SuperDuper Panel — Cognitive UI for ComfyUI.
+"""Comfy Cozy Panel — Cognitive UI for ComfyUI.
 
 Registers web directory for the panel extension and mounts
 server routes on PromptServer for agent communication.

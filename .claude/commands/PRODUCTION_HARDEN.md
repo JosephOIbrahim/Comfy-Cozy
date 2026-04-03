@@ -1,6 +1,6 @@
 # PRODUCTION HARDENING — MoE Agent Team Orchestration
 
-> **Mission:** Autonomously production-harden ComfyUI-SUPER DUPER Agent using
+> **Mission:** Autonomously production-harden ComfyUI-Comfy Cozy Agent using
 > specialized agent teams routed by Mixture-of-Experts domain decomposition.
 >
 > **Runtime:** Claude Code with Sonnet 4.6 sub-agents
