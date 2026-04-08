@@ -9,7 +9,7 @@ If this test fails, the packaging fix has regressed and the MCP
 server's PILOT engine is silently dead in production.
 """
 
-import subprocess
+from pathlib import Path
 
 
 def test_workflow_patch_imports_engine_from_top_level():
@@ -48,13 +48,10 @@ def test_no_legacy_src_cognitive_imports_remain():
     part of Phase 0.5 and there's no reason a new test file can't use
     the post-fix `from cognitive...` form.
     """
-    result = subprocess.run(
-        ["grep", "-rln", "from src.cognitive", "agent/", "panel/", "cognitive/"],
-        capture_output=True,
-        text=True,
-    )
-    # grep exit code 1 = no matches (the success case)
-    # grep exit code 0 = matches found (the failure case)
-    assert result.returncode == 1, (
-        f"Legacy `from src.cognitive` imports still present:\n{result.stdout}"
-    )
+    offenders = []
+    for root in ("agent", "panel", "cognitive"):
+        for py_file in Path(root).rglob("*.py"):
+            text = py_file.read_text(encoding="utf-8", errors="ignore")
+            if "from src.cognitive" in text:
+                offenders.append(str(py_file))
+    assert not offenders, f"Legacy `from src.cognitive` imports still present:\n{offenders}"
