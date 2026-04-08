@@ -47,7 +47,7 @@ graph LR
 
 **Before you start, you need three things:**
 
-- [ ] **Python 3.10+** ([python.org/downloads](https://python.org/downloads))
+- [ ] **Python 3.11+** ([python.org/downloads](https://python.org/downloads))
 - [ ] **ComfyUI** running on your machine ([github.com/comfyanonymous/ComfyUI](https://github.com/comfyanonymous/ComfyUI))
 - [ ] **One LLM backend** -- an API key from Anthropic, OpenAI, or Google, OR [Ollama](https://ollama.com) installed locally (free, no API key)
 
@@ -63,12 +63,14 @@ cd Comfy-Cozy
 ### Step 2: Install it
 
 ```bash
-pip install -e .                  # core install
-pip install -e ".[dev]"           # + test suite (2673 passing tests)
+pip install -e .                  # core install (agent + cognitive engine + panel)
+pip install -e ".[dev]"           # + full test suite (2705 passing tests)
 pip install -e ".[dev,stage]"     # + USD stage subsystem (~200MB, optional)
 ```
 
-The default install gives you the agent + cognitive engine + panel. Add `[dev]` to run the tests. Add `[stage]` only if you need the USD-backed provisioner (heavy native dep — most users don't).
+The core install is all you need to run the agent. Add `[dev]` to run the test suite. Add `[stage]` only if you need the USD-backed provisioner — it's a heavy native dependency and most users don't need it.
+
+> **Requires Python 3.11+.** ComfyUI also requires 3.11+ — if ComfyUI runs on your machine, you already have the right version.
 
 ### Step 3: Add your API key
 
@@ -302,6 +304,53 @@ Every change is undoable. Every generation teaches the agent something.
 
 ---
 
+## Autonomous Mode
+
+Write a creative intent. Hit go. No workflow file needed, no parameters to tune — the agent composes a workflow, runs it on ComfyUI, scores the result, and learns from it automatically.
+
+```mermaid
+flowchart TD
+    You(["🎨 Creative Intent\n&quot;cinematic portrait, golden hour&quot;"]) --> INTENT["INTENT\nParse + validate"]
+    INTENT --> COMPOSE["COMPOSE\nLoad template from library\nBlend with accumulated experience"]
+    COMPOSE --> PREDICT["PREDICT\nCognitiveWorldModel\nestimates quality before execution"]
+    PREDICT --> GATE{"GATE\nArbiter:\nproceed?"}
+    GATE -->|Yes| EXECUTE["EXECUTE\nPost to ComfyUI /prompt\nMonitor WebSocket stream"]
+    GATE -->|Interrupt| STOP(["⛔ Interrupted\n+ reason"])
+    EXECUTE --> EVALUATE["EVALUATE\nScore the output\n0.7 success · 0.1 failure"]
+    EVALUATE --> LEARN["LEARN\nRecord to accumulator\nCalibrate CWM priors"]
+    LEARN --> DONE(["✅ Complete\nExperience recorded"])
+    EVALUATE -->|"score < threshold\nauto_retry=True"| COMPOSE
+
+    style You fill:#0066FF,color:#fff
+    style GATE fill:#d97706,color:#fff
+    style EXECUTE fill:#ef4444,color:#fff
+    style LEARN fill:#8b5cf6,color:#fff
+    style DONE fill:#10b981,color:#fff
+    style STOP fill:#6b7280,color:#fff
+```
+
+**Use from Python:**
+
+```python
+from cognitive.pipeline import create_default_pipeline, PipelineConfig
+
+pipeline = create_default_pipeline()   # fresh accumulator, CWM, arbiter
+result = pipeline.run(PipelineConfig(
+    intent="cinematic portrait, golden hour",
+    model_family="SD1.5",              # optional — agent detects from intent
+    auto_retry=True,                   # retry if quality score < threshold
+    quality_threshold=0.6,
+))
+print(result.success, result.quality.overall, result.stage.value)
+```
+
+- **No executor required.** The pipeline calls ComfyUI directly via the real `execute_workflow` implementation.
+- **No evaluator required.** Rule-based scoring (success = 0.7, failure = 0.1) enables CWM calibration from day one. Vision-based scoring comes in Session N+2.
+- **Template library.** Workflows are loaded from `agent/templates/` (SD 1.5 · SDXL · img2img · LoRA). If no template matches the detected model family, a hardcoded 7-node SD 1.5 fallback ensures the pipeline always has a valid starting point.
+- **Experience accumulates.** Every run's parameters and quality score are stored. After 30+ runs, the composition stage starts using your personal generation history to bias parameter selection.
+
+---
+
 ## Comfy Cozy Panel (ComfyUI Sidebar)
 
 A minimal, typography-forward sidebar that lives right inside ComfyUI:
@@ -486,15 +535,15 @@ graph TB
     Cognitive --> Exp["experience/<br/>chunk · signature · accumulator"]
     Cognitive --> Pred["prediction/<br/>cwm · arbiter · counterfactual"]
     Cognitive --> Trans["transport/<br/>schema_cache · events · interrupt"]
-    Cognitive --> Pipe["pipeline/<br/>autonomous"]
-    Cognitive --> Tools["tools/<br/>analyze · mutate · query · compose<br/>execute · series · research · dependencies"]
+    Cognitive --> Pipe["pipeline/<br/>autonomous · create_default_pipeline<br/>Phase 6A — fully wired"]
+    Cognitive --> Tools["tools/<br/>analyze · compose · execute<br/>mutate · query · series · dependencies"]
 
     style Cognitive fill:#8b5cf6,color:#fff
     style Core fill:#0066FF,color:#fff
     style Exp fill:#3b82f6,color:#fff
     style Pred fill:#d97706,color:#fff
     style Trans fill:#10b981,color:#fff
-    style Pipe fill:#ef4444,color:#fff
+    style Pipe fill:#10b981,color:#fff
     style Tools fill:#3b82f6,color:#fff
 ```
 
@@ -574,7 +623,7 @@ cognitive/            LIVRPS state engine — installed as top-level package (Ph
 panel/
   server/routes.py    49 REST routes — full tool surface
   web/js/             Panel UI — chat, graph inspector, model browser
-tests/                2673 passing tests, all mocked, ~53s under .venv312
+tests/                2705 passing tests, all mocked, ~60s
 ```
 
 ### Production Hardening
@@ -615,10 +664,10 @@ All settings live in your `.env` file:
 No ComfyUI needed -- everything is mocked:
 
 ```bash
-python -m pytest tests/ -v        # 2673 passing tests, ~53s
+python -m pytest tests/ -v        # 2705 passing tests
 ```
 
-The default `[dev]` install runs all 2673 tests. The 27 `test_provisioner.py` collection errors and 4 `test_health.py` failures are pre-existing known issues tracked in `MIGRATION_MAP_2026-04-07.md`. Adding `[stage]` resolves the provisioner errors by installing `usd-core`.
+The `[dev]` install runs the full test suite — no ComfyUI server or API keys required, everything is mocked. The 27 `test_provisioner.py` collection errors and 4 `test_health.py` failures are pre-existing known issues tracked in `MIGRATION_MAP_2026-04-07.md`. Adding `[stage]` resolves the provisioner errors by installing `usd-core`.
 
 ---
 
