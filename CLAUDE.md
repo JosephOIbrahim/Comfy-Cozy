@@ -160,6 +160,55 @@ tests/             # 2000+ tests, all mocked, pytest + pytest-asyncio
 - Never apply unvalidated patches
 - If a change would break the DAG, refuse and explain
 
+## Git Authority Map
+
+This repo uses an agent-managed git workflow. Claude Code agents operate under these rules every session.
+
+### Autonomous (no per-call approval needed)
+
+- `git status`
+- `git diff` (any form)
+- `git log` (read-only)
+- `git branch --list`
+- `git show`
+- `git grep`
+- Any pure read/inspection operation
+
+### Authorized per-session under autobuild prompts
+
+When a prompt explicitly grants session-level git authorization, the agent may run these in sequence without per-step approval:
+
+- `git add` (staging specific files — never `git add -A`)
+- `git commit` (with the exact message provided in the prompt)
+- `git tag` (lightweight tags at prompt-specified milestones)
+
+### Requires per-call approval from Joe, no exceptions
+
+- `git push` (any form, any remote)
+- `git reset` (any form)
+- `git rebase`
+- `git branch -D` (branch deletion)
+- `git tag -d` (tag deletion)
+- `git stash drop`
+- Any `--force` flag
+- Any operation touching origin or a remote
+
+### Permanently forbidden
+
+- `git push --force` (including `--force-with-lease`)
+- `git reflog expire`
+- `git filter-branch` / `git filter-repo`
+- `rm -rf .git`
+- Any history-rewriting operation
+
+### Session workflow
+
+- Autobuild prompts explicitly grant session-level authorization for the middle tier. Without that grant, only the autonomous tier runs.
+- Every mutation step produces a verification output before moving on.
+- Hard halts are non-negotiable: unexpected staging, unexpected diffs, test regressions below the last verified baseline, or non-zero exit codes all trigger an immediate STOP.
+- Per C3: 3 retries max per step, then `BLOCKER.md`.
+- Per C8: push to remote is always a separate, deliberate decision.
+
 ## Commit Messages
 
 ```
