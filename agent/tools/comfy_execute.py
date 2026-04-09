@@ -302,11 +302,18 @@ def _poll_completion(
                     1.0, 1.0,
                     f"Complete — {n} output{'s' if n != 1 else ''}"
                 )
-                return {
+                poll_result: dict = {
                     "status": "complete" if status_str == "success" else status_str,
                     "prompt_id": prompt_id,
                     "outputs": outputs,
                 }
+                if status_str == "success" and not outputs:
+                    poll_result["outputs_warning"] = (
+                        f"Execution completed but no output filenames were found "
+                        f"in history (prompt_id={prompt_id}). The workflow may not "
+                        f"have saved any images/videos, or outputs are not yet indexed."
+                    )
+                return poll_result
 
         poll_count += 1
         elapsed = int(time.monotonic() - start)

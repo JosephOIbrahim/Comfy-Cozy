@@ -142,9 +142,10 @@ class BrainAgent:
     @classmethod
     def _reset_registry(cls):
         """Reset for testing."""
-        cls._registry.clear()
-        cls._all_tools.clear()
-        cls._registered = False
+        with _registration_lock:
+            cls._registry.clear()
+            cls._all_tools.clear()
+            cls._registered = False
 
 
 # ---------------------------------------------------------------------------

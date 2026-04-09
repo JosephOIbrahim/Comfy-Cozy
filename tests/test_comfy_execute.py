@@ -200,6 +200,66 @@ class TestGetExecutionStatus:
             assert result["status"] == "running"
 
 
+class TestPollCompletion:
+    """Unit tests for _poll_completion — polling HTTP fallback path."""
+
+    def _make_history_resp(self, prompt_id, status_str="success", outputs_dict=None):
+        resp = MagicMock()
+        resp.raise_for_status = MagicMock()
+        resp.json.return_value = {
+            prompt_id: {
+                "status": {"status_str": status_str, "completed": True},
+                "outputs": outputs_dict or {},
+            }
+        }
+        return resp
+
+    def test_poll_success_with_outputs(self):
+        """Successful poll with outputs returns no warning."""
+        resp = self._make_history_resp(
+            "p1",
+            outputs_dict={"5": {"images": [{"filename": "out.png", "subfolder": ""}]}},
+        )
+        patcher, mock_client = _mock_httpx_client()
+        with patcher:
+            mock_client.get.return_value = resp
+            with patch("agent.circuit_breaker.get_breaker") as gb:
+                gb.return_value.allow_request.return_value = True
+                result = comfy_execute._poll_completion("p1", timeout=5)
+
+        assert result["status"] == "complete"
+        assert result["outputs"][0]["filename"] == "out.png"
+        assert "outputs_warning" not in result
+
+    def test_poll_success_empty_outputs_adds_warning(self):
+        """Success with no outputs in history must include outputs_warning (parity with WS path)."""
+        resp = self._make_history_resp("p2", outputs_dict={})
+        patcher, mock_client = _mock_httpx_client()
+        with patcher:
+            mock_client.get.return_value = resp
+            with patch("agent.circuit_breaker.get_breaker") as gb:
+                gb.return_value.allow_request.return_value = True
+                result = comfy_execute._poll_completion("p2", timeout=5)
+
+        assert result["status"] == "complete"
+        assert result["outputs"] == []
+        assert "outputs_warning" in result
+        assert "p2" in result["outputs_warning"]
+
+    def test_poll_error_status_no_warning(self):
+        """Error-status result should not get an outputs_warning."""
+        resp = self._make_history_resp("p3", status_str="error", outputs_dict={})
+        patcher, mock_client = _mock_httpx_client()
+        with patcher:
+            mock_client.get.return_value = resp
+            with patch("agent.circuit_breaker.get_breaker") as gb:
+                gb.return_value.allow_request.return_value = True
+                result = comfy_execute._poll_completion("p3", timeout=5)
+
+        assert result["status"] == "error"
+        assert "outputs_warning" not in result
+
+
 class TestExecuteWithProgress:
     def test_fallback_when_no_websocket(self, sample_workflow):
         """Falls back to polling when websockets unavailable."""
