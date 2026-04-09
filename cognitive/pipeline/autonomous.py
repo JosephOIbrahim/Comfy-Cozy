@@ -218,10 +218,18 @@ class AutonomousPipeline:
         7. LEARN: Store experience + counterfactual
 
         Returns:
-            PipelineResult with full execution details.
+            PipelineResult with full execution details. If a pipeline run is
+            already in progress, returns immediately with result.error set
+            rather than blocking indefinitely.
         """
-        with self._run_lock:
+        if not self._run_lock.acquire(blocking=False):
+            result = PipelineResult(intent=config.intent)
+            result.error = "Pipeline already running — concurrent run rejected. Wait for the current run to complete."
+            return result
+        try:
             return self._run_locked(config)
+        finally:
+            self._run_lock.release()
 
     def _run_locked(self, config: PipelineConfig) -> PipelineResult:
         """Internal run body — called under self._run_lock."""

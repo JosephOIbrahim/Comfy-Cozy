@@ -68,6 +68,9 @@ def save_session(
 ) -> dict:
     """Save session state to a named JSON file.
 
+    Acquires _NOTE_LOCK so that concurrent add_note() calls for the same
+    session are not lost by a simultaneous save (both use atomic rename).
+
     Returns {"saved": path, "size_bytes": n} or {"error": msg}.
     """
     name_err = _validate_session_name(name)
@@ -76,21 +79,22 @@ def save_session(
 
     path = _sessions_dir() / f"{name}.json"
 
-    session_data = {
-        "name": name,
-        "saved_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
-        "schema_version": SCHEMA_VERSION,
-        "workflow": _serialize_workflow_state(workflow_state),
-        "notes": notes or [],
-        "metadata": metadata or {},
-    }
+    with _NOTE_LOCK:
+        session_data = {
+            "name": name,
+            "saved_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            "schema_version": SCHEMA_VERSION,
+            "workflow": _serialize_workflow_state(workflow_state),
+            "notes": notes or [],
+            "metadata": metadata or {},
+        }
 
-    try:
-        content = json.dumps(session_data, sort_keys=True, indent=2)
-        _atomic_write(path, content)
-        return {"saved": str(path), "size_bytes": len(content)}
-    except Exception as e:
-        return {"error": f"Failed to save session: {e}"}
+        try:
+            content = json.dumps(session_data, sort_keys=True, indent=2)
+            _atomic_write(path, content)
+            return {"saved": str(path), "size_bytes": len(content)}
+        except Exception as e:
+            return {"error": f"Failed to save session: {e}"}
 
 
 def load_session(name: str) -> dict:
