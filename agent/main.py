@@ -131,8 +131,13 @@ def run_agent_turn(
     system: str,
     *,
     handler: StreamHandler | None = None,
+    progress=None,
 ) -> tuple[list[dict], bool]:
     """Run one agent turn with streaming.
+
+    Args:
+        progress: Optional progress reporter forwarded to every tool call.
+                  Eliminates the need for global monkey-patching of handle().
 
     Returns (updated_messages, done) where done=True means the agent
     produced a final text response with no tool calls.
@@ -182,7 +187,7 @@ def run_agent_turn(
 
         def _run_tool(tc):
             t_tool = time.monotonic()
-            result = _tools.handle(tc.name, tc.input)
+            result = _tools.handle(tc.name, tc.input, progress=progress)
             log.debug(
                 "Tool %s completed in %.2fs", tc.name, time.monotonic() - t_tool
             )
@@ -206,7 +211,7 @@ def run_agent_turn(
         tc = tool_calls[0]
         h.on_tool_call(tc.name, tc.input)
         t_tool = time.monotonic()
-        result = _tools.handle(tc.name, tc.input)
+        result = _tools.handle(tc.name, tc.input, progress=progress)
         log.debug(
             "Tool %s completed in %.2fs", tc.name, time.monotonic() - t_tool
         )

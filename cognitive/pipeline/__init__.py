@@ -4,12 +4,14 @@ Wires all cognitive components into a single autonomous pipeline:
 intent → compose → predict → execute → evaluate → learn
 """
 
-from .autonomous import AutonomousPipeline, PipelineConfig, PipelineResult, PipelineStage
+from .autonomous import (
+    AutonomousPipeline, PipelineConfig, PipelineResult, PipelineStage,
+    EXPERIENCE_FILE,  # computed locally in autonomous.py — no agent.* import needed
+)
 from ..experience.accumulator import ExperienceAccumulator
 from ..prediction.cwm import CognitiveWorldModel
 from ..prediction.arbiter import SimulationArbiter
 from ..prediction.counterfactual import CounterfactualGenerator
-from agent.config import EXPERIENCE_FILE
 
 
 def create_default_pipeline() -> AutonomousPipeline:

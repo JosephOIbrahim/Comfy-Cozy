@@ -191,18 +191,18 @@ def _make_mock_intent_spec(mutations=None):
 class TestIsComfyuiAvailable:
     """_is_comfyui_available() tests."""
 
-    @patch("agent.brain.iterative_refine.tools_handle")
+    @patch("agent.brain.iterative_refine._tools_mod.handle")
     def test_running_true(self, mock_th):
         mock_th.return_value = json.dumps({"running": True})
         assert _is_comfyui_available() is True
         mock_th.assert_called_once_with("is_comfyui_running", {})
 
-    @patch("agent.brain.iterative_refine.tools_handle")
+    @patch("agent.brain.iterative_refine._tools_mod.handle")
     def test_running_false(self, mock_th):
         mock_th.return_value = json.dumps({"running": False})
         assert _is_comfyui_available() is False
 
-    @patch("agent.brain.iterative_refine.tools_handle")
+    @patch("agent.brain.iterative_refine._tools_mod.handle")
     def test_exception_returns_false(self, mock_th):
         mock_th.side_effect = ConnectionError("nope")
         assert _is_comfyui_available() is False
@@ -211,7 +211,7 @@ class TestIsComfyuiAvailable:
 class TestValidateIntentMutations:
     """_validate_intent_mutations() tests."""
 
-    @patch("agent.brain.iterative_refine.tools_handle")
+    @patch("agent.brain.iterative_refine._tools_mod.handle")
     def test_valid_node_and_input(self, mock_th):
         mock_th.return_value = json.dumps({
             "input": {
@@ -226,7 +226,7 @@ class TestValidateIntentMutations:
         assert results[0]["node_exists"] is True
         assert results[0]["input_exists"] is True
 
-    @patch("agent.brain.iterative_refine.tools_handle")
+    @patch("agent.brain.iterative_refine._tools_mod.handle")
     def test_unknown_node(self, mock_th):
         mock_th.return_value = json.dumps({"error": "Node type 'Bogus' not found."})
         spec = _make_mock_intent_spec(["Bogus.cfg"])
@@ -235,7 +235,7 @@ class TestValidateIntentMutations:
         assert results[0]["status"] == "warning"
         assert results[0]["node_exists"] is False
 
-    @patch("agent.brain.iterative_refine.tools_handle")
+    @patch("agent.brain.iterative_refine._tools_mod.handle")
     def test_unknown_input(self, mock_th):
         mock_th.return_value = json.dumps({
             "input": {
@@ -250,7 +250,7 @@ class TestValidateIntentMutations:
         assert results[0]["node_exists"] is True
         assert results[0]["input_exists"] is False
 
-    @patch("agent.brain.iterative_refine.tools_handle")
+    @patch("agent.brain.iterative_refine._tools_mod.handle")
     def test_caches_node_info(self, mock_th):
         """Same node_class should only call get_node_info once."""
         mock_th.return_value = json.dumps({
@@ -281,7 +281,7 @@ class TestValidateIntentMutations:
         results = _validate_intent_mutations(spec)
         assert results == []
 
-    @patch("agent.brain.iterative_refine.tools_handle")
+    @patch("agent.brain.iterative_refine._tools_mod.handle")
     def test_invalid_target_format(self, mock_th):
         """Target without a dot should produce a warning."""
         spec = _make_mock_intent_spec(["cfg_only"])
@@ -292,7 +292,7 @@ class TestValidateIntentMutations:
         # No tools_handle call needed for malformed target
         mock_th.assert_not_called()
 
-    @patch("agent.brain.iterative_refine.tools_handle")
+    @patch("agent.brain.iterative_refine._tools_mod.handle")
     def test_optional_input_found(self, mock_th):
         """Inputs in 'optional' section should also be found."""
         mock_th.return_value = json.dumps({

@@ -71,6 +71,28 @@ class TestCurrentConnSession:
 
         assert captured[0] == "default"
 
+    def test_concurrent_threads_no_bleed(self):
+        """Two concurrent threads with different ContextVar values don't bleed into each other."""
+        from agent._conn_ctx import _conn_session, current_conn_session
+
+        results = {}
+        barrier = threading.Barrier(2)
+
+        def _worker(conn_name, slot):
+            _conn_session.set(conn_name)
+            barrier.wait()  # Both threads set their value, then both read
+            results[slot] = current_conn_session()
+
+        t1 = threading.Thread(target=_worker, args=("conn_aaa", "t1"))
+        t2 = threading.Thread(target=_worker, args=("conn_bbb", "t2"))
+        t1.start()
+        t2.start()
+        t1.join()
+        t2.join()
+
+        assert results["t1"] == "conn_aaa", f"t1 bled: got {results['t1']}"
+        assert results["t2"] == "conn_bbb", f"t2 bled: got {results['t2']}"
+
 
 class TestParallelToolDispatch:
     """P0-H — monkey-patch of agent.tools.handle is visible to executor workers."""
@@ -114,27 +136,40 @@ class TestParallelToolDispatch:
             "agent.main.handle_tool was removed — patch agent.tools.handle instead"
         )
 
-    def test_chat_patches_correct_target(self):
-        """panel/server/chat.py must patch agent.tools.handle, not agent.main.handle_tool."""
+    def test_chat_uses_progress_parameter_not_monkey_patch(self):
+        """panel/server/chat.py must pass progress= to run_agent_turn, not monkey-patch handle."""
         import ast
         from pathlib import Path
 
-        src = Path("panel/server/chat.py").read_text(encoding="utf-8")
+        chat_path = Path(__file__).parent.parent / "panel" / "server" / "chat.py"
+        src = chat_path.read_text(encoding="utf-8")
         tree = ast.parse(src)
 
-        # Walk AST looking for assignments to _agent_tools.handle
-        # and verify no assignments target _main_mod.handle_tool
-        found_correct = False
-        found_wrong = False
+        found_wrong_patch = False
+        found_progress_kwarg = False
+
         for node in ast.walk(tree):
+            # Check no global handle assignment (old monkey-patch pattern)
             if isinstance(node, ast.Assign):
                 for target in node.targets:
                     if isinstance(target, ast.Attribute):
                         attr = f"{ast.unparse(target.value)}.{target.attr}"
                         if "handle_tool" in attr and "main" in attr:
-                            found_wrong = True
-                        if "_agent_tools" in attr and target.attr == "handle":
-                            found_correct = True
+                            found_wrong_patch = True
+                        if "agent_tools" in attr and target.attr == "handle":
+                            found_wrong_patch = True
 
-        assert found_correct, "chat.py must assign to _agent_tools.handle"
-        assert not found_wrong, "chat.py must NOT assign to _main_mod.handle_tool"
+            # Check that run_agent_turn is called with progress= keyword
+            if isinstance(node, ast.Call):
+                func_name = ""
+                if isinstance(node.func, ast.Name):
+                    func_name = node.func.id
+                elif isinstance(node.func, ast.Attribute):
+                    func_name = node.func.attr
+                if func_name == "run_agent_turn":
+                    kw_names = {kw.arg for kw in node.keywords}
+                    if "progress" in kw_names:
+                        found_progress_kwarg = True
+
+        assert not found_wrong_patch, "chat.py must NOT monkey-patch agent.tools.handle or agent.main.handle_tool"
+        assert found_progress_kwarg, "chat.py must call run_agent_turn(..., progress=...) to forward the progress reporter"

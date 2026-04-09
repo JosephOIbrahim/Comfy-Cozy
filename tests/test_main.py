@@ -304,7 +304,7 @@ class TestRunAgentTurn:
         assert msgs[-2]["role"] == "assistant"
         assert msgs[-1]["role"] == "user"
         assert isinstance(msgs[-1]["content"][0], ToolResultBlock)
-        mock_handle.assert_called_once_with("is_comfyui_running", {})
+        mock_handle.assert_called_once_with("is_comfyui_running", {}, progress=None)
 
     @patch("agent.tools.handle")
     @patch("agent.main._stream_with_retry")

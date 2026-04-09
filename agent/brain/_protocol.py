@@ -79,10 +79,11 @@ def dispatch_brain_message(msg: dict, *, max_retries: int = 3) -> bool:
     # Legacy routing (battle-tested, preserved as primary dispatch path)
     if source == "vision" and target == "memory":
         from ..tools import handle as dispatch_tool
+        from .._conn_ctx import current_conn_session
 
         action = payload.get("action", "")
         outcome_input = {
-            "session": "default",
+            "session": current_conn_session(),
             "action": action,
             "result": "success",
             "details": {

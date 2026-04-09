@@ -17,7 +17,7 @@ log = logging.getLogger("comfy-cozy")
 def _tool_call(tool_name, tool_input):
     """Call an agent tool and return the JSON string result."""
     from agent.tools import handle
-    return handle(tool_name, tool_input)
+    return handle(tool_name, tool_input, session_id="default")
 
 
 def _guard(request, category, *, post=False):

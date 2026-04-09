@@ -42,6 +42,11 @@ def _ensure_brain():
             if project_root not in sys.path:
                 sys.path.insert(0, project_root)
 
+            from agent.config import BRAIN_ENABLED
+            if not BRAIN_ENABLED:
+                log.info("Panel chat: BRAIN_ENABLED=0, skipping brain load")
+                return False
+
             from agent.main import create_client
             _client = create_client()
             _brain_ready = True
@@ -98,9 +103,6 @@ class ConversationState:
 # Active conversations keyed by connection ID
 _conversations: dict[str, ConversationState] = {}
 _MAX_WS_CONNECTIONS = 20
-
-# P1-E: Serializes concurrent agent turns to prevent monkey-patch races.
-_agent_turn_lock = threading.Lock()
 
 
 # ---------------------------------------------------------------------------
@@ -201,44 +203,28 @@ def _run_agent_sync(conv: ConversationState, user_text: str, msg_queue: queue.Qu
     handler = _QueueStreamHandler(msg_queue)
     progress = QueueProgressReporter(msg_queue)
 
-    # Patch agent.tools.handle to forward the progress reporter.
-    # agent.main dispatches through _tools.handle (a live module reference),
-    # so patching agent.tools.handle is visible to all workers — including
-    # ThreadPoolExecutor threads that execute parallel tool calls.
-    # P1-E: _agent_turn_lock serializes this block so concurrent sessions
-    # cannot interleave their monkey-patches and steal each other's queues.
-    import agent.tools as _agent_tools
-
-    with _agent_turn_lock:
-        _original_handle = _agent_tools.handle
-
-        def _handle_with_progress(name, tool_input, **kw):
-            return _original_handle(name, tool_input, progress=progress, **kw)
-
-        _agent_tools.handle = _handle_with_progress
-
+    # progress is forwarded directly through run_agent_turn's progress parameter —
+    # no global monkey-patching needed, no serialization lock required.
+    for _turn in range(max_turns):
         try:
-            for _turn in range(max_turns):
-                try:
-                    conv.messages, done = run_agent_turn(
-                        _client,
-                        conv.messages,
-                        conv.system_prompt,
-                        handler=handler,
-                    )
+            conv.messages, done = run_agent_turn(
+                _client,
+                conv.messages,
+                conv.system_prompt,
+                handler=handler,
+                progress=progress,
+            )
 
-                    if done:
-                        msg_queue.put({"type": "done"})
-                        return
+            if done:
+                msg_queue.put({"type": "done"})
+                return
 
-                except Exception as e:
-                    log.error("Agent turn error: %s", e, exc_info=True)
-                    msg_queue.put({"type": "error", "message": str(e)})
-                    return
+        except Exception as e:
+            log.error("Agent turn error: %s", e, exc_info=True)
+            msg_queue.put({"type": "error", "message": str(e)})
+            return
 
-            msg_queue.put({"type": "done"})
-        finally:
-            _agent_tools.handle = _original_handle
+    msg_queue.put({"type": "done"})
 
 
 # ---------------------------------------------------------------------------

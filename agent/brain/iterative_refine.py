@@ -19,7 +19,8 @@ import logging
 
 from ._sdk import BrainAgent
 from ..agents.router import Router
-from ..tools import handle as tools_handle
+from .. import tools as _tools_mod
+from .._conn_ctx import current_conn_session
 
 log = logging.getLogger(__name__)
 
@@ -166,7 +167,7 @@ def _record_to_memory(
                     key_params[param] = value
 
         outcome_input = {
-            "session": "default",
+            "session": current_conn_session(),
             "workflow_summary": (
                 f"MoE {status}: \"{user_intent}\" on {model_id} "
                 f"({iterations} iteration{'s' if iterations != 1 else ''})"
@@ -482,7 +483,7 @@ def _handle_generation_or_modification(
     # Query memory for learned patterns to inform Intent Agent
     learned_patterns = None
     try:
-        raw = BrainAgent.dispatch("get_learned_patterns", {"session": "default", "model_filter": model_id})
+        raw = BrainAgent.dispatch("get_learned_patterns", {"session": current_conn_session(), "model_filter": model_id})
         parsed = _json.loads(raw) if raw else {}
         if parsed and not parsed.get("error"):
             learned_patterns = parsed
@@ -690,7 +691,7 @@ _EXTRACTABLE_PARAMS = frozenset({
 def _is_comfyui_available() -> bool:
     """Check whether ComfyUI is reachable (fire-and-forget)."""
     try:
-        raw = tools_handle("is_comfyui_running", {})
+        raw = _tools_mod.handle("is_comfyui_running", {})
         parsed = _json.loads(raw) if isinstance(raw, str) else raw
         return bool(parsed.get("running"))
     except Exception:
@@ -734,7 +735,7 @@ def _validate_intent_mutations(intent_spec) -> list[dict]:
             # Fetch node info (cached per node_class)
             if node_class not in node_cache:
                 try:
-                    raw = tools_handle("get_node_info", {"node_type": node_class})
+                    raw = _tools_mod.handle("get_node_info", {"node_type": node_class})
                     parsed = _json.loads(raw) if isinstance(raw, str) else raw
                     node_cache[node_class] = parsed if not parsed.get("error") else None
                 except Exception:
