@@ -94,7 +94,7 @@ def _observe(name: str, tool_input: dict, ctx: "object | None") -> None:
         if ctx is not None and hasattr(ctx, 'workflow'):
             ctx.workflow.observe(name, tool_input)
     except Exception:
-        pass
+        log.debug("Observation failed for tool %s", name, exc_info=True)
 
 
 def _get_all_tools() -> list[dict]:

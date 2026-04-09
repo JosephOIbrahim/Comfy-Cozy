@@ -957,3 +957,82 @@ class TestPartnerNodes:
         assert "Meshy" in comfy_discover.PARTNER_NODES
         assert "Tripo" in comfy_discover.PARTNER_NODES
         assert "Rodin" in comfy_discover.PARTNER_NODES
+
+
+# ---------------------------------------------------------------------------
+# Thread-safety: concurrent cache loading
+# ---------------------------------------------------------------------------
+
+class TestCacheConcurrency:
+    def setup_method(self):
+        """Clear cache before each test."""
+        comfy_discover._cache["custom_nodes"] = None
+        comfy_discover._cache["extension_map"] = None
+        comfy_discover._cache["node_to_pack"] = None
+        comfy_discover._cache["model_list"] = None
+
+    def test_concurrent_custom_node_load_no_duplicates(self, tmp_path):
+        """16 threads calling _load_custom_nodes concurrently must not corrupt cache."""
+        import threading
+
+        nodes_file = tmp_path / "custom-node-list.json"
+        nodes_file.write_text(
+            json.dumps({"custom_nodes": [{"title": "TestPack", "id": "tp"}]}),
+            encoding="utf-8",
+        )
+
+        results = []
+        errors = []
+        barrier = threading.Barrier(16)
+
+        def load():
+            barrier.wait()
+            try:
+                with patch.object(comfy_discover, "_MANAGER_DIR", tmp_path):
+                    result = comfy_discover._load_custom_nodes()
+                results.append(result)
+            except Exception as e:
+                errors.append(e)
+
+        threads = [threading.Thread(target=load) for _ in range(16)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert not errors, f"Errors in concurrent load: {errors}"
+        assert len(results) == 16
+        # All threads must see the same list object (cache hit after first write)
+        assert all(r == [{"title": "TestPack", "id": "tp"}] for r in results)
+        # Cache must be populated exactly once (same identity)
+        assert comfy_discover._cache["custom_nodes"] is results[0]
+
+    def test_build_node_to_pack_no_deadlock(self, tmp_path):
+        """_build_node_to_pack must not deadlock when called concurrently."""
+        import threading
+
+        ext_map = {
+            "https://github.com/example/pack": [
+                ["ExampleNode"],
+                {"title_aux": "Example Pack"},
+            ]
+        }
+        ext_file = tmp_path / "extension-node-map.json"
+        ext_file.write_text(json.dumps(ext_map), encoding="utf-8")
+
+        results = []
+        barrier = threading.Barrier(8)
+
+        def build():
+            barrier.wait()
+            with patch.object(comfy_discover, "_MANAGER_DIR", tmp_path):
+                results.append(comfy_discover._build_node_to_pack())
+
+        threads = [threading.Thread(target=build) for _ in range(8)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=5)
+
+        assert all(t.is_alive() is False for t in threads), "Deadlock detected"
+        assert all("ExampleNode" in r for r in results)

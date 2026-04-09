@@ -12,6 +12,7 @@ Includes freshness tracking to detect stale registry data and suggest updates.
 import json
 import logging
 import re
+import threading
 import time
 from pathlib import Path
 
@@ -289,86 +290,115 @@ _freshness: dict = {
 _STALE_THRESHOLD = 7 * 24 * 3600   # 7 days — registry files update infrequently
 _WARN_THRESHOLD = 30 * 24 * 3600   # 30 days — strongly suggest update
 
+# Single lock protecting all _cache and _freshness writes. Read-heavy workload
+# (each key written once per session), so a plain Lock is sufficient.
+_cache_lock = threading.Lock()
+
 
 def _load_custom_nodes() -> list[dict]:
-    """Load and cache custom-node-list.json."""
+    """Load and cache custom-node-list.json. Thread-safe: double-checked lock."""
     if _cache["custom_nodes"] is not None:
         return _cache["custom_nodes"]
 
-    path = _MANAGER_DIR / "custom-node-list.json"
-    if not path.exists():
-        return []
+    with _cache_lock:
+        if _cache["custom_nodes"] is not None:  # Re-check after acquiring lock
+            return _cache["custom_nodes"]
 
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-        _cache["custom_nodes"] = data.get("custom_nodes", [])
-        _freshness["custom_nodes_loaded_at"] = time.time()
-    except Exception:
-        log.warning("Failed to load custom-node-list.json — registry will be empty", exc_info=True)
-        _cache["custom_nodes"] = []
+        path = _MANAGER_DIR / "custom-node-list.json"
+        if not path.exists():
+            _cache["custom_nodes"] = []
+            return _cache["custom_nodes"]
 
-    return _cache["custom_nodes"]
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            _cache["custom_nodes"] = data.get("custom_nodes", [])
+            _freshness["custom_nodes_loaded_at"] = time.time()
+        except Exception:
+            log.warning("Failed to load custom-node-list.json — registry will be empty", exc_info=True)
+            _cache["custom_nodes"] = []
+
+        return _cache["custom_nodes"]
 
 
 def _load_extension_map() -> dict:
-    """Load and cache extension-node-map.json."""
+    """Load and cache extension-node-map.json. Thread-safe: double-checked lock."""
     if _cache["extension_map"] is not None:
         return _cache["extension_map"]
 
-    path = _MANAGER_DIR / "extension-node-map.json"
-    if not path.exists():
-        return {}
+    with _cache_lock:
+        if _cache["extension_map"] is not None:
+            return _cache["extension_map"]
 
-    try:
-        _cache["extension_map"] = json.loads(path.read_text(encoding="utf-8"))
-        _freshness["extension_map_loaded_at"] = time.time()
-    except Exception:
-        log.warning("Failed to load extension-node-map.json — node-to-pack index will be empty", exc_info=True)
-        _cache["extension_map"] = {}
+        path = _MANAGER_DIR / "extension-node-map.json"
+        if not path.exists():
+            _cache["extension_map"] = {}
+            return _cache["extension_map"]
 
-    return _cache["extension_map"]
+        try:
+            _cache["extension_map"] = json.loads(path.read_text(encoding="utf-8"))
+            _freshness["extension_map_loaded_at"] = time.time()
+        except Exception:
+            log.warning("Failed to load extension-node-map.json — node-to-pack index will be empty", exc_info=True)
+            _cache["extension_map"] = {}
+
+        return _cache["extension_map"]
 
 
 def _build_node_to_pack() -> dict[str, dict]:
-    """Build reverse index: node_type -> {url, title, node_types}."""
+    """Build reverse index: node_type -> {url, title, node_types}. Thread-safe.
+
+    Extension map is loaded BEFORE acquiring _cache_lock to avoid deadlock
+    (_load_extension_map also acquires _cache_lock; Lock is not re-entrant).
+    """
     if _cache["node_to_pack"] is not None:
         return _cache["node_to_pack"]
 
+    # Load dependency outside the lock to prevent deadlock.
     ext_map = _load_extension_map()
-    index = {}
-    for url, entry in sorted(ext_map.items()):  # He2025: sorted iteration for deterministic collision resolution
-        if not isinstance(entry, list) or len(entry) < 2:
-            continue
-        node_types = entry[0] if isinstance(entry[0], list) else []
-        meta = entry[1] if isinstance(entry[1], dict) else {}
-        title = meta.get("title_aux", url.split("/")[-1] if "/" in url else url)
 
-        pack_info = {"url": url, "title": title, "node_count": len(node_types)}
-        for nt in node_types:
-            index[nt] = pack_info
+    with _cache_lock:
+        if _cache["node_to_pack"] is not None:  # Re-check: another thread may have built it
+            return _cache["node_to_pack"]
 
-    _cache["node_to_pack"] = index
-    return index
+        index = {}
+        for url, entry in sorted(ext_map.items()):  # He2025: sorted for deterministic collision resolution
+            if not isinstance(entry, list) or len(entry) < 2:
+                continue
+            node_types = entry[0] if isinstance(entry[0], list) else []
+            meta = entry[1] if isinstance(entry[1], dict) else {}
+            title = meta.get("title_aux", url.split("/")[-1] if "/" in url else url)
+
+            pack_info = {"url": url, "title": title, "node_count": len(node_types)}
+            for nt in node_types:
+                index[nt] = pack_info
+
+        _cache["node_to_pack"] = index
+        return index
 
 
 def _load_model_list() -> list[dict]:
-    """Load and cache model-list.json."""
+    """Load and cache model-list.json. Thread-safe: double-checked lock."""
     if _cache["model_list"] is not None:
         return _cache["model_list"]
 
-    path = _MANAGER_DIR / "model-list.json"
-    if not path.exists():
-        return []
+    with _cache_lock:
+        if _cache["model_list"] is not None:
+            return _cache["model_list"]
 
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-        _cache["model_list"] = data.get("models", [])
-        _freshness["model_list_loaded_at"] = time.time()
-    except Exception:
-        log.warning("Failed to load model-list.json — model registry will be empty", exc_info=True)
-        _cache["model_list"] = []
+        path = _MANAGER_DIR / "model-list.json"
+        if not path.exists():
+            _cache["model_list"] = []
+            return _cache["model_list"]
 
-    return _cache["model_list"]
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            _cache["model_list"] = data.get("models", [])
+            _freshness["model_list_loaded_at"] = time.time()
+        except Exception:
+            log.warning("Failed to load model-list.json — model registry will be empty", exc_info=True)
+            _cache["model_list"] = []
+
+        return _cache["model_list"]
 
 
 # ---------------------------------------------------------------------------
