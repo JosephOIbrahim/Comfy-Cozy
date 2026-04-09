@@ -282,6 +282,36 @@ class TestExecuteWithProgress:
             assert len(result["node_timing"]) >= 1
 
 
+class TestPathTraversal:
+    def test_path_traversal_blocked_execute_workflow(self):
+        """Path traversal attempts must be rejected before any file read."""
+        result = json.loads(comfy_execute.handle("execute_workflow", {
+            "path": "../../../../etc/passwd",
+        }))
+        assert "error" in result
+
+    def test_path_traversal_blocked_validate_before_execute(self):
+        """validate_before_execute must reject traversal paths."""
+        result = json.loads(comfy_execute.handle("validate_before_execute", {
+            "path": "../../../../etc/passwd",
+        }))
+        assert "error" in result
+
+    def test_path_traversal_blocked_execute_with_progress(self):
+        """execute_with_progress must reject traversal paths."""
+        result = json.loads(comfy_execute.handle("execute_with_progress", {
+            "path": "../../../../etc/passwd",
+        }))
+        assert "error" in result
+
+    def test_windows_traversal_blocked(self):
+        """Windows-style traversal must be rejected."""
+        result = json.loads(comfy_execute.handle("execute_workflow", {
+            "path": "..\\..\\..\\Windows\\System32\\drivers\\etc\\hosts",
+        }))
+        assert "error" in result
+
+
 class TestRegistration:
     def test_tools_registered(self):
         from agent.tools import ALL_TOOLS

@@ -146,7 +146,10 @@ class TestGateDecisions:
         assert result.decision == GateDecision.DENY
         assert result.checks["system_health"] is False
 
-    def test_execution_tool_without_validation_denied(self):
+    def test_execution_tool_without_validation_allowed(self):
+        """EXECUTION tools no longer require validated=True — the prerequisite
+        check was dead (caller always passed validated=False). Fix-forward:
+        consent now passes without prior validation."""
         result = pre_dispatch_check(
             "execute_workflow",
             {},
@@ -154,9 +157,10 @@ class TestGateDecisions:
             session_active=True,
             validated=False,
             has_undo=True,
+            action_history=["load_workflow"],  # satisfy scout_before_act
         )
-        assert result.decision == GateDecision.DENY
-        assert result.checks["consent"] is False
+        assert result.decision == GateDecision.ALLOW
+        assert result.checks["consent"] is True
 
     def test_execution_tool_with_validation_allowed(self):
         result = pre_dispatch_check(

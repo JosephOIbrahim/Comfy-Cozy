@@ -38,6 +38,9 @@ _BRAIN_TOOL_NAMES: set[str] = set()
 
 def _ensure_brain():
     """Lazily load brain layer tools (thread-safe)."""
+    from ..config import BRAIN_ENABLED
+    if not BRAIN_ENABLED:
+        return
     global _brain_loaded, _BRAIN_TOOL_NAMES
     if _brain_loaded:
         return
@@ -198,8 +201,12 @@ def handle(
     except ImportError:
         pass  # Gate not available — degrade silently
     except Exception:
-        log.debug("Gate check failed for %s, proceeding anyway", name,
-                   exc_info=True)
+        log.warning("Gate check failed for '%s' — denying for safety", name,
+                    exc_info=True)
+        from ..errors import error_json
+        return error_json(
+            f"Gate unavailable for '{name}' — denied for safety. Check logs."
+        )
 
     # Check brain tools (lazy loaded)
     _ensure_brain()

@@ -14,7 +14,7 @@ import httpx
 
 from ..config import COMFYUI_HOST, COMFYUI_PORT, COMFYUI_URL
 from ..progress import ProgressCallback, ProgressReporter
-from ._util import to_json
+from ._util import to_json, validate_path
 
 log = logging.getLogger(__name__)
 
@@ -153,9 +153,11 @@ def _load_workflow_from_file(path_str: str) -> tuple[dict | None, str | None]:
     """Load API-format workflow from file. Returns (workflow, error)."""
     from pathlib import Path
 
+    path_err = validate_path(path_str, must_exist=True)
+    if path_err:
+        return None, path_err
+
     path = Path(path_str)
-    if not path.exists():
-        return None, f"File not found: {path_str}"
 
     try:
         data = json.loads(path.read_text(encoding="utf-8"))

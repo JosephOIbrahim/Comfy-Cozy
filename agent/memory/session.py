@@ -13,6 +13,7 @@ import json
 import logging
 import shutil
 import tempfile
+import threading
 import time
 from pathlib import Path
 
@@ -21,6 +22,10 @@ from ..config import SESSIONS_DIR
 log = logging.getLogger(__name__)
 
 SCHEMA_VERSION = 2
+
+# Per-session write lock: prevents read-modify-write races on the notes list
+# when concurrent requests call add_note() for the same session file.
+_NOTE_LOCK = threading.Lock()
 
 NOTE_TYPES = ("preference", "observation", "decision", "tip")
 
@@ -172,30 +177,31 @@ def add_note(name: str, note: str, *, note_type: str = "observation") -> dict:
 
     path = _sessions_dir() / f"{name}.json"
 
-    if path.exists():
-        try:
-            data = json.loads(path.read_text(encoding="utf-8"))
-        except Exception:
+    with _NOTE_LOCK:
+        if path.exists():
+            try:
+                data = json.loads(path.read_text(encoding="utf-8"))
+            except Exception:
+                data = _empty_session(name)
+        else:
             data = _empty_session(name)
-    else:
-        data = _empty_session(name)
 
-    if "notes" not in data:
-        data["notes"] = []
+        if "notes" not in data:
+            data["notes"] = []
 
-    data["notes"].append({
-        "text": note,
-        "type": note_type,
-        "added_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
-    })
-    data["saved_at"] = time.strftime("%Y-%m-%dT%H:%M:%S")
+        data["notes"].append({
+            "text": note,
+            "type": note_type,
+            "added_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        })
+        data["saved_at"] = time.strftime("%Y-%m-%dT%H:%M:%S")
 
-    try:
-        content = json.dumps(data, sort_keys=True, indent=2)
-        _atomic_write(path, content)
-        return {"added": True, "total_notes": len(data["notes"])}
-    except Exception as e:
-        return {"error": f"Failed to save note: {e}"}
+        try:
+            content = json.dumps(data, sort_keys=True, indent=2)
+            _atomic_write(path, content)
+            return {"added": True, "total_notes": len(data["notes"])}
+        except Exception as e:
+            return {"error": f"Failed to save note: {e}"}
 
 
 def restore_workflow_state(session_data: dict) -> dict | None:

@@ -242,9 +242,6 @@ def build_default_capabilities() -> list[ToolCapability]:
         "predict_experiment", risk_level=0, requires_stage=True,
     ))
     caps.append(_cap(
-        "propose_improvement", risk_level=0, requires_stage=True,
-    ))
-    caps.append(_cap(
         "record_experience", risk_level=1, requires_stage=True,
     ))
     caps.append(_cap(

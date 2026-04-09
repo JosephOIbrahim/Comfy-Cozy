@@ -177,36 +177,36 @@ class TestLearning:
 
 
 # ---------------------------------------------------------------------------
-# Retry Logic
+# Quality Threshold
 # ---------------------------------------------------------------------------
 
 class TestRetry:
+    """Quality threshold checks. Auto-retry stub removed — real retry
+    is tracked in backlog (requires D3 evaluator integration)."""
 
-    def test_retry_logged_below_threshold(self, pipeline):
+    def test_pipeline_completes_below_threshold(self, pipeline):
+        # Pipeline completes regardless of quality; no retry happens.
         result = pipeline.run(PipelineConfig(
             intent="test",
             evaluator=lambda _: QualityScore(overall=0.3),
             quality_threshold=0.6,
-            auto_retry=True,
         ))
-        assert result.retries > 0
-        assert any("retry" in s.lower() for s in result.stage_log)
+        assert result.stage == PipelineStage.COMPLETE
 
-    def test_no_retry_above_threshold(self, pipeline):
+    def test_pipeline_completes_above_threshold(self, pipeline):
         result = pipeline.run(PipelineConfig(
             intent="test",
             evaluator=lambda _: QualityScore(overall=0.8),
             quality_threshold=0.6,
         ))
-        assert result.retries == 0
+        assert result.stage == PipelineStage.COMPLETE
 
-    def test_no_retry_when_disabled(self, pipeline):
+    def test_pipeline_completes_at_low_quality(self, pipeline):
         result = pipeline.run(PipelineConfig(
             intent="test",
             evaluator=lambda _: QualityScore(overall=0.1),
-            auto_retry=False,
         ))
-        assert result.retries == 0
+        assert result.stage == PipelineStage.COMPLETE
 
 
 # ---------------------------------------------------------------------------

@@ -391,15 +391,33 @@ def _translate_error(e: Exception) -> None:
     if isinstance(e, genai_errors.ClientError):
         msg = str(e)
         # Check for auth-related client errors
-        if "401" in msg or "403" in msg or "API key" in msg.lower():
+        if (
+            getattr(e, "code", None) in (401, 403)
+            or getattr(e, "status_code", None) in (401, 403)
+            or "401" in msg
+            or "403" in msg
+            or "API key" in msg.lower()
+        ):
             raise LLMAuthError(msg) from e
         # Check for rate limit
-        if "429" in msg or "rate" in msg.lower():
+        if (
+            getattr(e, "code", None) == 429
+            or getattr(e, "status_code", None) == 429
+            or "429" in msg
+            or "rate" in msg.lower()
+        ):
             raise LLMRateLimitError(msg) from e
         raise LLMError(msg) from e
 
     if isinstance(e, genai_errors.ServerError):
-        raise LLMServerError(str(e), status_code=500) from e
+        msg = str(e)
+        if (
+            getattr(e, "code", None) == 503
+            or getattr(e, "status_code", None) == 503
+            or "503" in msg
+        ):
+            raise LLMServerError(msg, status_code=503) from e
+        raise LLMServerError(msg, status_code=500) from e
 
     # Connection-level errors
     if isinstance(e, (ConnectionError, TimeoutError, OSError)):

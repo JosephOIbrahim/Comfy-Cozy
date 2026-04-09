@@ -64,7 +64,7 @@ cd Comfy-Cozy
 
 ```bash
 pip install -e .                  # core install (agent + cognitive engine + panel)
-pip install -e ".[dev]"           # + full test suite (2717 passing tests)
+pip install -e ".[dev]"           # + full test suite (2734 passing tests)
 pip install -e ".[dev,stage]"     # + USD stage subsystem (~200MB, optional)
 ```
 
@@ -352,7 +352,7 @@ flowchart TD
     EXECUTE --> EVALUATE["EVALUATE\nScore the output\n0.7 success · 0.1 failure"]
     EVALUATE --> LEARN["LEARN\nRecord to accumulator\nCalibrate CWM priors"]
     LEARN --> DONE(["✅ Complete\nExperience recorded"])
-    EVALUATE -->|"score < threshold\nauto_retry=True"| COMPOSE
+    EVALUATE -->|"score < threshold\n(future: auto-retry)"| COMPOSE
 
     style You fill:#0066FF,color:#fff
     style GATE fill:#d97706,color:#fff
@@ -371,8 +371,6 @@ pipeline = create_default_pipeline()   # fresh accumulator, CWM, arbiter
 result = pipeline.run(PipelineConfig(
     intent="cinematic portrait, golden hour",
     model_family="SD1.5",              # optional — agent detects from intent
-    auto_retry=True,                   # retry if quality score < threshold
-    quality_threshold=0.6,
 ))
 print(result.success, result.quality.overall, result.stage.value)
 if result.warnings:
@@ -629,7 +627,7 @@ Each delta layer carries its `creation_hash` (SHA-256 of `opinion + sorted-JSON 
 
 Every subsystem has an independent kill switch. Set any of these to `0` in your `.env` to disable:
 
-`STAGE_ENABLED` `BRAIN_ENABLED` `CWM_ENABLED` `DAG_ENABLED` `GATE_ENABLED` `OBSERVATION_ENABLED` `VISION_ENABLED` `DISCOVERY_ENABLED`
+`BRAIN_ENABLED` `DAG_ENABLED` `GATE_ENABLED` `OBSERVATION_ENABLED`
 
 All default to ON. The agent works fine with any combination disabled -- features just gracefully disappear.
 
@@ -687,7 +685,7 @@ agent/
     dag/              Workflow intelligence (6 computation nodes)
   gate/               Pre-dispatch safety (5-check pipeline)
   degradation.py      Fault isolation manager
-  config.py           Environment + 8 kill switches + LLM provider selection
+  config.py           Environment + 4 kill switches + LLM provider selection
   mcp_server.py       MCP server (primary interface)
 cognitive/            LIVRPS state engine — installed as top-level package (Phase 0.5)
   core/               CognitiveGraphEngine, DeltaLayer, WorkflowGraph (link-preserving)
@@ -699,7 +697,7 @@ cognitive/            LIVRPS state engine — installed as top-level package (Ph
 panel/
   server/routes.py    49 REST routes — full tool surface
   web/js/             Panel UI — chat, graph inspector, model browser
-tests/                2717 passing tests, all mocked, ~60s
+tests/                2734 passing tests, all mocked, ~60s
 ```
 
 ### Production Hardening
@@ -710,7 +708,7 @@ tests/                2717 passing tests, all mocked, ~60s
 | **Fault Isolation** | Each subsystem fails independently. Circuit breakers prevent cascading failures. |
 | **Determinism** | Pure computation DAG. Deterministic JSON. Ordinal state enums. Same input = same output. |
 | **Audit Trail** | Every mutation logged: who changed what, when, and what got overridden. |
-| **Security** | Bearer token auth on all routes including WebSocket. Path traversal blocked. SSRF prevented. Private IPs rejected. XSS sanitized. 10 MB + chunked-transfer size guards. Max 20 concurrent WebSocket connections. Atomic file writes (write→tmp→`os.replace()`). |
+| **Security** | Bearer token auth on all routes including WebSocket. Path traversal blocked. SSRF prevented on initial URL and every redirect hop (RFC 1918 + loopback + link-local + CGNAT rejected via DNS resolution). MCP tool errors return `isError=True` per protocol. Gate exceptions deny by default (no silent allow). 10 MB + chunked-transfer size guards. Max 20 concurrent WebSocket connections. Atomic file writes (write→tmp→`os.replace()`). Thread-safe token bucket rate limiter. |
 | **Bounded Resources** | Intent history (100), iteration steps (200), demo checkpoints (100). No unbounded growth. |
 
 ```mermaid
@@ -765,7 +763,7 @@ All settings live in your `.env` file:
 No ComfyUI needed -- everything is mocked:
 
 ```bash
-python -m pytest tests/ -v        # 2717 passing tests, ~60s
+python -m pytest tests/ -v        # 2734 passing tests, ~60s
 
 # Skip tests that require a real ComfyUI server or API keys
 python -m pytest tests/ -v -m "not integration"

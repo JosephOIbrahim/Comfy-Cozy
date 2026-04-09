@@ -9,7 +9,7 @@ Six tools for working with the USD-backed workflow stage:
   stage_list_deltas        — list delta sublayer identifiers
 
 Tool pattern: TOOLS list[dict] + handle(name, tool_input) -> str.
-Not registered in agent/tools/__init__.py — wiring is done by the human operator.
+Registered in agent/tools/__init__.py via the stage module import.
 """
 
 from __future__ import annotations

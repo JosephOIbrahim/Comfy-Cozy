@@ -16,6 +16,7 @@ import json
 import pytest
 
 from agent.tools.comfy_provision import (
+    _resolve_and_check_private,
     _safe_filename,
     _safe_path_component,
     _validate_download_url,
@@ -112,6 +113,181 @@ class TestValidateDownloadUrl:
     def test_returns_string_on_error_not_exception(self):
         result = _validate_download_url("http://bad.com/model.safetensors")
         assert isinstance(result, str)
+
+    def test_cgnat_ip_blocked(self):
+        # 100.64.0.0/10 is RFC 6598 CGNAT — must be blocked
+        result = _validate_download_url("https://100.64.0.1/model.safetensors")
+        assert result is not None
+
+    def test_cgnat_upper_bound_blocked(self):
+        result = _validate_download_url("https://100.127.255.255/model.safetensors")
+        assert result is not None
+
+
+# ---------------------------------------------------------------------------
+# _resolve_and_check_private
+# ---------------------------------------------------------------------------
+
+
+class TestResolveAndCheckPrivate:
+    """Verify that _resolve_and_check_private catches private IPs after DNS lookup.
+
+    This is the guard that fires on each redirect hop — an allowlisted CDN
+    hostname that resolves to a private IP must be blocked here.
+    """
+
+    def test_safe_public_ip_returns_none(self, monkeypatch):
+        """1.1.1.1 (Cloudflare public DNS) must be allowed."""
+        import socket
+        monkeypatch.setattr(
+            "socket.getaddrinfo",
+            lambda host, port, **kw: [(None, None, None, None, ("1.1.1.1", 0))],
+        )
+        assert _resolve_and_check_private("one.one.one.one") is None
+
+    def test_redirect_to_rfc1918_192_168_blocked(self, monkeypatch):
+        """302 from allowlisted CDN → 192.168.1.1 must be blocked."""
+        import socket
+        monkeypatch.setattr(
+            "socket.getaddrinfo",
+            lambda host, port, **kw: [(None, None, None, None, ("192.168.1.1", 0))],
+        )
+        result = _resolve_and_check_private("huggingface.co")
+        assert result is not None
+        assert "192.168.1.1" in result
+
+    def test_redirect_to_loopback_blocked(self, monkeypatch):
+        import socket
+        monkeypatch.setattr(
+            "socket.getaddrinfo",
+            lambda host, port, **kw: [(None, None, None, None, ("127.0.0.1", 0))],
+        )
+        result = _resolve_and_check_private("evil.example.com")
+        assert result is not None
+
+    def test_redirect_to_rfc1918_10_x_blocked(self, monkeypatch):
+        import socket
+        monkeypatch.setattr(
+            "socket.getaddrinfo",
+            lambda host, port, **kw: [(None, None, None, None, ("10.0.0.1", 0))],
+        )
+        result = _resolve_and_check_private("cdn.example.com")
+        assert result is not None
+
+    def test_redirect_to_cgnat_blocked(self, monkeypatch):
+        """100.64.0.0/10 CGNAT range must be blocked on DNS resolution too."""
+        import socket
+        monkeypatch.setattr(
+            "socket.getaddrinfo",
+            lambda host, port, **kw: [(None, None, None, None, ("100.64.0.1", 0))],
+        )
+        result = _resolve_and_check_private("cdn.example.com")
+        assert result is not None
+        assert "100.64.0.1" in result
+
+    def test_unresolvable_hostname_returns_error(self, monkeypatch):
+        import socket
+        def _raise(*a, **kw):
+            raise socket.gaierror("Name or service not known")
+        monkeypatch.setattr("socket.getaddrinfo", _raise)
+        result = _resolve_and_check_private("does-not-exist.invalid")
+        assert result is not None
+
+    def test_link_local_blocked(self, monkeypatch):
+        """169.254.x.x link-local addresses (e.g. AWS metadata) must be blocked."""
+        import socket
+        monkeypatch.setattr(
+            "socket.getaddrinfo",
+            lambda host, port, **kw: [(None, None, None, None, ("169.254.169.254", 0))],
+        )
+        result = _resolve_and_check_private("metadata.internal")
+        assert result is not None
+
+
+class TestDownloadModelSsrfRedirectBlocked:
+    """Integration test: download_model must refuse a redirect to a private IP.
+
+    This is the P0-J regression test. An allowlisted CDN (huggingface.co)
+    issues a 302 to 192.168.1.1 — the download must be refused.
+    """
+
+    def test_302_from_allowlisted_host_to_private_ip_is_refused(
+        self, tmp_path, monkeypatch
+    ):
+        import json
+        import socket
+        from unittest.mock import MagicMock, patch
+
+        from agent.tools.comfy_provision import handle
+
+        # Patch MODELS_DIR to tmp_path so the tool doesn't touch real dirs
+        monkeypatch.setattr("agent.tools.comfy_provision.MODELS_DIR", tmp_path)
+        (tmp_path / "checkpoints").mkdir()
+
+        # First httpx call: allowlisted host returns 302 → private IP
+        redirect_response = MagicMock()
+        redirect_response.status_code = 302
+        redirect_response.headers = {"location": "http://192.168.1.1/evil.safetensors"}
+        redirect_response.__enter__ = lambda s: s
+        redirect_response.__exit__ = MagicMock(return_value=False)
+
+        with patch("agent.tools.comfy_provision.httpx.stream", return_value=redirect_response):
+            # The redirect target http:// also fails _validate_download_url (not https),
+            # so we test by patching _validate_download_url to pass for the redirect URL
+            # but _resolve_and_check_private to return the private IP error.
+            # Actually — http://192.168.1.1 will fail _validate_download_url already
+            # (not https), so this is doubly blocked. Verify the error is returned.
+            result = handle(
+                "download_model",
+                {
+                    "url": "https://huggingface.co/models/test/model.safetensors",
+                    "model_type": "checkpoints",
+                    "filename": "model.safetensors",
+                },
+            )
+
+        parsed = json.loads(result)
+        assert "error" in parsed
+        # Must be refused — either for non-https redirect URL or private IP
+        error_msg = parsed["error"].lower()
+        assert any(
+            phrase in error_msg
+            for phrase in ("redirect", "blocked", "private", "denied", "https")
+        ), f"Expected SSRF-related refusal, got: {parsed['error']}"
+        # Must NOT have downloaded anything
+        assert not any(tmp_path.rglob("*.safetensors"))
+
+    def test_302_to_https_private_ip_blocked_by_dns_check(
+        self, tmp_path, monkeypatch
+    ):
+        """Redirect to https://192.168.1.1 blocked at _validate_download_url level."""
+        import json
+        from unittest.mock import MagicMock, patch
+
+        from agent.tools.comfy_provision import handle
+
+        monkeypatch.setattr("agent.tools.comfy_provision.MODELS_DIR", tmp_path)
+        (tmp_path / "checkpoints").mkdir()
+
+        redirect_response = MagicMock()
+        redirect_response.status_code = 302
+        redirect_response.headers = {"location": "https://192.168.1.1/evil.safetensors"}
+        redirect_response.__enter__ = lambda s: s
+        redirect_response.__exit__ = MagicMock(return_value=False)
+
+        with patch("agent.tools.comfy_provision.httpx.stream", return_value=redirect_response):
+            result = handle(
+                "download_model",
+                {
+                    "url": "https://huggingface.co/models/test/model.safetensors",
+                    "model_type": "checkpoints",
+                    "filename": "model.safetensors",
+                },
+            )
+
+        parsed = json.loads(result)
+        assert "error" in parsed
+        assert not any(tmp_path.rglob("*.safetensors"))
 
 
 # ---------------------------------------------------------------------------

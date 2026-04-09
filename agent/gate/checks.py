@@ -120,13 +120,6 @@ def check_consent(
             f"No active session. Tool '{tool_name}' requires an active session.",
         )
 
-    if risk == RiskLevel.EXECUTION and not validated:
-        return (
-            False,
-            f"Tool '{tool_name}' is EXECUTION (risk level 2) but workflow "
-            f"has not been validated. Call validate_before_execute first.",
-        )
-
     return True, "Consent satisfied."
 
 

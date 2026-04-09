@@ -180,15 +180,15 @@ def _validate_download_url(url: str) -> str | None:
     """Validate a model download URL to prevent SSRF attacks.
 
     Only allows HTTPS connections to known-safe external hosts.
-    Blocks localhost, private IP ranges, and unknown hosts.
+    Blocks localhost, private IP ranges, CGNAT, and unknown hosts.
     Returns None if valid, or an error message if invalid.
     """
     url_stripped = url.strip()
     if not url_stripped.lower().startswith("https://"):
         return "Only HTTPS URLs are allowed for model downloads."
     try:
-        from urllib.parse import urlparse
         import ipaddress
+        from urllib.parse import urlparse
         parsed = urlparse(url_stripped)
         hostname = (parsed.hostname or "").lower()
         if not hostname:
@@ -196,15 +196,15 @@ def _validate_download_url(url: str) -> str | None:
         # Block localhost and loopback
         if hostname in ("localhost", "127.0.0.1", "::1") or hostname.startswith("localhost."):
             return "Access denied: download from localhost is not allowed."
-        # Block private IP ranges (SSRF prevention)
+        # Block private IP ranges and CGNAT (SSRF prevention)
         try:
             addr = ipaddress.ip_address(hostname)
             if addr.is_private or addr.is_loopback or addr.is_link_local or addr.is_reserved:
                 return f"Access denied: download from private/internal IP '{hostname}' is not allowed."
+            if addr in ipaddress.ip_network("100.64.0.0/10"):  # RFC 6598 CGNAT
+                return f"Access denied: download from CGNAT address '{hostname}' is not allowed."
         except ValueError:
             pass  # Not a bare IP — hostname will be checked below
-        # Check against allowlist (warn but don't block unknown public hosts —
-        # model files are legitimately hosted on CDNs, S3, etc.)
         # Block known internal/metadata endpoints by hostname pattern
         blocked_patterns = ("metadata.google", "169.254.", "192.168.", "10.", "172.")
         for pattern in blocked_patterns:
@@ -212,6 +212,45 @@ def _validate_download_url(url: str) -> str | None:
                 return f"Access denied: download from '{hostname}' is not allowed."
     except Exception:
         return "Invalid URL format."
+    return None
+
+
+_MAX_DOWNLOAD_REDIRECTS = 10
+_CGNAT_NETWORK = None  # Initialised on first use
+
+
+def _resolve_and_check_private(hostname: str) -> str | None:
+    """DNS-resolve *hostname* and reject private/reserved/CGNAT IP addresses.
+
+    Called for every redirect hop so that an allowlisted CDN that issues a
+    302 to a private IP is caught before the connection is established.
+
+    Returns None if the resolved address is safe, or an error string if it is
+    private, loopback, link-local, reserved, or in the CGNAT range.
+    """
+    import ipaddress
+    import socket
+
+    global _CGNAT_NETWORK
+    if _CGNAT_NETWORK is None:
+        _CGNAT_NETWORK = ipaddress.ip_network("100.64.0.0/10")
+
+    try:
+        addrs = socket.getaddrinfo(hostname, None, proto=socket.IPPROTO_TCP)
+    except (socket.gaierror, OSError):
+        return f"Could not resolve hostname '{hostname}'."
+
+    for *_, sockaddr in addrs:
+        ip_str = sockaddr[0]
+        try:
+            addr = ipaddress.ip_address(ip_str)
+            if addr.is_private or addr.is_loopback or addr.is_link_local or addr.is_reserved:
+                return f"Resolved to private/internal IP '{ip_str}' — blocked for safety."
+            if addr in _CGNAT_NETWORK:
+                return f"Resolved to CGNAT address '{ip_str}' — blocked for safety."
+        except ValueError:
+            pass  # Should not happen from getaddrinfo, but be defensive
+
     return None
 
 
@@ -467,30 +506,69 @@ def _handle_download_model(tool_input: dict) -> str:
             "hint": f"Expected one of: {', '.join(sorted(_MODEL_EXTENSIONS))}",
         })
 
-    # Download with progress
+    # Download with progress — manual redirect following with per-hop SSRF validation.
+    # follow_redirects=False is intentional: we re-validate every redirect target
+    # so that an allowlisted CDN that issues a 302 to a private IP is caught.
+    from urllib.parse import urlparse, urljoin
+
     temp_path = target.with_suffix(target.suffix + ".download")
     start_time = time.time()
 
     try:
-        with httpx.stream("GET", url, follow_redirects=True, timeout=30.0) as response:
-            if response.status_code != 200:
-                sc = response.status_code
-                if sc == 403:
-                    msg = "Download blocked — this model may require a CivitAI account or API key."
-                elif sc == 404:
-                    msg = "Download URL no longer valid — the model may have been removed."
-                elif sc >= 500:
-                    msg = "The model host is temporarily unavailable. Try again in a few minutes."
-                else:
-                    msg = f"Download failed (server returned {sc}). Try again later."
-                return to_json({"error": msg, "url": url})
+        current_url = url
+        downloaded = 0
 
-            downloaded = 0
+        for _hop in range(_MAX_DOWNLOAD_REDIRECTS + 1):
+            with httpx.stream("GET", current_url, follow_redirects=False, timeout=30.0) as response:
+                if response.status_code in (301, 302, 303, 307, 308):
+                    if _hop >= _MAX_DOWNLOAD_REDIRECTS:
+                        return to_json({"error": "Too many redirects during download (max 10).", "url": url})
+                    location = response.headers.get("location", "")
+                    if not location:
+                        return to_json({"error": "Redirect response missing Location header.", "url": url})
+                    new_url = urljoin(current_url, location)
+                    # Re-validate the redirect target URL against the allowlist
+                    redirect_err = _validate_download_url(new_url)
+                    if redirect_err:
+                        if temp_path.exists():
+                            temp_path.unlink(missing_ok=True)
+                        return to_json({"error": f"Redirect blocked: {redirect_err}", "url": url})
+                    # DNS-resolve the redirect hostname to catch private IPs
+                    redir_host = (urlparse(new_url).hostname or "").lower()
+                    ip_err = _resolve_and_check_private(redir_host)
+                    if ip_err:
+                        if temp_path.exists():
+                            temp_path.unlink(missing_ok=True)
+                        return to_json({"error": f"Redirect to '{redir_host}' blocked: {ip_err}", "url": url})
+                    current_url = new_url
+                    continue
 
-            with open(temp_path, "wb") as f:
-                for chunk in response.iter_bytes(chunk_size=1024 * 1024):  # 1MB chunks
-                    f.write(chunk)
-                    downloaded += len(chunk)
+                # Non-redirect — this is the final destination.
+                # DNS-resolve once more to guard against late-binding SSRF.
+                final_host = (urlparse(current_url).hostname or "").lower()
+                ip_err = _resolve_and_check_private(final_host)
+                if ip_err:
+                    return to_json({"error": f"Download from '{final_host}' blocked: {ip_err}", "url": url})
+
+                if response.status_code != 200:
+                    sc = response.status_code
+                    if sc == 403:
+                        msg = "Download blocked — this model may require a CivitAI account or API key."
+                    elif sc == 404:
+                        msg = "Download URL no longer valid — the model may have been removed."
+                    elif sc >= 500:
+                        msg = "The model host is temporarily unavailable. Try again in a few minutes."
+                    else:
+                        msg = f"Download failed (server returned {sc}). Try again later."
+                    return to_json({"error": msg, "url": url})
+
+                with open(temp_path, "wb") as f:
+                    for chunk in response.iter_bytes(chunk_size=1024 * 1024):  # 1MB chunks
+                        f.write(chunk)
+                        downloaded += len(chunk)
+                break  # Download complete
+        else:
+            return to_json({"error": "Too many redirects during download (max 10).", "url": url})
 
         # Rename temp to final
         temp_path.rename(target)

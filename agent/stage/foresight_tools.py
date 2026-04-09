@@ -8,7 +8,7 @@ Five tools for the FORESIGHT prediction/learning pipeline:
   get_prediction_accuracy — prediction accuracy stats from ratchet history
 
 Tool pattern: TOOLS list[dict] + handle(name, tool_input) -> str.
-Not registered in agent/tools/__init__.py — wiring is done by the human operator.
+Registered in agent/tools/__init__.py via the stage module import.
 """
 
 from __future__ import annotations

@@ -232,10 +232,13 @@ def create_mcp_server() -> "Server":
             result = await loop.run_in_executor(None, handler)
         except Exception as e:
             log.error("Tool %s failed: %s", name, e, exc_info=True)
-            return [types.TextContent(
-                type="text",
-                text=f"Error executing {name}: {e}",
-            )]
+            return types.CallToolResult(
+                isError=True,
+                content=[types.TextContent(
+                    type="text",
+                    text=f"Error executing {name}: {e}",
+                )],
+            )
 
         return [types.TextContent(type="text", text=result)]
 

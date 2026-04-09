@@ -1,6 +1,7 @@
 """Panel route guards — auth, rate limiting, request size."""
 
 import logging
+import threading
 import time
 
 from aiohttp import web
@@ -29,17 +30,20 @@ class _TokenBucket:
     def __init__(self, rate: float, capacity: float):
         self.rate = rate
         self.capacity = capacity
-        self.tokens = capacity
+        self.tokens = float(capacity)
         self.last = time.monotonic()
+        self._lock = threading.Lock()
 
     def acquire(self) -> bool:
-        now = time.monotonic()
-        self.tokens = min(self.capacity, self.tokens + (now - self.last) * self.rate)
-        self.last = now
-        if self.tokens >= 1.0:
-            self.tokens -= 1.0
-            return True
-        return False
+        with self._lock:
+            now = time.monotonic()
+            elapsed = now - self.last
+            self.tokens = min(self.capacity, self.tokens + elapsed * self.rate)
+            self.last = now
+            if self.tokens >= 1.0:
+                self.tokens -= 1.0
+                return True
+            return False
 
 
 def _get_bucket(category: str) -> _TokenBucket:

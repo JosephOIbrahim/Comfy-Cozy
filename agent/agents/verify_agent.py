@@ -411,12 +411,6 @@ class VerifyAgent:
 
         # Check parameter failure modes
         if parameters_used:
-            param_issues = self._check_parameter_failure_modes(
-                parameters_used, get_parameter_section.__wrapped__  # type: ignore[attr-defined]
-                if hasattr(get_parameter_section, "__wrapped__")
-                else None
-            )
-            # Actually, re-fetch param section properly
             param_issues = self._check_parameter_failure_modes_from_quality(
                 parameters_used, quality_section
             )

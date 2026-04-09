@@ -32,7 +32,12 @@ from ..prediction.counterfactual import CounterfactualGenerator
 from ..tools.analyze import analyze_workflow
 from ..tools.compose import compose_workflow
 from ..tools.execute import execute_workflow as _execute_workflow_default
-from agent.config import EXPERIENCE_FILE
+import os
+
+EXPERIENCE_FILE = (
+    Path(os.getenv("COMFYUI_DATABASE", "G:/COMFYUI_Database"))
+    / "comfy-cozy-experience.jsonl"
+)
 
 log = logging.getLogger(__name__)
 
@@ -150,9 +155,7 @@ class PipelineConfig:
 
     intent: str = ""
     model_family: str | None = None
-    max_retries: int = 3
     quality_threshold: float = 0.6
-    auto_retry: bool = True
     executor: Callable | None = None  # Actual execution delegate
     evaluator: Callable | None = None  # Quality evaluation delegate
 
@@ -169,7 +172,6 @@ class PipelineResult:
     execution_result: Any | None = None
     quality: QualityScore = field(default_factory=QualityScore)
     experience_chunk: ExperienceChunk | None = None
-    retries: int = 0
     error: str = ""
     stage_log: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
@@ -373,18 +375,6 @@ class AutonomousPipeline:
         cf = self._cf_gen.generate(params, prediction.quality_estimate)
         if cf is not None:
             result.log(f"Counterfactual: vary {cf.changed_parameter}")
-
-        # Auto-retry if quality below threshold
-        if (
-            config.auto_retry
-            and result.quality.is_scored
-            and result.quality.overall < config.quality_threshold
-            and result.retries < config.max_retries
-        ):
-            result.retries += 1
-            result.log(f"Quality below threshold — retry {result.retries}/{config.max_retries}")
-            # In a real implementation, we'd adjust params and re-run.
-            # For now, just log the intent to retry.
 
         result.stage = PipelineStage.COMPLETE
         result.log("Pipeline complete")

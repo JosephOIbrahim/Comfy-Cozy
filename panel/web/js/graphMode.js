@@ -338,7 +338,12 @@ async function _refreshStatusBar(bar, client) {
             btn.disabled = true;
             btn.textContent = "...";
             try {
-              await client.repairWorkflow(true);
+              const result = await client.repairWorkflow(true);
+              if (result && result.error) {
+                btn.textContent = "Failed";
+                console.error("Repair failed:", result.error);
+                return;
+              }
               btn.textContent = "Done";
               _refreshStatusBar(bar, client);
             } catch { btn.textContent = "Failed"; }
@@ -364,7 +369,17 @@ async function _refreshStatusBar(bar, client) {
             btn.disabled = true;
             btn.textContent = "...";
             try {
-              await fetch("/comfy-cozy/migrate-deprecated", { method: "POST" });
+              const r = await fetch("/comfy-cozy/migrate-deprecated", { method: "POST" });
+              if (!r.ok) {
+                btn.textContent = "Failed";
+                return;
+              }
+              const result = await r.json().catch(() => ({}));
+              if (result.error) {
+                btn.textContent = "Failed";
+                console.error("Migration failed:", result.error);
+                return;
+              }
               btn.textContent = "Done";
               _refreshStatusBar(bar, client);
             } catch { btn.textContent = "Failed"; }

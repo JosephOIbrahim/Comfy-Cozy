@@ -9,11 +9,13 @@ export class AgentClient {
 
   async health() {
     const r = await fetch(`${this._base}/health`);
+    if (!r.ok) return { error: `Request failed: ${r.status}` };
     return r.json();
   }
 
   async getGraphState() {
     const r = await fetch(`${this._base}/graph-state`);
+    if (!r.ok) return { error: `Request failed: ${r.status}` };
     return r.json();
   }
 
@@ -30,6 +32,7 @@ export class AgentClient {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ node_id: nodeId, input_name: inputName, value }),
     });
+    if (!r.ok) return { error: `Request failed: ${r.status}` };
     const result = await r.json();
     if (!result.error) {
       document.dispatchEvent(new Event("comfy-cozy:workflow-changed"));
@@ -46,6 +49,7 @@ export class AgentClient {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ class_type: classType, inputs: inputs || {} }),
     });
+    if (!r.ok) return { error: `Request failed: ${r.status}` };
     const result = await r.json();
     if (!result.error) {
       document.dispatchEvent(new Event("comfy-cozy:workflow-changed"));
@@ -62,6 +66,7 @@ export class AgentClient {
         target_id: dstId, target_slot: dstSlot,
       }),
     });
+    if (!r.ok) return { error: `Request failed: ${r.status}` };
     const result = await r.json();
     if (!result.error) {
       document.dispatchEvent(new Event("comfy-cozy:workflow-changed"));
@@ -81,6 +86,7 @@ export class AgentClient {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ patches }),
     });
+    if (!r.ok) return { error: `Request failed: ${r.status}` };
     const result = await r.json();
     if (!result.error) {
       document.dispatchEvent(new Event("comfy-cozy:workflow-changed"));
@@ -90,6 +96,7 @@ export class AgentClient {
 
   async rollback() {
     const r = await fetch(`${this._base}/rollback`, { method: "POST" });
+    if (!r.ok) return { error: `Request failed: ${r.status}` };
     const result = await r.json();
     if (!result.error) {
       document.dispatchEvent(new Event("comfy-cozy:workflow-changed"));
@@ -99,6 +106,7 @@ export class AgentClient {
 
   async reset() {
     const r = await fetch(`${this._base}/reset`, { method: "POST" });
+    if (!r.ok) return { error: `Request failed: ${r.status}` };
     const result = await r.json();
     if (!result.error) {
       document.dispatchEvent(new Event("comfy-cozy:workflow-changed"));
@@ -108,30 +116,24 @@ export class AgentClient {
 
   async getExperience() {
     const r = await fetch(`${this._base}/experience`);
+    if (!r.ok) return { error: `Request failed: ${r.status}` };
     return r.json();
   }
 
   async getAutoresearch() {
     const r = await fetch(`${this._base}/autoresearch`);
+    if (!r.ok) return { error: `Request failed: ${r.status}` };
     return r.json();
   }
 
   async applyPrediction(predictionId, path) {
-    const r = await fetch(`${this._base}/prediction/apply`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ prediction_id: predictionId, path }),
-    });
-    return r.json();
+    // Endpoint not yet implemented server-side
+    return { error: "Not yet implemented" };
   }
 
   async ignorePrediction(predictionId) {
-    const r = await fetch(`${this._base}/prediction/ignore`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ prediction_id: predictionId }),
-    });
-    return r.json();
+    // Endpoint not yet implemented server-side
+    return { error: "Not yet implemented" };
   }
 
   // ── Discovery ────────────────────────────────────────────────
@@ -142,6 +144,7 @@ export class AgentClient {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ query, ...opts }),
     });
+    if (!r.ok) return { error: `Request failed: ${r.status}` };
     return r.json();
   }
 
@@ -155,6 +158,7 @@ export class AgentClient {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
+    if (!r.ok) return { error: `Request failed: ${r.status}` };
     return r.json();
   }
 
@@ -167,6 +171,7 @@ export class AgentClient {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
+    if (!r.ok) return { error: `Request failed: ${r.status}` };
     return r.json();
   }
 
@@ -178,6 +183,7 @@ export class AgentClient {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ auto_install: autoInstall }),
     });
+    if (!r.ok) return { error: `Request failed: ${r.status}` };
     return r.json();
   }
 
@@ -189,6 +195,7 @@ export class AgentClient {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ path }),
     });
+    if (!r.ok) return { error: `Request failed: ${r.status}` };
     return r.json();
   }
 
@@ -196,6 +203,7 @@ export class AgentClient {
 
   async listSessions() {
     const r = await fetch(`${this._base}/list-sessions`);
+    if (!r.ok) return { error: `Request failed: ${r.status}` };
     return r.json();
   }
 
@@ -205,6 +213,7 @@ export class AgentClient {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name }),
     });
+    if (!r.ok) return { error: `Request failed: ${r.status}` };
     return r.json();
   }
 
@@ -214,6 +223,7 @@ export class AgentClient {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name }),
     });
+    if (!r.ok) return { error: `Request failed: ${r.status}` };
     return r.json();
   }
 
@@ -281,6 +291,7 @@ export class AgentClient {
     }
     const qs = params.toString();
     const r = await fetch(`${this._base}/trending-models${qs ? "?" + qs : ""}`);
+    if (!r.ok) return { error: `Request failed: ${r.status}` };
     return r.json();
   }
 
@@ -292,6 +303,7 @@ export class AgentClient {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ models }),
     });
+    if (!r.ok) return { error: `Request failed: ${r.status}` };
     return r.json();
   }
 }
