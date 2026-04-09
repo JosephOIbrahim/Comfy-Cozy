@@ -100,6 +100,8 @@ def _observe(name: str, tool_input: dict, ctx: "object | None") -> None:
 def _get_all_tools() -> list[dict]:
     """Get all tool schemas (intelligence + brain layers)."""
     _ensure_brain()
+    if not _brain_loaded:
+        return list(_LAYER_TOOLS)
     from ..brain import ALL_BRAIN_TOOLS
     return _LAYER_TOOLS + list(ALL_BRAIN_TOOLS)
 
@@ -117,11 +119,13 @@ class _ToolList(list):
             if self._initialized:  # Double-check after acquiring lock
                 return
             self.extend(_LAYER_TOOLS)
-            try:
-                from ..brain import ALL_BRAIN_TOOLS
-                self.extend(ALL_BRAIN_TOOLS)
-            except ImportError:
-                log.warning("Brain layer not available")
+            _ensure_brain()
+            if _brain_loaded:
+                try:
+                    from ..brain import ALL_BRAIN_TOOLS
+                    self.extend(ALL_BRAIN_TOOLS)
+                except ImportError:
+                    log.warning("Brain layer not available")
             self._initialized = True
 
     def __iter__(self):

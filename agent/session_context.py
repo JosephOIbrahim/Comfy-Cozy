@@ -44,8 +44,38 @@ class SessionContext:
         self._dag_state = None  # Optional DAG engine state (lazy)
         self._degradation = None  # Optional DegradationManager (lazy)
         try:
+            import logging as _logging
+            from .circuit_breaker import CircuitBreaker
             from .degradation import DegradationManager
-            self._degradation = DegradationManager()
+            _dm = DegradationManager()
+            _log = _logging.getLogger(__name__)
+
+            # Brain layer — graceful degradation if brain module fails to load
+            _dm.register(
+                "brain",
+                fallback=lambda *_a, **_kw: _log.warning(
+                    "Brain subsystem unavailable — skipping"
+                ),
+                breaker=CircuitBreaker(
+                    name="brain", failure_threshold=3, recovery_timeout=30.0
+                ),
+            )
+
+            # ComfyUI HTTP — graceful degradation if ComfyUI is unreachable
+            _dm.register(
+                "comfyui_http",
+                fallback=lambda *_a, **_kw: {
+                    "error": (
+                        "ComfyUI is not reachable. "
+                        "Make sure it's running on the configured host/port."
+                    )
+                },
+                breaker=CircuitBreaker(
+                    name="comfyui_http", failure_threshold=5, recovery_timeout=60.0
+                ),
+            )
+
+            self._degradation = _dm
         except ImportError:
             pass
 

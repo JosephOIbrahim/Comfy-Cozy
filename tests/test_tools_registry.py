@@ -207,3 +207,52 @@ class TestToolRegistry:
         parsed = json.loads(result)
         assert "error" in parsed
         assert "is_comfyui_running" in parsed["error"]
+
+
+class TestBrainEnabledKillSwitch:
+    def test_brain_disabled_skips_ensure_brain(self, monkeypatch):
+        """When BRAIN_ENABLED=False, _ensure_brain() returns without loading brain modules."""
+        import agent.tools as tools_module
+
+        # _ensure_brain() reads BRAIN_ENABLED via 'from ..config import BRAIN_ENABLED' —
+        # patch at source so the fresh import inside the function picks up False.
+        monkeypatch.setattr("agent.config.BRAIN_ENABLED", False)
+        original_loaded = tools_module._brain_loaded
+        tools_module._brain_loaded = False
+
+        tools_module._ensure_brain()
+
+        # _brain_loaded should remain False — brain was not initialized
+        assert tools_module._brain_loaded is False
+
+        # Restore so other tests are not affected
+        tools_module._brain_loaded = original_loaded
+
+    def test_brain_enabled_sets_brain_loaded(self, monkeypatch):
+        """When BRAIN_ENABLED=True, _ensure_brain() sets _brain_loaded=True."""
+        import agent.tools as tools_module
+
+        monkeypatch.setattr("agent.config.BRAIN_ENABLED", True)
+        tools_module._brain_loaded = False
+
+        tools_module._ensure_brain()
+
+        assert tools_module._brain_loaded is True
+
+        # Restore
+        tools_module._brain_loaded = True
+
+    def test_brain_disabled_get_all_tools_excludes_brain(self, monkeypatch):
+        """_get_all_tools() returns only intelligence-layer tools when BRAIN_ENABLED=False."""
+        import agent.tools as tools_module
+
+        monkeypatch.setattr("agent.config.BRAIN_ENABLED", False)
+        tools_module._brain_loaded = False
+
+        result = tools_module._get_all_tools()
+
+        # Must match the intelligence layer count (no brain tools added)
+        assert len(result) == len(tools_module._LAYER_TOOLS)
+
+        # Restore
+        tools_module._brain_loaded = True

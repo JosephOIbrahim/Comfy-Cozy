@@ -185,6 +185,11 @@ class DegradationManager:
     # Health queries
     # ------------------------------------------------------------------
 
+    def is_registered(self, name: str) -> bool:
+        """Return True if a subsystem with this name is registered."""
+        with self._lock:
+            return name in self._entries
+
     def is_healthy(self, name: str) -> bool:
         """Check if a subsystem is currently marked healthy."""
         with self._lock:
