@@ -288,7 +288,7 @@ class TestRunAgentTurn:
         assert done is True
         assert msgs[-1]["role"] == "assistant"
 
-    @patch("agent.main.handle_tool")
+    @patch("agent.tools.handle")
     @patch("agent.main._stream_with_retry")
     def test_single_tool_call(self, mock_stream, mock_handle):
         mock_stream.return_value = self._make_response(
@@ -306,7 +306,7 @@ class TestRunAgentTurn:
         assert isinstance(msgs[-1]["content"][0], ToolResultBlock)
         mock_handle.assert_called_once_with("is_comfyui_running", {})
 
-    @patch("agent.main.handle_tool")
+    @patch("agent.tools.handle")
     @patch("agent.main._stream_with_retry")
     def test_parallel_tool_calls(self, mock_stream, mock_handle):
         mock_stream.return_value = self._make_response(
@@ -340,7 +340,7 @@ class TestRunAgentTurn:
         run_agent_turn(client, messages, "system", handler=handler)
         handler.on_stream_end.assert_called_once()
 
-    @patch("agent.main.handle_tool")
+    @patch("agent.tools.handle")
     @patch("agent.main._stream_with_retry")
     def test_handler_on_tool_call(self, mock_stream, mock_handle):
         mock_stream.return_value = self._make_response(

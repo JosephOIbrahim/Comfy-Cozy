@@ -17,6 +17,7 @@ Usage:
 import asyncio
 import functools
 import logging
+import uuid
 
 import httpx
 from mcp.server import Server
@@ -26,6 +27,12 @@ import mcp.types as types
 from .progress import ProgressReporter
 
 log = logging.getLogger(__name__)
+
+# One stable session namespace per MCP server process.  Each ``agent mcp``
+# launch gets its own UUID so multiple Claude Code instances don't share
+# workflow/session state.  Tool handlers read this via current_conn_session()
+# after _handler sets the ContextVar in the executor thread.
+_SERVER_SESSION_ID: str = f"conn_{uuid.uuid4().hex[:8]}"
 
 # ---------------------------------------------------------------------------
 # Server instructions — tells MCP clients how to use the tools
@@ -218,18 +225,33 @@ def create_mcp_server() -> "Server":
         else:
             progress = ProgressReporter.noop()
 
-        # Resolve session context for session-scoped state isolation
+        # Resolve session context for session-scoped state isolation.
+        # _SERVER_SESSION_ID is generated once at process start — all tool
+        # calls from this MCP server instance share the same session namespace.
+        # The _handler wrapper below sets the ContextVar inside the executor
+        # thread so session_tools.current_conn_session() returns the right name.
+        from ._conn_ctx import _conn_session as _cs
         from .session_context import get_session_context
-        ctx = get_session_context(session_id or "default")
+        conn_name = session_id or _SERVER_SESSION_ID
+        ctx = get_session_context(conn_name)
 
         # Our tool handlers are synchronous — run in thread executor
-        # to avoid blocking the async event loop
+        # to avoid blocking the async event loop.
+        # _handler sets the ContextVar inside the worker thread so that
+        # any tool (e.g. session_tools) that calls current_conn_session()
+        # from within the thread gets the correct connection-scoped name.
+        _conn_name_local = conn_name  # avoid late-binding in closure
+        _partial = functools.partial(
+            handle_tool, name, arguments,
+            session_id=conn_name, progress=progress, ctx=ctx,
+        )
+
+        def _handler():
+            _cs.set(_conn_name_local)
+            return _partial()
+
         try:
-            handler = functools.partial(
-                handle_tool, name, arguments,
-                session_id=session_id, progress=progress, ctx=ctx,
-            )
-            result = await loop.run_in_executor(None, handler)
+            result = await loop.run_in_executor(None, _handler)
         except Exception as e:
             log.error("Tool %s failed: %s", name, e, exc_info=True)
             return types.CallToolResult(

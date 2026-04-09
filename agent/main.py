@@ -30,7 +30,8 @@ from .llm import (
 from .logging_config import set_correlation_id
 from .streaming import StreamHandler, NullHandler
 from .system_prompt import build_system_prompt
-from .tools import ALL_TOOLS, handle as handle_tool
+from . import tools as _tools
+from .tools import ALL_TOOLS
 
 log = logging.getLogger(__name__)
 
@@ -181,7 +182,7 @@ def run_agent_turn(
 
         def _run_tool(tc):
             t_tool = time.monotonic()
-            result = handle_tool(tc.name, tc.input)
+            result = _tools.handle(tc.name, tc.input)
             log.debug(
                 "Tool %s completed in %.2fs", tc.name, time.monotonic() - t_tool
             )
@@ -205,7 +206,7 @@ def run_agent_turn(
         tc = tool_calls[0]
         h.on_tool_call(tc.name, tc.input)
         t_tool = time.monotonic()
-        result = handle_tool(tc.name, tc.input)
+        result = _tools.handle(tc.name, tc.input)
         log.debug(
             "Tool %s completed in %.2fs", tc.name, time.monotonic() - t_tool
         )

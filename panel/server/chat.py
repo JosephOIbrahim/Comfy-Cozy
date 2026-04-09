@@ -201,21 +201,21 @@ def _run_agent_sync(conv: ConversationState, user_text: str, msg_queue: queue.Qu
     handler = _QueueStreamHandler(msg_queue)
     progress = QueueProgressReporter(msg_queue)
 
-    # Patch handle_tool inside agent.main to forward the progress reporter.
-    # run_agent_turn imports handle as handle_tool from agent.tools; we
-    # temporarily replace agent.main.handle_tool so execution tools can
-    # stream progress back through the queue.
+    # Patch agent.tools.handle to forward the progress reporter.
+    # agent.main dispatches through _tools.handle (a live module reference),
+    # so patching agent.tools.handle is visible to all workers — including
+    # ThreadPoolExecutor threads that execute parallel tool calls.
     # P1-E: _agent_turn_lock serializes this block so concurrent sessions
     # cannot interleave their monkey-patches and steal each other's queues.
-    import agent.main as _main_mod
+    import agent.tools as _agent_tools
 
     with _agent_turn_lock:
-        _original_handle = _main_mod.handle_tool
+        _original_handle = _agent_tools.handle
 
         def _handle_with_progress(name, tool_input, **kw):
             return _original_handle(name, tool_input, progress=progress, **kw)
 
-        _main_mod.handle_tool = _handle_with_progress
+        _agent_tools.handle = _handle_with_progress
 
         try:
             for _turn in range(max_turns):
@@ -238,7 +238,7 @@ def _run_agent_sync(conv: ConversationState, user_text: str, msg_queue: queue.Qu
 
             msg_queue.put({"type": "done"})
         finally:
-            _main_mod.handle_tool = _original_handle
+            _agent_tools.handle = _original_handle
 
 
 # ---------------------------------------------------------------------------

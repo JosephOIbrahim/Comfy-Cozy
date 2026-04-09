@@ -7,6 +7,7 @@ in the sessions/ directory.
 
 import copy
 
+from .._conn_ctx import current_conn_session
 from ..memory.session import (
     save_session, load_session, list_sessions, add_note,
     restore_workflow_state, save_stage, load_stage,
@@ -117,7 +118,7 @@ def _handle_save_session(tool_input: dict) -> str:
 
     # Capture current workflow state from session
     from ..workflow_session import get_session
-    wf_state = get_session("default")
+    wf_state = get_session(current_conn_session())
     workflow_state = copy.deepcopy(dict(wf_state.items())) if wf_state.get("current_workflow") else None
 
     # Preserve existing notes from prior add_note calls
@@ -128,7 +129,7 @@ def _handle_save_session(tool_input: dict) -> str:
 
     # Save CognitiveWorkflowStage alongside JSON if available
     from ..session_context import get_session_context
-    ctx = get_session_context("default")
+    ctx = get_session_context(current_conn_session())
     if ctx.stage is not None:
         stage_result = save_stage(name, ctx.stage)
         if "saved_stage" in stage_result:
@@ -157,7 +158,7 @@ def _handle_load_session(tool_input: dict) -> str:
 
     if wf and wf.get("base_workflow") and wf.get("current_workflow"):
         from ..workflow_session import get_session
-        wf_state = get_session("default")
+        wf_state = get_session(current_conn_session())
         wf_state["loaded_path"] = wf.get("loaded_path")
         wf_state["base_workflow"] = copy.deepcopy(wf["base_workflow"])
         wf_state["current_workflow"] = copy.deepcopy(wf["current_workflow"])
@@ -170,7 +171,7 @@ def _handle_load_session(tool_input: dict) -> str:
     stage_restored = False
     if stage is not None:
         from ..session_context import get_session_context
-        ctx = get_session_context("default")
+        ctx = get_session_context(current_conn_session())
         ctx.stage = stage
         stage_restored = True
 
@@ -179,7 +180,7 @@ def _handle_load_session(tool_input: dict) -> str:
     ratchet_restored = False
     if ratchet is not None:
         from ..session_context import get_session_context
-        ctx = get_session_context("default")
+        ctx = get_session_context(current_conn_session())
         ctx._ratchet = ratchet
         ratchet_restored = True
 
