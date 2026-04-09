@@ -84,6 +84,7 @@ class ConversationState:
         self.workflow_summary: dict | None = None
         self.missing_nodes: list[str] | None = None
         self._workflow_hash: int | None = None
+        self.cancelled = threading.Event()  # Set on WS disconnect — stops new turns
 
     def _build_system(self):
         from agent.system_prompt import build_system_prompt
@@ -217,6 +218,9 @@ def _run_agent_sync(conv: ConversationState, user_text: str, msg_queue: queue.Qu
     # progress is forwarded directly through run_agent_turn's progress parameter —
     # no global monkey-patching needed, no serialization lock required.
     for _turn in range(max_turns):
+        if conv.cancelled.is_set():
+            log.debug("Agent thread stopping: connection %s disconnected mid-turn", conv.id)
+            return
         try:
             conv.messages, done = run_agent_turn(
                 _client,
@@ -425,6 +429,7 @@ async def websocket_handler(request):
                 log.error("Panel WebSocket error: %s", ws.exception())
 
     finally:
+        conv.cancelled.set()  # Signal any in-flight agent thread to stop between turns
         _conversations.pop(conv.id, None)
         log.info("Panel WebSocket disconnected: %s", conv.id)
 
