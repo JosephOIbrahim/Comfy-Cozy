@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import copy
 import json
+import logging
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
@@ -33,6 +34,7 @@ from ..tools.compose import compose_workflow
 from ..tools.execute import execute_workflow as _execute_workflow_default
 from agent.config import EXPERIENCE_FILE
 
+log = logging.getLogger(__name__)
 
 _FALLBACK_WORKFLOW_SD15: dict = {
     "1": {
@@ -170,6 +172,7 @@ class PipelineResult:
     retries: int = 0
     error: str = ""
     stage_log: list[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
 
     @property
     def success(self) -> bool:
@@ -258,6 +261,9 @@ class AutonomousPipeline:
                 " — using SD1.5 fallback"
             )
             result.workflow_data = copy.deepcopy(_FALLBACK_WORKFLOW_SD15)
+            result.warnings.append(
+                f"No template found for family '{config.model_family}'; fell back to SD1.5 default"
+            )
 
         model_family = composition.plan.model_family if composition.plan else ""
         params = composition.plan.parameters if composition.plan else {}
@@ -268,13 +274,19 @@ class AutonomousPipeline:
         exp_weight = self._accumulator.experience_weight
         cf_adjustment = self._cf_gen.get_adjustment()
 
-        prediction = self._cwm.predict(
-            model_family=model_family,
-            parameters=params,
-            experience_quality=self._get_avg_experience_quality(config),
-            experience_weight=exp_weight,
-            counterfactual_adjustment=cf_adjustment,
-        )
+        try:
+            prediction = self._cwm.predict(
+                model_family=model_family,
+                parameters=params,
+                experience_quality=self._get_avg_experience_quality(config),
+                experience_weight=exp_weight,
+                counterfactual_adjustment=cf_adjustment,
+            )
+        except Exception as e:
+            log.error("CWM predict failed: %s", e)
+            result.stage = PipelineStage.FAILED
+            result.log(f"CWM prediction failed: {e}")
+            return result
         result.prediction = prediction
         result.log(
             f"Predicted quality: {prediction.quality_estimate:.1%} "
@@ -346,8 +358,9 @@ class AutonomousPipeline:
         try:
             saved = self._accumulator.save(str(EXPERIENCE_FILE))
             result.log(f"Experience persisted ({saved} chunks → {EXPERIENCE_FILE.name})")
-        except OSError as _exc:
-            result.log(f"Experience save failed (non-fatal): {_exc}")
+        except Exception as e:
+            log.warning("Experience save failed (%s: %s)", type(e).__name__, e)
+            result.log(f"Experience save failed (non-fatal): {e}")
 
         # Record prediction accuracy
         if result.quality.is_scored and result.prediction is not None:

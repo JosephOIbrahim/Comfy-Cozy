@@ -10,9 +10,13 @@ ones by context signature matching.
 
 from __future__ import annotations
 
+import os
+import threading
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
+
+_save_lock = threading.Lock()
 
 from .chunk import ExperienceChunk, QualityScore
 from .signature import GenerationContextSignature
@@ -159,14 +163,22 @@ class ExperienceAccumulator:
     # ── Persistence ────────────────────────────────────────────────
 
     def save(self, path: str) -> int:
-        """Save all chunks to a JSONL file. Returns count saved."""
+        """Save all chunks to a JSONL file. Returns count saved.
+
+        Uses an atomic write (write to .tmp, then os.replace) so an unclean
+        shutdown between writes never leaves a truncated file.  A module-level
+        lock prevents two concurrent callers from interleaving their writes.
+        """
         import json
         from pathlib import Path
         p = Path(path)
         p.parent.mkdir(parents=True, exist_ok=True)
-        with open(p, "w", encoding="utf-8") as f:
-            for chunk in self._chunks:
-                f.write(json.dumps(chunk.to_dict(), sort_keys=True) + "\n")
+        tmp_path = Path(str(p) + ".tmp")
+        with _save_lock:
+            with open(tmp_path, "w", encoding="utf-8") as f:
+                for chunk in self._chunks:
+                    f.write(json.dumps(chunk.to_dict(), sort_keys=True) + "\n")
+            os.replace(tmp_path, p)
         return len(self._chunks)
 
     @classmethod

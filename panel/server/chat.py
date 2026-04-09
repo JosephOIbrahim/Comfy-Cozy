@@ -14,6 +14,8 @@ from pathlib import Path
 
 from aiohttp import web
 
+from .middleware import check_auth
+
 log = logging.getLogger("comfy-cozy.chat")
 
 # ---------------------------------------------------------------------------
@@ -95,6 +97,10 @@ class ConversationState:
 
 # Active conversations keyed by connection ID
 _conversations: dict[str, ConversationState] = {}
+_MAX_WS_CONNECTIONS = 20
+
+# P1-E: Serializes concurrent agent turns to prevent monkey-patch races.
+_agent_turn_lock = threading.Lock()
 
 
 # ---------------------------------------------------------------------------
@@ -199,36 +205,40 @@ def _run_agent_sync(conv: ConversationState, user_text: str, msg_queue: queue.Qu
     # run_agent_turn imports handle as handle_tool from agent.tools; we
     # temporarily replace agent.main.handle_tool so execution tools can
     # stream progress back through the queue.
+    # P1-E: _agent_turn_lock serializes this block so concurrent sessions
+    # cannot interleave their monkey-patches and steal each other's queues.
     import agent.main as _main_mod
-    _original_handle = _main_mod.handle_tool
 
-    def _handle_with_progress(name, tool_input, **kw):
-        return _original_handle(name, tool_input, progress=progress, **kw)
+    with _agent_turn_lock:
+        _original_handle = _main_mod.handle_tool
 
-    _main_mod.handle_tool = _handle_with_progress
+        def _handle_with_progress(name, tool_input, **kw):
+            return _original_handle(name, tool_input, progress=progress, **kw)
 
-    try:
-        for _turn in range(max_turns):
-            try:
-                conv.messages, done = run_agent_turn(
-                    _client,
-                    conv.messages,
-                    conv.system_prompt,
-                    handler=handler,
-                )
+        _main_mod.handle_tool = _handle_with_progress
 
-                if done:
-                    msg_queue.put({"type": "done"})
+        try:
+            for _turn in range(max_turns):
+                try:
+                    conv.messages, done = run_agent_turn(
+                        _client,
+                        conv.messages,
+                        conv.system_prompt,
+                        handler=handler,
+                    )
+
+                    if done:
+                        msg_queue.put({"type": "done"})
+                        return
+
+                except Exception as e:
+                    log.error("Agent turn error: %s", e, exc_info=True)
+                    msg_queue.put({"type": "error", "message": str(e)})
                     return
 
-            except Exception as e:
-                log.error("Agent turn error: %s", e, exc_info=True)
-                msg_queue.put({"type": "error", "message": str(e)})
-                return
-
-        msg_queue.put({"type": "done"})
-    finally:
-        _main_mod.handle_tool = _original_handle
+            msg_queue.put({"type": "done"})
+        finally:
+            _main_mod.handle_tool = _original_handle
 
 
 # ---------------------------------------------------------------------------
@@ -277,6 +287,19 @@ async def _forward_event(ws, event, accumulated_text):
 async def websocket_handler(request):
     """Bidirectional WebSocket for panel chat <-> agent communication."""
     import asyncio
+
+    # P0-A: Enforce auth before any WebSocket handshake.
+    auth_err = check_auth(request)
+    if auth_err is not None:
+        return auth_err
+
+    # P1-D: Reject when the connection table is at capacity.
+    if len(_conversations) >= _MAX_WS_CONNECTIONS:
+        return web.Response(
+            status=503,
+            text='{"error": "Too many active connections"}',
+            content_type="application/json",
+        )
 
     ws = web.WebSocketResponse()
     await ws.prepare(request)

@@ -399,7 +399,11 @@ def setup_routes():
             if rejected:
                 return rejected
             from cognitive.experience.accumulator import ExperienceAccumulator
-            acc = ExperienceAccumulator()
+            from agent.config import EXPERIENCE_FILE
+            try:
+                acc = ExperienceAccumulator.load(str(EXPERIENCE_FILE))
+            except Exception:
+                acc = ExperienceAccumulator()
             return web.json_response(acc.get_stats())
         except ImportError:
             return web.json_response({
@@ -485,7 +489,14 @@ def setup_routes():
             rejected = _guard(request, "read")
             if rejected:
                 return rejected
-            max_items = int(request.query.get("max_items", "10"))
+            try:
+                max_items = int(request.query.get("max_items", "10"))
+            except ValueError:
+                return web.Response(
+                    status=400,
+                    text='{"error": "max_items must be an integer"}',
+                    content_type="application/json",
+                )
             result = _tool_call("get_history", {"max_items": max_items})
             return web.Response(text=result, content_type="application/json")
         except Exception as e:
@@ -719,7 +730,17 @@ def setup_routes():
             for key in ("model_type", "base_model", "period", "max_results"):
                 val = request.query.get(key)
                 if val is not None:
-                    params[key] = int(val) if key == "max_results" else val
+                    if key == "max_results":
+                        try:
+                            params[key] = int(val)
+                        except ValueError:
+                            return web.Response(
+                                status=400,
+                                text='{"error": "max_results must be an integer"}',
+                                content_type="application/json",
+                            )
+                    else:
+                        params[key] = val
             result = _tool_call("get_trending_models", params)
             return web.Response(text=result, content_type="application/json")
         except Exception as e:

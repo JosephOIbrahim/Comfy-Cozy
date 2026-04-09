@@ -75,9 +75,21 @@ def check_rate_limit(category: str) -> web.Response | None:
 
 
 def check_size(request: web.Request) -> web.Response | None:
-    """Check request body size. Returns 413 response or None."""
-    if request.content_length and request.content_length > _MAX_REQUEST_BYTES:
+    """Check request body size. Returns 413/411 response or None."""
+    cl = request.content_length
+    if cl is not None and cl > _MAX_REQUEST_BYTES:
         return web.json_response({"error": "Payload too large"}, status=413)
+    # Chunked POSTs carry no declared size — reject to prevent unbounded reads
+    if (
+        cl is None
+        and request.method == "POST"
+        and request.headers.get("Transfer-Encoding", "").lower() == "chunked"
+    ):
+        return web.Response(
+            status=411,
+            text='{"error": "Content-Length required; chunked transfer not accepted"}',
+            content_type="application/json",
+        )
     return None
 
 
