@@ -409,29 +409,33 @@ _catalog_cache: list[dict] | None = None
 
 
 def _load_model_catalog() -> list[dict]:
-    """Load model_catalog.json — local enriched model metadata."""
+    """Load model_catalog.json — local enriched model metadata. Thread-safe."""
     global _catalog_cache
     if _catalog_cache is not None:
         return _catalog_cache
 
-    if not MODEL_CATALOG_PATH.exists():
-        _catalog_cache = []
+    with _cache_lock:
+        if _catalog_cache is not None:  # Re-check after lock
+            return _catalog_cache
+
+        if not MODEL_CATALOG_PATH.exists():
+            _catalog_cache = []
+            return _catalog_cache
+
+        try:
+            data = json.loads(MODEL_CATALOG_PATH.read_text(encoding="utf-8"))
+            # Flatten categories into a single list
+            models = []
+            for category, info in data.get("categories", {}).items():
+                for model in info.get("models", []):
+                    model["_category"] = category
+                    models.append(model)
+            _catalog_cache = models
+        except Exception:
+            log.warning("Failed to load model_catalog.json — local catalog will be empty", exc_info=True)
+            _catalog_cache = []
+
         return _catalog_cache
-
-    try:
-        data = json.loads(MODEL_CATALOG_PATH.read_text(encoding="utf-8"))
-        # Flatten categories into a single list
-        models = []
-        for category, info in data.get("categories", {}).items():
-            for model in info.get("models", []):
-                model["_category"] = category
-                models.append(model)
-        _catalog_cache = models
-    except Exception:
-        log.warning("Failed to load model_catalog.json — local catalog will be empty", exc_info=True)
-        _catalog_cache = []
-
-    return _catalog_cache
 
 
 def _search_catalog_unified(
@@ -1407,13 +1411,16 @@ def _handle_get_install_instructions(tool_input: dict) -> str:
 
 def _clear_cache():
     """Clear all in-memory caches, forcing reload from disk on next access."""
-    _cache["custom_nodes"] = None
-    _cache["extension_map"] = None
-    _cache["node_to_pack"] = None
-    _cache["model_list"] = None
-    _freshness["custom_nodes_loaded_at"] = None
-    _freshness["extension_map_loaded_at"] = None
-    _freshness["model_list_loaded_at"] = None
+    global _catalog_cache
+    with _cache_lock:
+        _cache["custom_nodes"] = None
+        _cache["extension_map"] = None
+        _cache["node_to_pack"] = None
+        _cache["model_list"] = None
+        _freshness["custom_nodes_loaded_at"] = None
+        _freshness["extension_map_loaded_at"] = None
+        _freshness["model_list_loaded_at"] = None
+        _catalog_cache = None
 
 
 def _file_age_info(path: Path) -> dict:
