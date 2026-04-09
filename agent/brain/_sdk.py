@@ -10,7 +10,12 @@ import json as _json
 import threading
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any, Callable
+
+if TYPE_CHECKING:
+    from ..workflow_session import WorkflowSession
+
+_registration_lock = threading.Lock()
 
 
 # ---------------------------------------------------------------------------
@@ -107,16 +112,19 @@ class BrainAgent:
 
     @classmethod
     def _register_all(cls):
-        if cls._registered:
+        if cls._registered:  # Fast path — no lock needed after first registration
             return
-        cls._registered = True
-        for subcls in cls.__subclasses__():
-            if not subcls.TOOLS:
-                continue
-            instance = subcls()
-            for tool in subcls.TOOLS:
-                cls._registry[tool["name"]] = instance
-                cls._all_tools.append(tool)
+        with _registration_lock:
+            if cls._registered:  # Double-check after acquiring lock
+                return
+            cls._registered = True
+            for subcls in cls.__subclasses__():
+                if not subcls.TOOLS:
+                    continue
+                instance = subcls()
+                for tool in subcls.TOOLS:
+                    cls._registry[tool["name"]] = instance
+                    cls._all_tools.append(tool)
 
     @classmethod
     def get_all_tools(cls) -> list[dict]:
@@ -152,7 +160,7 @@ def _lazy_tool_dispatcher(name: str, tool_input: dict) -> str:
     return handle(name, tool_input)
 
 
-def _lazy_get_workflow_state() -> dict:
+def _lazy_get_workflow_state() -> "WorkflowSession":
     from ..tools.workflow_patch import _get_state
     return _get_state()
 

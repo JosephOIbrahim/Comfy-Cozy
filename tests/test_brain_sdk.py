@@ -130,6 +130,39 @@ class TestAutoRegistration:
         assert len(BrainAgent._registry) == 0
         assert len(BrainAgent._all_tools) == 0
 
+    def test_concurrent_register_all_no_duplicates(self):
+        """_register_all() must be idempotent under concurrent first-call pressure.
+
+        Regression for the race condition where two threads both saw
+        _registered=False before the first set it to True, resulting in
+        duplicate tool registrations and a bloated _all_tools list.
+        """
+        import threading
+        BrainAgent._reset_registry()
+        errors = []
+        barrier = threading.Barrier(8)
+
+        def _register():
+            try:
+                barrier.wait()  # All threads start simultaneously
+                BrainAgent._register_all()
+            except Exception as e:
+                errors.append(e)
+
+        threads = [threading.Thread(target=_register) for _ in range(8)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert not errors
+        # Each tool name should appear exactly once in _all_tools
+        names = [t["name"] for t in BrainAgent._all_tools]
+        assert len(names) == len(set(names)), (
+            f"Duplicate tools in _all_tools after concurrent registration: "
+            f"{[n for n in names if names.count(n) > 1]}"
+        )
+
 
 class TestIntegratedConfig:
     def setup_method(self):

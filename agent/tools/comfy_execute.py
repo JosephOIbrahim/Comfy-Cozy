@@ -511,6 +511,7 @@ def _execute_with_websocket(
 
     # Fetch outputs from history
     outputs = []
+    _outputs_fetch_error: str | None = None
     try:
         with httpx.Client() as client:
             resp = client.get(f"{COMFYUI_URL}/history/{prompt_id}", timeout=10.0)
@@ -523,7 +524,8 @@ def _execute_with_websocket(
                     outputs.append({"type": "image", "filename": img.get("filename"), "subfolder": img.get("subfolder", "")})
                 for vid in node_out.get("gifs", []):
                     outputs.append({"type": "video", "filename": vid.get("filename"), "subfolder": vid.get("subfolder", "")})
-    except Exception:
+    except Exception as _oe:
+        _outputs_fetch_error = str(_oe)
         log.warning("Failed to fetch outputs from history for prompt %s", prompt_id, exc_info=True)
 
     # Build node timing summary
@@ -538,7 +540,7 @@ def _execute_with_websocket(
     # He2025: secondary tiebreaker for deterministic order on equal durations
     timing.sort(key=lambda x: (-x["duration_s"], x["node_id"]))
 
-    return {
+    result: dict = {
         "status": "complete",
         "prompt_id": prompt_id,
         "total_time_s": total_time,
@@ -548,6 +550,12 @@ def _execute_with_websocket(
         "progress_events": len(progress_log),
         "monitoring": "websocket",
     }
+    if _outputs_fetch_error:
+        result["outputs_warning"] = (
+            f"Execution completed but output filenames could not be retrieved "
+            f"from history (prompt_id={prompt_id}): {_outputs_fetch_error}"
+        )
+    return result
 
 
 # ---------------------------------------------------------------------------
