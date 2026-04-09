@@ -152,7 +152,7 @@ class TestCheckCompatibility:
 
     def test_no_models_error(self):
         from agent.tools import workflow_patch
-        workflow_patch._state["current_workflow"] = None
+        workflow_patch._get_state()["current_workflow"] = None
         result = json.loads(model_compat.handle("check_model_compatibility", {}))
         assert "error" in result
 

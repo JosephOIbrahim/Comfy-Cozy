@@ -71,13 +71,13 @@ def loaded_workflow(tmp_path):
     # Load directly into state — workflow_patch.handle() deadlocks because
     # WorkflowSession.__getitem__ re-acquires the same non-reentrant lock.
     import copy
-    workflow_patch._state["loaded_path"] = str(path)
-    workflow_patch._state["base_workflow"] = copy.deepcopy(wf)
-    workflow_patch._state["current_workflow"] = copy.deepcopy(wf)
-    workflow_patch._state["history"] = []
-    workflow_patch._state["format"] = "api"
+    workflow_patch._get_state()["loaded_path"] = str(path)
+    workflow_patch._get_state()["base_workflow"] = copy.deepcopy(wf)
+    workflow_patch._get_state()["current_workflow"] = copy.deepcopy(wf)
+    workflow_patch._get_state()["history"] = []
+    workflow_patch._get_state()["format"] = "api"
     yield wf
-    workflow_patch._state["current_workflow"] = None
+    workflow_patch._get_state()["current_workflow"] = None
 
 
 def _get_demo_instance() -> DemoAgent:

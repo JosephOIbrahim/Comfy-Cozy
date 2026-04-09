@@ -11,19 +11,19 @@ from agent.tools import handle, workflow_patch
 @pytest.fixture(autouse=True)
 def _reset_patch_state():
     """Reset workflow_patch module state between tests and disable gate."""
-    workflow_patch._state["loaded_path"] = None
-    workflow_patch._state["base_workflow"] = None
-    workflow_patch._state["current_workflow"] = None
-    workflow_patch._state["history"] = []
-    workflow_patch._state["format"] = None
+    workflow_patch._get_state()["loaded_path"] = None
+    workflow_patch._get_state()["base_workflow"] = None
+    workflow_patch._get_state()["current_workflow"] = None
+    workflow_patch._get_state()["history"] = []
+    workflow_patch._get_state()["format"] = None
     workflow_patch._set_engine(None)
     with patch("agent.config.GATE_ENABLED", False):
         yield
-    workflow_patch._state["loaded_path"] = None
-    workflow_patch._state["base_workflow"] = None
-    workflow_patch._state["current_workflow"] = None
-    workflow_patch._state["history"] = []
-    workflow_patch._state["format"] = None
+    workflow_patch._get_state()["loaded_path"] = None
+    workflow_patch._get_state()["base_workflow"] = None
+    workflow_patch._get_state()["current_workflow"] = None
+    workflow_patch._get_state()["history"] = []
+    workflow_patch._get_state()["format"] = None
     workflow_patch._set_engine(None)
 
 

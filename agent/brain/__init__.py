@@ -43,8 +43,15 @@ log = logging.getLogger(__name__)
 ALL_BRAIN_TOOLS = BrainAgent.get_all_tools()
 
 
-def handle(name: str, tool_input: dict) -> str:
-    """Dispatch a brain tool call to the right handler."""
+def handle(name: str, tool_input: dict, *, progress=None) -> str:  # noqa: ARG001
+    """Dispatch a brain tool call to the right handler.
+
+    The progress= kwarg is accepted for API compatibility with the tool
+    dispatch layer (agent/tools/__init__.py) but is not currently threaded
+    into BrainAgent.dispatch() — brain sub-tools report progress via their
+    own mechanisms. Accepting it here prevents the TypeError fallback path
+    in the outer dispatcher.
+    """
     try:
         return BrainAgent.dispatch(name, tool_input)
     except Exception as e:

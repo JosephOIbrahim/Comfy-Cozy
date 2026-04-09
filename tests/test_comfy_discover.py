@@ -418,7 +418,7 @@ class TestFindMissingNodes:
     def test_uses_loaded_workflow(self, mock_registries):
         """Falls back to loaded workflow from workflow_patch."""
         from agent.tools import workflow_patch
-        workflow_patch._state["current_workflow"] = {
+        workflow_patch._get_state()["current_workflow"] = {
             "1": {"class_type": "KSampler", "inputs": {}},
         }
 
@@ -434,12 +434,12 @@ class TestFindMissingNodes:
             assert result["status"] == "all_installed"
 
         # Clean up
-        workflow_patch._state["current_workflow"] = None
+        workflow_patch._get_state()["current_workflow"] = None
 
     def test_no_workflow(self):
         """No path and no loaded workflow."""
         from agent.tools import workflow_patch
-        workflow_patch._state["current_workflow"] = None
+        workflow_patch._get_state()["current_workflow"] = None
 
         result = json.loads(comfy_discover.handle("find_missing_nodes", {}))
         assert "error" in result

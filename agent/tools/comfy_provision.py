@@ -828,8 +828,8 @@ def _handle_reconfigure_workflow(tool_input: dict) -> str:
 
     # Get current workflow from PILOT state
     try:
-        from .workflow_patch import _state
-        workflow = _state.get("current_workflow")
+        from .workflow_patch import _get_state
+        workflow = _get_state()["current_workflow"]
         if not workflow:
             return to_json({
                 "error": "No workflow loaded. Load a workflow first.",
@@ -851,8 +851,8 @@ def _handle_reconfigure_workflow(tool_input: dict) -> str:
     # Apply auto-fix substitutions
     fixes_applied = []
     if auto_fix and missing_refs:
-        from .workflow_patch import _state as patch_state
-        wf = patch_state["current_workflow"]
+        from .workflow_patch import _get_state as _get_patch_state
+        wf = _get_patch_state()["current_workflow"]
         for ref in missing_refs:
             if ref["best_match"]:
                 node = wf.get(ref["node_id"])

@@ -14,9 +14,9 @@ from agent.tools import workflow_patch, workflow_parse
 @pytest.fixture(autouse=True)
 def reset_workflow_state():
     """Reset workflow_patch state between tests."""
-    original = copy.deepcopy(dict(workflow_patch._state))
+    original = copy.deepcopy(dict(workflow_patch._get_state()))
     yield
-    workflow_patch._state.update(original)
+    workflow_patch._get_state().update(original)
 
 
 # -- Sample workflows ---------------------------------------------------------
@@ -74,16 +74,16 @@ class TestLoadWorkflowFromData:
     def test_api_format(self):
         err = workflow_patch.load_workflow_from_data(SAMPLE_API_WORKFLOW)
         assert err is None
-        assert workflow_patch._state["format"] == "api"
-        assert workflow_patch._state["loaded_path"] == "<sidebar>"
-        assert workflow_patch._state["current_workflow"] is not None
-        assert len(workflow_patch._state["current_workflow"]) == 5
+        assert workflow_patch._get_state()["format"] == "api"
+        assert workflow_patch._get_state()["loaded_path"] == "<sidebar>"
+        assert workflow_patch._get_state()["current_workflow"] is not None
+        assert len(workflow_patch._get_state()["current_workflow"]) == 5
 
     def test_ui_with_api_format(self):
         err = workflow_patch.load_workflow_from_data(SAMPLE_UI_WITH_API)
         assert err is None
-        assert workflow_patch._state["format"] == "ui_with_api"
-        assert len(workflow_patch._state["current_workflow"]) == 5
+        assert workflow_patch._get_state()["format"] == "ui_with_api"
+        assert len(workflow_patch._get_state()["current_workflow"]) == 5
 
     def test_ui_only_returns_error(self):
         err = workflow_patch.load_workflow_from_data(SAMPLE_UI_ONLY)
@@ -98,9 +98,9 @@ class TestLoadWorkflowFromData:
     def test_history_cleared_on_load(self):
         # Load once, make a change, load again — history should be empty
         workflow_patch.load_workflow_from_data(SAMPLE_API_WORKFLOW)
-        workflow_patch._state["history"].append({"fake": "entry"})
+        workflow_patch._get_state()["history"].append({"fake": "entry"})
         workflow_patch.load_workflow_from_data(SAMPLE_API_WORKFLOW)
-        assert workflow_patch._state["history"] == []
+        assert workflow_patch._get_state()["history"] == []
 
 
 # -- State populated correctly ------------------------------------------------
@@ -175,10 +175,10 @@ class TestWorkflowChangeDetection:
         _inject_workflow(conv, SAMPLE_API_WORKFLOW)
 
         # Simulate a patch (add to undo history)
-        workflow_patch._state["history"].append({"fake": "undo_entry"})
+        workflow_patch._get_state()["history"].append({"fake": "undo_entry"})
 
         # Inject same workflow again — should skip reload
         _inject_workflow(conv, SAMPLE_API_WORKFLOW)
 
         # History should still have our entry (wasn't cleared by reload)
-        assert len(workflow_patch._state["history"]) >= 1
+        assert len(workflow_patch._get_state()["history"]) >= 1

@@ -229,8 +229,8 @@ def _has_controlnet(wf: dict) -> bool:
 
 def _get_workflow() -> dict | None:
     """Get the currently loaded workflow from workflow_patch state."""
-    from ..tools.workflow_patch import _state
-    return _state.get("current_workflow")
+    from ..tools.workflow_patch import _get_state
+    return _get_state()["current_workflow"]
 
 
 def _detect_gpu() -> dict:

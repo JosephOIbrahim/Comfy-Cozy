@@ -27,17 +27,17 @@ SAMPLE_WORKFLOW = {
 @pytest.fixture(autouse=True)
 def reset_workflow_state():
     """Reset workflow_patch state between tests."""
-    original = copy.deepcopy(workflow_patch._state)
+    original = copy.deepcopy(workflow_patch._get_state())
     yield
-    workflow_patch._state.update(original)
+    workflow_patch._get_state().update(original)
 
 
 def _load_sample():
-    workflow_patch._state["loaded_path"] = "test.json"
-    workflow_patch._state["base_workflow"] = copy.deepcopy(SAMPLE_WORKFLOW)
-    workflow_patch._state["current_workflow"] = copy.deepcopy(SAMPLE_WORKFLOW)
-    workflow_patch._state["history"] = []
-    workflow_patch._state["format"] = "api"
+    workflow_patch._get_state()["loaded_path"] = "test.json"
+    workflow_patch._get_state()["base_workflow"] = copy.deepcopy(SAMPLE_WORKFLOW)
+    workflow_patch._get_state()["current_workflow"] = copy.deepcopy(SAMPLE_WORKFLOW)
+    workflow_patch._get_state()["history"] = []
+    workflow_patch._get_state()["format"] = "api"
 
 
 class TestProfileWorkflow:
@@ -136,7 +136,7 @@ class TestApplyOptimization:
         assert result["applied"] == "vae_tiling"
         assert len(result["nodes_swapped"]) == 1
         # Verify the node was swapped
-        wf = workflow_patch._state["current_workflow"]
+        wf = workflow_patch._get_state()["current_workflow"]
         assert wf["5"]["class_type"] == "VAEDecodeTiled"
 
     def test_apply_batch_size(self):
@@ -149,7 +149,7 @@ class TestApplyOptimization:
                 "optimization_id": "batch_size",
             }))
         assert result["applied"] == "batch_size"
-        wf = workflow_patch._state["current_workflow"]
+        wf = workflow_patch._get_state()["current_workflow"]
         assert wf["4"]["inputs"]["batch_size"] == 2  # SDXL detected
 
     def test_apply_step_optimization(self):
@@ -159,7 +159,7 @@ class TestApplyOptimization:
             "params": {"steps": 15},
         }))
         assert result["applied"] == "step_optimization"
-        wf = workflow_patch._state["current_workflow"]
+        wf = workflow_patch._get_state()["current_workflow"]
         assert wf["3"]["inputs"]["steps"] == 15
 
     def test_apply_sampler_efficiency(self):
@@ -169,7 +169,7 @@ class TestApplyOptimization:
             "params": {"sampler": "dpmpp_2m", "scheduler": "karras"},
         }))
         assert result["applied"] == "sampler_efficiency"
-        wf = workflow_patch._state["current_workflow"]
+        wf = workflow_patch._get_state()["current_workflow"]
         assert wf["3"]["inputs"]["sampler_name"] == "dpmpp_2m"
         assert wf["3"]["inputs"]["scheduler"] == "karras"
 

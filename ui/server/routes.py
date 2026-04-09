@@ -960,8 +960,8 @@ def _extract_nodes_touched(tool_name: str, tool_input: dict, conv: ConversationS
     # Get current workflow nodes from PILOT state (best-effort)
     wf_nodes = {}
     try:
-        from agent.tools.workflow_patch import _state
-        wf = _state.get("working")
+        from agent.tools.workflow_patch import _get_state
+        wf = _get_state()["current_workflow"]
         if isinstance(wf, dict):
             wf_nodes = wf
     except Exception:

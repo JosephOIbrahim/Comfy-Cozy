@@ -11,6 +11,7 @@ Supported providers: anthropic, openai, gemini, ollama.
 from __future__ import annotations
 
 import logging
+import threading
 from typing import TYPE_CHECKING
 
 from ._base import LLMProvider
@@ -56,10 +57,14 @@ DEFAULT_MODELS: dict[str, str] = {
 }
 
 _provider_cache: dict[str, LLMProvider] = {}
+_provider_lock = threading.Lock()
 
 
 def get_provider(name: str | None = None) -> LLMProvider:
     """Get an LLM provider instance (cached per name).
+
+    Thread-safe: double-checked locking prevents duplicate instantiation
+    when two threads call get_provider() simultaneously on first access.
 
     Args:
         name: Provider name. If None, reads LLM_PROVIDER env var (default: "anthropic").
@@ -80,10 +85,13 @@ def get_provider(name: str | None = None) -> LLMProvider:
     if name in _provider_cache:
         return _provider_cache[name]
 
-    provider = _create_provider(name)
-    _provider_cache[name] = provider
-    log.info("LLM provider initialized: %s", name)
-    return provider
+    with _provider_lock:
+        if name in _provider_cache:  # Re-check after acquiring lock
+            return _provider_cache[name]
+        provider = _create_provider(name)
+        _provider_cache[name] = provider
+        log.info("LLM provider initialized: %s", name)
+        return provider
 
 
 def _create_provider(name: str) -> LLMProvider:

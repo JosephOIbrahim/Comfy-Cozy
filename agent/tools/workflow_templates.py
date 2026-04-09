@@ -290,12 +290,13 @@ def _handle_get_template(tool_input: dict) -> str:
             fmt = "ui_only"
 
     # Load into workflow_patch state so the agent can edit it
-    from .workflow_patch import _state
-    _state["loaded_path"] = str(path)
-    _state["base_workflow"] = copy.deepcopy(workflow_data)
-    _state["current_workflow"] = copy.deepcopy(workflow_data)
-    _state["history"] = []
-    _state["format"] = fmt.split()[0]  # "api" or "ui_only"
+    from .workflow_patch import _get_state
+    _s = _get_state()
+    _s["loaded_path"] = str(path)
+    _s["base_workflow"] = copy.deepcopy(workflow_data)
+    _s["current_workflow"] = copy.deepcopy(workflow_data)
+    _s["history"] = []
+    _s["format"] = fmt.split()[0]  # "api" or "ui_only"
 
     info = _TEMPLATE_INFO.get(template_name, {})
 

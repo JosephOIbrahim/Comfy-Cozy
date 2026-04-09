@@ -129,7 +129,7 @@ class TestExecuteWorkflow:
         """No file path and no loaded workflow."""
         # Clear any loaded workflow state
         from agent.tools import workflow_patch
-        workflow_patch._state["current_workflow"] = None
+        workflow_patch._get_state()["current_workflow"] = None
 
         result = json.loads(comfy_execute.handle("execute_workflow", {}))
         assert "error" in result
@@ -231,7 +231,7 @@ class TestExecuteWithProgress:
 
     def test_no_workflow_error(self):
         from agent.tools import workflow_patch
-        workflow_patch._state["current_workflow"] = None
+        workflow_patch._get_state()["current_workflow"] = None
         result = json.loads(comfy_execute.handle("execute_with_progress", {}))
         assert "error" in result
 

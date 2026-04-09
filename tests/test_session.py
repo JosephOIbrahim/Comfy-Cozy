@@ -19,11 +19,11 @@ def use_tmp_sessions(tmp_path):
 @pytest.fixture(autouse=True)
 def reset_workflow_state():
     """Reset workflow_patch state between tests."""
-    workflow_patch._state["loaded_path"] = None
-    workflow_patch._state["base_workflow"] = None
-    workflow_patch._state["current_workflow"] = None
-    workflow_patch._state["history"] = []
-    workflow_patch._state["format"] = None
+    workflow_patch._get_state()["loaded_path"] = None
+    workflow_patch._get_state()["base_workflow"] = None
+    workflow_patch._get_state()["current_workflow"] = None
+    workflow_patch._get_state()["history"] = []
+    workflow_patch._get_state()["format"] = None
     yield
 
 
@@ -107,10 +107,10 @@ class TestLoadSession:
         session_tools.handle("save_session", {"name": "restore-test"})
 
         # Clear state
-        workflow_patch._state["loaded_path"] = None
-        workflow_patch._state["base_workflow"] = None
-        workflow_patch._state["current_workflow"] = None
-        workflow_patch._state["history"] = []
+        workflow_patch._get_state()["loaded_path"] = None
+        workflow_patch._get_state()["base_workflow"] = None
+        workflow_patch._get_state()["current_workflow"] = None
+        workflow_patch._get_state()["history"] = []
 
         # Load
         result = json.loads(session_tools.handle("load_session", {"name": "restore-test"}))
@@ -137,14 +137,14 @@ class TestLoadSession:
         session_tools.handle("save_session", {"name": "round-trip"})
 
         # Clear and restore
-        workflow_patch._state["base_workflow"] = None
-        workflow_patch._state["current_workflow"] = None
+        workflow_patch._get_state()["base_workflow"] = None
+        workflow_patch._get_state()["current_workflow"] = None
         session_tools.handle("load_session", {"name": "round-trip"})
 
         # Base should be original
-        assert workflow_patch._state["base_workflow"]["1"]["inputs"]["seed"] == 42
+        assert workflow_patch._get_state()["base_workflow"]["1"]["inputs"]["seed"] == 42
         # Current should have the patch
-        assert workflow_patch._state["current_workflow"]["1"]["inputs"]["seed"] == 100
+        assert workflow_patch._get_state()["current_workflow"]["1"]["inputs"]["seed"] == 100
 
 
 class TestListSessions:

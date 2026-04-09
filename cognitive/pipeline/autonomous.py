@@ -17,6 +17,7 @@ from __future__ import annotations
 import copy
 import json
 import logging
+import threading
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
@@ -202,6 +203,7 @@ class AutonomousPipeline:
         self._cwm = cwm or CognitiveWorldModel()
         self._arbiter = arbiter or SimulationArbiter()
         self._cf_gen = counterfactual_gen or CounterfactualGenerator()
+        self._run_lock = threading.Lock()  # Serialise concurrent run() calls
 
     def run(self, config: PipelineConfig) -> PipelineResult:
         """Execute the full autonomous pipeline.
@@ -218,6 +220,11 @@ class AutonomousPipeline:
         Returns:
             PipelineResult with full execution details.
         """
+        with self._run_lock:
+            return self._run_locked(config)
+
+    def _run_locked(self, config: PipelineConfig) -> PipelineResult:
+        """Internal run body — called under self._run_lock."""
         result = PipelineResult(intent=config.intent)
 
         # Stage 1: INTENT

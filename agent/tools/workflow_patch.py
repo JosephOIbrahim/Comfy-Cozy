@@ -11,7 +11,7 @@ in the session alongside the workflow data, enabling multi-session isolation.
 CognitiveGraphEngine integration: When the cognitive module is available,
 all mutations are tracked as LIVRPS delta layers for non-destructive
 composition. The engine runs alongside the existing state mechanism —
-_state["current_workflow"] is always kept in sync.
+_get_state()["current_workflow"] is always kept in sync.
 """
 
 import copy
@@ -34,8 +34,13 @@ log = logging.getLogger(__name__)
 # Module-level state (one active workflow at a time)
 # ---------------------------------------------------------------------------
 
-_state = get_session("default")
-_state_lock = _state._lock
+# _get_state() is called per-operation instead of binding at import time.
+# This prevents stale-reference bugs when the session registry is cleared
+# (e.g., in tests or after a server restart) — get_session("default") always
+# returns the currently-live WorkflowSession for the default slot.
+def _get_state():
+    """Return the live 'default' WorkflowSession. Never cache the result."""
+    return get_session("default")
 
 _MAX_HISTORY = 50
 
@@ -46,28 +51,28 @@ def _create_engine(workflow_data: dict) -> CognitiveGraphEngine:
 
 
 def _get_engine():
-    """Get the engine from session state. Thread-safe via _state_lock."""
-    return _state["_engine"]
+    """Get the engine from session state. Thread-safe via _get_state()._lock."""
+    return _get_state()["_engine"]
 
 
 def _set_engine(engine):
-    """Set the engine in session state. Thread-safe via _state_lock."""
-    _state["_engine"] = engine
+    """Set the engine in session state. Thread-safe via _get_state()._lock."""
+    _get_state()["_engine"] = engine
 
 
 def _sync_state_from_engine():
-    """Update _state['current_workflow'] from engine's resolved graph.
+    """Update _get_state()['current_workflow'] from engine's resolved graph.
 
-    MUST be called inside `with _state_lock:`.
+    MUST be called inside `with _get_state()._lock:`.
     """
     engine = _get_engine()
     if engine is not None:
-        _state["current_workflow"] = engine.to_api_json()
+        _get_state()["current_workflow"] = engine.to_api_json()
 
 
 def _ensure_loaded() -> str | None:
     """Return error message if no workflow is loaded, else None."""
-    if _state["current_workflow"] is None:
+    if _get_state()["current_workflow"] is None:
         return "No workflow is open. Load a workflow first with load_workflow, then make changes."
     return None
 
@@ -93,7 +98,7 @@ def _load_workflow(path_str: str) -> str | None:
                 k: v for k, v in prompt_data.items()
                 if isinstance(v, dict) and "class_type" in v
             }
-            _state["format"] = "ui_with_api"
+            _get_state()["format"] = "ui_with_api"
         else:
             return (
                 "This workflow was saved without editable data. "
@@ -104,15 +109,15 @@ def _load_workflow(path_str: str) -> str | None:
             k: v for k, v in data.items()
             if isinstance(v, dict) and "class_type" in v
         }
-        _state["format"] = "api"
+        _get_state()["format"] = "api"
 
     if not api_nodes:
         return "No nodes found in workflow."
 
-    _state["loaded_path"] = path_str
-    _state["base_workflow"] = copy.deepcopy(api_nodes)
-    _state["current_workflow"] = copy.deepcopy(api_nodes)
-    _state["history"] = []
+    _get_state()["loaded_path"] = path_str
+    _get_state()["base_workflow"] = copy.deepcopy(api_nodes)
+    _get_state()["current_workflow"] = copy.deepcopy(api_nodes)
+    _get_state()["history"] = []
 
     # Create engine from the loaded workflow (session-scoped)
     _set_engine(_create_engine(api_nodes))
@@ -389,7 +394,7 @@ def _handle_apply_patch(tool_input: dict) -> str:
         err = _load_workflow(path_str)
         if err:
             return to_json({"error": err})
-    elif _state["current_workflow"] is None:
+    elif _get_state()["current_workflow"] is None:
         return to_json({
             "error": "No workflow loaded. Provide a 'path' to load one first."
         })
@@ -398,12 +403,12 @@ def _handle_apply_patch(tool_input: dict) -> str:
     before_values = {}
     for patch in patches:
         p = patch.get("path", "")
-        before_values[p] = _get_value_at_path(_state["current_workflow"], p)
+        before_values[p] = _get_value_at_path(_get_state()["current_workflow"], p)
 
     # Save current state for undo (history list kept for backward compat)
-    _state["history"].append(copy.deepcopy(_state["current_workflow"]))
-    if len(_state["history"]) > _MAX_HISTORY:
-        _state["history"] = _state["history"][-_MAX_HISTORY:]
+    _get_state()["history"].append(copy.deepcopy(_get_state()["current_workflow"]))
+    if len(_get_state()["history"]) > _MAX_HISTORY:
+        _get_state()["history"] = _get_state()["history"][-_MAX_HISTORY:]
 
     # Try engine-based mutation first
     engine = _get_engine()
@@ -426,14 +431,14 @@ def _handle_apply_patch(tool_input: dict) -> str:
     if not engine_used:
         try:
             jp = jsonpatch.JsonPatch(patches)
-            _state["current_workflow"] = jp.apply(_state["current_workflow"])
+            _get_state()["current_workflow"] = jp.apply(_get_state()["current_workflow"])
         except Exception as e:
-            _state["current_workflow"] = _state["history"].pop()
+            _get_state()["current_workflow"] = _get_state()["history"].pop()
             return to_json({"error": f"Patch failed: {e}"})
 
         # Rebuild engine from current state to keep it in sync
         if engine is not None:
-            _set_engine(_create_engine(_state["current_workflow"]))
+            _set_engine(_create_engine(_get_state()["current_workflow"]))
 
     # Build change report
     changes = []
@@ -451,7 +456,7 @@ def _handle_apply_patch(tool_input: dict) -> str:
         "changes": changes,
         "undo_available": True,
         "total_changes_from_base": len(
-            jsonpatch.make_patch(_state["base_workflow"], _state["current_workflow"]).patch
+            jsonpatch.make_patch(_get_state()["base_workflow"], _get_state()["current_workflow"]).patch
         ),
     })
 
@@ -466,7 +471,7 @@ def _handle_preview_patch(tool_input: dict) -> str:
     # Preview without modifying state
     try:
         jp = jsonpatch.JsonPatch(patches)
-        jp.apply(copy.deepcopy(_state["current_workflow"]))
+        jp.apply(copy.deepcopy(_get_state()["current_workflow"]))
     except Exception as e:
         return to_json({"error": f"Patch would fail: {e}"})
 
@@ -476,7 +481,7 @@ def _handle_preview_patch(tool_input: dict) -> str:
         preview.append({
             "path": p,
             "op": patch.get("op"),
-            "current_value": _get_value_at_path(_state["current_workflow"], p),
+            "current_value": _get_value_at_path(_get_state()["current_workflow"], p),
             "new_value": patch.get("value"),
         })
 
@@ -488,11 +493,11 @@ def _handle_undo() -> str:
     if err:
         return to_json({"error": err})
 
-    if not _state["history"]:
+    if not _get_state()["history"]:
         return to_json({"error": "Nothing to undo."})
 
     # Pop from history (backward compat)
-    _state["current_workflow"] = _state["history"].pop()
+    _get_state()["current_workflow"] = _get_state()["history"].pop()
 
     # Pop from engine delta stack too
     engine = _get_engine()
@@ -502,15 +507,15 @@ def _handle_undo() -> str:
             _sync_state_from_engine()
         else:
             # Engine stack empty but history had entries — rebuild engine
-            _set_engine(_create_engine(_state["current_workflow"]))
+            _set_engine(_create_engine(_get_state()["current_workflow"]))
 
     remaining = len(
-        jsonpatch.make_patch(_state["base_workflow"], _state["current_workflow"]).patch
+        jsonpatch.make_patch(_get_state()["base_workflow"], _get_state()["current_workflow"]).patch
     )
     return to_json({
         "undone": True,
         "remaining_changes_from_base": remaining,
-        "undo_steps_remaining": len(_state["history"]),
+        "undo_steps_remaining": len(_get_state()["history"]),
     })
 
 
@@ -519,7 +524,7 @@ def _handle_get_diff() -> str:
     if err:
         return to_json({"error": err})
 
-    diff = jsonpatch.make_patch(_state["base_workflow"], _state["current_workflow"]).patch
+    diff = jsonpatch.make_patch(_get_state()["base_workflow"], _get_state()["current_workflow"]).patch
 
     if not diff:
         return to_json({"changes": 0, "message": "No changes from original."})
@@ -527,7 +532,7 @@ def _handle_get_diff() -> str:
     return to_json({
         "changes": len(diff),
         "diff": diff,
-        "loaded_from": _state["loaded_path"],
+        "loaded_from": _get_state()["loaded_path"],
     })
 
 
@@ -536,7 +541,7 @@ def _handle_save(tool_input: dict) -> str:
     if err:
         return to_json({"error": err})
 
-    output_path = tool_input.get("output_path") or _state["loaded_path"]
+    output_path = tool_input.get("output_path") or _get_state()["loaded_path"]
     if not output_path:
         return to_json({"error": "No output path specified."})
 
@@ -546,7 +551,7 @@ def _handle_save(tool_input: dict) -> str:
         return to_json({"error": path_err})
 
     try:
-        content = to_json(_state["current_workflow"], indent=2)
+        content = to_json(_get_state()["current_workflow"], indent=2)
         dest = Path(output_path)
         fd = tempfile.NamedTemporaryFile(
             mode="w",
@@ -569,7 +574,7 @@ def _handle_save(tool_input: dict) -> str:
         return to_json({"error": f"Failed to save: {e}"})
 
     changes = len(
-        jsonpatch.make_patch(_state["base_workflow"], _state["current_workflow"]).patch
+        jsonpatch.make_patch(_get_state()["base_workflow"], _get_state()["current_workflow"]).patch
     )
     return to_json({
         "saved": output_path,
@@ -582,16 +587,16 @@ def _handle_reset() -> str:
     if err:
         return to_json({"error": err})
 
-    _state["current_workflow"] = copy.deepcopy(_state["base_workflow"])
-    _state["history"] = []
+    _get_state()["current_workflow"] = copy.deepcopy(_get_state()["base_workflow"])
+    _get_state()["history"] = []
 
     # Reset engine from base workflow
     if _get_engine() is not None:
-        _set_engine(_create_engine(_state["base_workflow"]))
+        _set_engine(_create_engine(_get_state()["base_workflow"]))
 
     return to_json({
         "reset": True,
-        "loaded_from": _state["loaded_path"],
+        "loaded_from": _get_state()["loaded_path"],
     })
 
 
@@ -601,7 +606,7 @@ def _handle_reset() -> str:
 
 def _next_node_id() -> str:
     """Find the next available numeric node ID."""
-    workflow = _state["current_workflow"]
+    workflow = _get_state()["current_workflow"]
     if not workflow:
         return "1"
     existing = set()
@@ -623,9 +628,9 @@ def _handle_add_node(tool_input: dict) -> str:
     inputs = tool_input.get("inputs", {})
 
     # Save state for undo
-    _state["history"].append(copy.deepcopy(_state["current_workflow"]))
-    if len(_state["history"]) > _MAX_HISTORY:
-        _state["history"] = _state["history"][-_MAX_HISTORY:]
+    _get_state()["history"].append(copy.deepcopy(_get_state()["current_workflow"]))
+    if len(_get_state()["history"]) > _MAX_HISTORY:
+        _get_state()["history"] = _get_state()["history"][-_MAX_HISTORY:]
 
     node_id = _next_node_id()
 
@@ -640,7 +645,7 @@ def _handle_add_node(tool_input: dict) -> str:
         )
         _sync_state_from_engine()
     else:
-        _state["current_workflow"][node_id] = {
+        _get_state()["current_workflow"][node_id] = {
             "class_type": class_type,
             "inputs": inputs,
         }
@@ -650,7 +655,7 @@ def _handle_add_node(tool_input: dict) -> str:
         "node_id": node_id,
         "class_type": class_type,
         "inputs": inputs,
-        "total_nodes": len(_state["current_workflow"]),
+        "total_nodes": len(_get_state()["current_workflow"]),
     })
 
 
@@ -664,7 +669,7 @@ def _handle_connect_nodes(tool_input: dict) -> str:
     to_node = tool_input["to_node"]
     to_input = tool_input["to_input"]
 
-    workflow = _state["current_workflow"]
+    workflow = _get_state()["current_workflow"]
 
     # Validate nodes exist
     if from_node not in workflow:
@@ -673,9 +678,9 @@ def _handle_connect_nodes(tool_input: dict) -> str:
         return to_json({"error": f"Target node '{to_node}' not found in workflow."})
 
     # Save state for undo
-    _state["history"].append(copy.deepcopy(workflow))
-    if len(_state["history"]) > _MAX_HISTORY:
-        _state["history"] = _state["history"][-_MAX_HISTORY:]
+    _get_state()["history"].append(copy.deepcopy(workflow))
+    if len(_get_state()["history"]) > _MAX_HISTORY:
+        _get_state()["history"] = _get_state()["history"][-_MAX_HISTORY:]
 
     # Connection value in ComfyUI format
     connection = [from_node, from_output]
@@ -733,15 +738,15 @@ def _handle_set_input(tool_input: dict) -> str:
     input_name = tool_input["input_name"]
     value = tool_input["value"]
 
-    workflow = _state["current_workflow"]
+    workflow = _get_state()["current_workflow"]
 
     if node_id not in workflow:
         return to_json({"error": f"Node '{node_id}' not found in workflow."})
 
     # Save state for undo
-    _state["history"].append(copy.deepcopy(workflow))
-    if len(_state["history"]) > _MAX_HISTORY:
-        _state["history"] = _state["history"][-_MAX_HISTORY:]
+    _get_state()["history"].append(copy.deepcopy(workflow))
+    if len(_get_state()["history"]) > _MAX_HISTORY:
+        _get_state()["history"] = _get_state()["history"][-_MAX_HISTORY:]
 
     engine = _get_engine()
 
@@ -793,7 +798,7 @@ def _handle_set_input(tool_input: dict) -> str:
 
 def handle(name: str, tool_input: dict) -> str:
     """Execute a workflow_patch tool call."""
-    with _state_lock:
+    with _get_state()._lock:
         try:
             if name == "apply_workflow_patch":
                 return _handle_apply_patch(tool_input)
@@ -838,12 +843,12 @@ def load_workflow_from_data(data: dict, source: str = "<sidebar>") -> str | None
     if not nodes:
         return "No nodes found in workflow data."
 
-    with _state_lock:
-        _state["loaded_path"] = source
-        _state["format"] = fmt
-        _state["base_workflow"] = copy.deepcopy(nodes)
-        _state["current_workflow"] = copy.deepcopy(nodes)
-        _state["history"] = []
+    with _get_state()._lock:
+        _get_state()["loaded_path"] = source
+        _get_state()["format"] = fmt
+        _get_state()["base_workflow"] = copy.deepcopy(nodes)
+        _get_state()["current_workflow"] = copy.deepcopy(nodes)
+        _get_state()["history"] = []
 
         # Create engine from loaded workflow (session-scoped)
         _set_engine(_create_engine(nodes))
@@ -853,7 +858,7 @@ def load_workflow_from_data(data: dict, source: str = "<sidebar>") -> str | None
 
 def get_current_workflow() -> dict | None:
     """Get the current workflow dict (used by comfy_execute)."""
-    return _state["current_workflow"]
+    return _get_state()["current_workflow"]
 
 
 def get_engine():
@@ -862,4 +867,4 @@ def get_engine():
     Returns the session-scoped engine. Each WorkflowSession has
     its own engine, preventing multi-session collision.
     """
-    return _state["_engine"]
+    return _get_state()["_engine"]

@@ -1,6 +1,8 @@
 """Tests for agent/tools/node_replacement.py — Node Replacement API integration."""
 
+import copy
 import json
+from contextlib import contextmanager
 from unittest.mock import patch
 
 import pytest
@@ -12,6 +14,19 @@ from agent.tools.node_replacement import (
     _invalidate_cache,
     _build_migration_patches,
 )
+from agent.tools.workflow_patch import _get_state
+
+
+@contextmanager
+def _set_workflow(wf):
+    """Inject workflow into the default session for the duration of the block."""
+    s = _get_state()
+    prev = s["current_workflow"]
+    s["current_workflow"] = copy.deepcopy(wf) if wf is not None else None
+    try:
+        yield
+    finally:
+        s["current_workflow"] = prev
 
 
 @pytest.fixture(autouse=True)
@@ -165,20 +180,15 @@ class TestCheckWorkflowDeprecations:
     @patch("agent.tools.comfy_api._get")
     def test_finds_deprecated_nodes(self, mock_get):
         mock_get.return_value = SAMPLE_REPLACEMENTS
-        with patch("agent.tools.node_replacement._state", create=True):
-            with patch.object(
-                __import__("agent.tools.workflow_patch", fromlist=["_state"]),
-                "_state",
-                {"working": SAMPLE_WORKFLOW},
-            ):
-                result = json.loads(handle("check_workflow_deprecations", {}))
+        with _set_workflow(SAMPLE_WORKFLOW):
+            result = json.loads(handle("check_workflow_deprecations", {}))
         assert result["count"] == 1
         assert result["deprecated_nodes"][0]["class_type"] == "MyOldSampler"
         assert result["deprecated_nodes"][0]["node_id"] == "1"
 
     @patch("agent.tools.comfy_api._get")
     def test_no_workflow_loaded(self, mock_get):
-        with patch("agent.tools.workflow_patch._state", {"working": None}):
+        with _set_workflow(None):
             result = json.loads(handle("check_workflow_deprecations", {}))
         assert "error" in result
 
@@ -186,35 +196,35 @@ class TestCheckWorkflowDeprecations:
     def test_clean_workflow(self, mock_get):
         mock_get.return_value = SAMPLE_REPLACEMENTS
         clean_wf = {"1": {"class_type": "KSampler", "inputs": {}}}
-        with patch("agent.tools.workflow_patch._state", {"working": clean_wf}):
+        with _set_workflow(clean_wf):
             result = json.loads(handle("check_workflow_deprecations", {}))
         assert result["count"] == 0
 
     @patch("agent.tools.comfy_api._get")
     def test_empty_replacement_registry(self, mock_get):
         mock_get.return_value = {}
-        with patch("agent.tools.workflow_patch._state", {"working": SAMPLE_WORKFLOW}):
+        with _set_workflow(SAMPLE_WORKFLOW):
             result = json.loads(handle("check_workflow_deprecations", {}))
         assert result["count"] == 0
 
     @patch("agent.tools.comfy_api._get")
     def test_auto_migratable_flag(self, mock_get):
         mock_get.return_value = SAMPLE_REPLACEMENTS
-        with patch("agent.tools.workflow_patch._state", {"working": SAMPLE_WORKFLOW}):
+        with _set_workflow(SAMPLE_WORKFLOW):
             result = json.loads(handle("check_workflow_deprecations", {}))
         assert result["deprecated_nodes"][0]["auto_migratable"] is True
 
     @patch("agent.tools.comfy_api._get")
     def test_total_workflow_nodes_reported(self, mock_get):
         mock_get.return_value = SAMPLE_REPLACEMENTS
-        with patch("agent.tools.workflow_patch._state", {"working": SAMPLE_WORKFLOW}):
+        with _set_workflow(SAMPLE_WORKFLOW):
             result = json.loads(handle("check_workflow_deprecations", {}))
         assert result["total_workflow_nodes"] == 3
 
     @patch("agent.tools.comfy_api._get")
     def test_action_message_when_deprecated(self, mock_get):
         mock_get.return_value = SAMPLE_REPLACEMENTS
-        with patch("agent.tools.workflow_patch._state", {"working": SAMPLE_WORKFLOW}):
+        with _set_workflow(SAMPLE_WORKFLOW):
             result = json.loads(handle("check_workflow_deprecations", {}))
         assert "migrate_deprecated_nodes" in result["action"]
 
@@ -222,7 +232,7 @@ class TestCheckWorkflowDeprecations:
     def test_action_message_when_clean(self, mock_get):
         mock_get.return_value = SAMPLE_REPLACEMENTS
         clean_wf = {"1": {"class_type": "KSampler", "inputs": {}}}
-        with patch("agent.tools.workflow_patch._state", {"working": clean_wf}):
+        with _set_workflow(clean_wf):
             result = json.loads(handle("check_workflow_deprecations", {}))
         assert "clean" in result["action"].lower()
 
@@ -231,7 +241,7 @@ class TestMigrateDeprecatedNodes:
     @patch("agent.tools.comfy_api._get")
     def test_dry_run_previews_changes(self, mock_get):
         mock_get.return_value = SAMPLE_REPLACEMENTS
-        with patch("agent.tools.workflow_patch._state", {"working": SAMPLE_WORKFLOW}):
+        with _set_workflow(SAMPLE_WORKFLOW):
             result = json.loads(handle("migrate_deprecated_nodes", {"dry_run": True}))
         assert result["dry_run"] is True
         assert len(result["migrations"]) == 1
@@ -241,14 +251,14 @@ class TestMigrateDeprecatedNodes:
     @patch("agent.tools.comfy_api._get")
     def test_default_is_dry_run(self, mock_get):
         mock_get.return_value = SAMPLE_REPLACEMENTS
-        with patch("agent.tools.workflow_patch._state", {"working": SAMPLE_WORKFLOW}):
+        with _set_workflow(SAMPLE_WORKFLOW):
             result = json.loads(handle("migrate_deprecated_nodes", {}))
         assert result["dry_run"] is True
 
     @patch("agent.tools.comfy_api._get")
     def test_apply_migration(self, mock_get):
         mock_get.return_value = SAMPLE_REPLACEMENTS
-        with patch("agent.tools.workflow_patch._state", {"working": SAMPLE_WORKFLOW}):
+        with _set_workflow(SAMPLE_WORKFLOW):
             with patch("agent.tools.workflow_patch.handle") as mock_patch:
                 mock_patch.return_value = json.dumps({"success": True, "changes": 2})
                 result = json.loads(handle("migrate_deprecated_nodes", {"dry_run": False}))
@@ -258,7 +268,7 @@ class TestMigrateDeprecatedNodes:
     @patch("agent.tools.comfy_api._get")
     def test_apply_migration_error(self, mock_get):
         mock_get.return_value = SAMPLE_REPLACEMENTS
-        with patch("agent.tools.workflow_patch._state", {"working": SAMPLE_WORKFLOW}):
+        with _set_workflow(SAMPLE_WORKFLOW):
             with patch("agent.tools.workflow_patch.handle") as mock_patch:
                 mock_patch.return_value = json.dumps({"error": "Patch failed"})
                 result = json.loads(handle("migrate_deprecated_nodes", {"dry_run": False}))
@@ -267,7 +277,7 @@ class TestMigrateDeprecatedNodes:
     @patch("agent.tools.comfy_api._get")
     def test_specific_node_ids(self, mock_get):
         mock_get.return_value = SAMPLE_REPLACEMENTS
-        with patch("agent.tools.workflow_patch._state", {"working": SAMPLE_WORKFLOW}):
+        with _set_workflow(SAMPLE_WORKFLOW):
             result = json.loads(handle("migrate_deprecated_nodes", {
                 "node_ids": ["1"], "dry_run": True,
             }))
@@ -282,7 +292,7 @@ class TestMigrateDeprecatedNodes:
             "4": {"class_type": "OldLoader", "inputs": {"ckpt_name": "model.safetensors"}},
         }
         mock_get.return_value = SAMPLE_REPLACEMENTS
-        with patch("agent.tools.workflow_patch._state", {"working": wf}):
+        with _set_workflow(wf):
             result = json.loads(handle("migrate_deprecated_nodes", {
                 "node_ids": ["4"], "dry_run": True,
             }))
@@ -293,27 +303,27 @@ class TestMigrateDeprecatedNodes:
     def test_no_deprecated_nodes(self, mock_get):
         mock_get.return_value = SAMPLE_REPLACEMENTS
         clean_wf = {"1": {"class_type": "KSampler", "inputs": {}}}
-        with patch("agent.tools.workflow_patch._state", {"working": clean_wf}):
+        with _set_workflow(clean_wf):
             result = json.loads(handle("migrate_deprecated_nodes", {}))
         assert result["migrated"] == 0
 
     @patch("agent.tools.comfy_api._get")
     def test_no_workflow_loaded(self, mock_get):
-        with patch("agent.tools.workflow_patch._state", {"working": None}):
+        with _set_workflow(None):
             result = json.loads(handle("migrate_deprecated_nodes", {}))
         assert "error" in result
 
     @patch("agent.tools.comfy_api._get")
     def test_no_replacement_registry(self, mock_get):
         mock_get.return_value = {}
-        with patch("agent.tools.workflow_patch._state", {"working": SAMPLE_WORKFLOW}):
+        with _set_workflow(SAMPLE_WORKFLOW):
             result = json.loads(handle("migrate_deprecated_nodes", {}))
         assert "error" in result
 
     @patch("agent.tools.comfy_api._get")
     def test_dry_run_shows_patch_count_per_migration(self, mock_get):
         mock_get.return_value = SAMPLE_REPLACEMENTS
-        with patch("agent.tools.workflow_patch._state", {"working": SAMPLE_WORKFLOW}):
+        with _set_workflow(SAMPLE_WORKFLOW):
             result = json.loads(handle("migrate_deprecated_nodes", {"dry_run": True}))
         assert "patch_count" in result["migrations"][0]
         assert result["migrations"][0]["patch_count"] > 0
@@ -321,7 +331,7 @@ class TestMigrateDeprecatedNodes:
     @patch("agent.tools.comfy_api._get")
     def test_apply_calls_patch_handle_with_correct_patches(self, mock_get):
         mock_get.return_value = SAMPLE_REPLACEMENTS
-        with patch("agent.tools.workflow_patch._state", {"working": SAMPLE_WORKFLOW}):
+        with _set_workflow(SAMPLE_WORKFLOW):
             with patch("agent.tools.workflow_patch.handle") as mock_patch:
                 mock_patch.return_value = json.dumps({"success": True})
                 handle("migrate_deprecated_nodes", {"dry_run": False})
@@ -333,7 +343,7 @@ class TestMigrateDeprecatedNodes:
     @patch("agent.tools.comfy_api._get")
     def test_successful_migration_includes_undo_note(self, mock_get):
         mock_get.return_value = SAMPLE_REPLACEMENTS
-        with patch("agent.tools.workflow_patch._state", {"working": SAMPLE_WORKFLOW}):
+        with _set_workflow(SAMPLE_WORKFLOW):
             with patch("agent.tools.workflow_patch.handle") as mock_patch:
                 mock_patch.return_value = json.dumps({"success": True})
                 result = json.loads(handle("migrate_deprecated_nodes", {"dry_run": False}))

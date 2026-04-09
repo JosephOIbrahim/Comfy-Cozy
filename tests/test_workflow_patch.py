@@ -3,6 +3,7 @@
 import json
 import pytest
 from agent.tools import workflow_patch
+from agent.workflow_session import clear_sessions
 
 
 @pytest.fixture
@@ -37,11 +38,12 @@ def sample_workflow(tmp_path):
 @pytest.fixture(autouse=True)
 def reset_state():
     """Reset module state between tests."""
-    workflow_patch._state["loaded_path"] = None
-    workflow_patch._state["base_workflow"] = None
-    workflow_patch._state["current_workflow"] = None
-    workflow_patch._state["history"] = []
-    workflow_patch._state["format"] = None
+    s = workflow_patch._get_state()
+    s["loaded_path"] = None
+    s["base_workflow"] = None
+    s["current_workflow"] = None
+    s["history"] = []
+    s["format"] = None
     yield
 
 
@@ -372,3 +374,33 @@ class TestAutogrowConnectNodes:
         wf = workflow_patch.get_current_workflow()
         assert wf["2"]["inputs"]["values"]["a"] == ["1", 0]
         assert wf["2"]["inputs"]["values"]["b"] == 7  # unchanged
+
+
+class TestStateRegistryIsolation:
+    """_get_state() must survive clear_sessions() without stale references."""
+
+    def test_get_state_returns_live_session_after_clear(self):
+        """After clear_sessions(), _get_state() returns the new live session.
+
+        This is the regression test for the H1 bug: previously _state was a
+        module-level binding set at import time. After clear_sessions(), the
+        binding pointed to the old (now-orphaned) WorkflowSession. With
+        _get_state() as a function, clear_sessions() + get_session("default")
+        creates a fresh session that _get_state() correctly returns.
+        """
+        # Write a sentinel value into the current default session
+        workflow_patch._get_state()["loaded_path"] = "/sentinel.json"
+        assert workflow_patch._get_state()["loaded_path"] == "/sentinel.json"
+
+        # clear_sessions() evicts all sessions from the registry
+        clear_sessions()
+
+        # _get_state() must now return the NEW fresh default session
+        s_after = workflow_patch._get_state()
+        assert s_after["loaded_path"] is None  # Fresh session, not the old one
+
+    def test_get_state_consistent_within_lock(self):
+        """Two consecutive _get_state() calls without clear_sessions() return the same object."""
+        s1 = workflow_patch._get_state()
+        s2 = workflow_patch._get_state()
+        assert s1 is s2

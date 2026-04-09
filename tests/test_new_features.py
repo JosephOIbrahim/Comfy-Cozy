@@ -27,9 +27,9 @@ from agent.tools import workflow_patch, workflow_templates, comfy_api, comfy_ins
 @pytest.fixture(autouse=True)
 def reset_workflow_state():
     """Reset workflow_patch state between tests."""
-    original = copy.deepcopy(workflow_patch._state)
+    original = copy.deepcopy(workflow_patch._get_state())
     yield
-    workflow_patch._state.update(original)
+    workflow_patch._get_state().update(original)
 
 
 SAMPLE_WORKFLOW = {
@@ -46,11 +46,11 @@ SAMPLE_WORKFLOW = {
 
 def _load_sample_workflow():
     """Helper: load sample workflow into workflow_patch state."""
-    workflow_patch._state["loaded_path"] = "test.json"
-    workflow_patch._state["base_workflow"] = copy.deepcopy(SAMPLE_WORKFLOW)
-    workflow_patch._state["current_workflow"] = copy.deepcopy(SAMPLE_WORKFLOW)
-    workflow_patch._state["history"] = []
-    workflow_patch._state["format"] = "api"
+    workflow_patch._get_state()["loaded_path"] = "test.json"
+    workflow_patch._get_state()["base_workflow"] = copy.deepcopy(SAMPLE_WORKFLOW)
+    workflow_patch._get_state()["current_workflow"] = copy.deepcopy(SAMPLE_WORKFLOW)
+    workflow_patch._get_state()["history"] = []
+    workflow_patch._get_state()["format"] = "api"
 
 
 # ---------------------------------------------------------------------------
@@ -254,9 +254,9 @@ class TestAddNode:
     def test_add_node_undoable(self):
         _load_sample_workflow()
         workflow_patch.handle("add_node", {"class_type": "VAEDecode"})
-        assert len(workflow_patch._state["current_workflow"]) == 5
+        assert len(workflow_patch._get_state()["current_workflow"]) == 5
         workflow_patch.handle("undo_workflow_patch", {})
-        assert len(workflow_patch._state["current_workflow"]) == 4
+        assert len(workflow_patch._get_state()["current_workflow"]) == 4
 
 
 class TestConnectNodes:
@@ -270,7 +270,7 @@ class TestConnectNodes:
         }))
         assert result["connected"] is True
         # Verify the connection was set
-        assert workflow_patch._state["current_workflow"]["2"]["inputs"]["conditioning"] == ["3", 0]
+        assert workflow_patch._get_state()["current_workflow"]["2"]["inputs"]["conditioning"] == ["3", 0]
 
     def test_connect_invalid_source(self):
         _load_sample_workflow()
@@ -285,7 +285,7 @@ class TestConnectNodes:
 
     def test_connect_undoable(self):
         _load_sample_workflow()
-        old_clip = workflow_patch._state["current_workflow"]["2"]["inputs"]["clip"]
+        old_clip = workflow_patch._get_state()["current_workflow"]["2"]["inputs"]["clip"]
         workflow_patch.handle("connect_nodes", {
             "from_node": "3",
             "from_output": 0,
@@ -293,7 +293,7 @@ class TestConnectNodes:
             "to_input": "clip",
         })
         workflow_patch.handle("undo_workflow_patch", {})
-        assert workflow_patch._state["current_workflow"]["2"]["inputs"]["clip"] == old_clip
+        assert workflow_patch._get_state()["current_workflow"]["2"]["inputs"]["clip"] == old_clip
 
 
 class TestSetInput:
@@ -307,7 +307,7 @@ class TestSetInput:
         assert result["set"] is True
         assert result["old_value"] == 42
         assert result["new_value"] == 999
-        assert workflow_patch._state["current_workflow"]["3"]["inputs"]["seed"] == 999
+        assert workflow_patch._get_state()["current_workflow"]["3"]["inputs"]["seed"] == 999
 
     def test_set_input_invalid_node(self):
         _load_sample_workflow()
@@ -326,7 +326,7 @@ class TestSetInput:
             "value": 50,
         })
         workflow_patch.handle("undo_workflow_patch", {})
-        assert workflow_patch._state["current_workflow"]["3"]["inputs"]["steps"] == 20
+        assert workflow_patch._get_state()["current_workflow"]["3"]["inputs"]["steps"] == 20
 
 
 # ---------------------------------------------------------------------------
@@ -509,8 +509,8 @@ class TestWorkflowTemplates:
         assert result["loaded"] == "txt2img_sdxl"
         assert result["node_count"] == 7
         # Should be loaded in workflow_patch state
-        assert workflow_patch._state["current_workflow"] is not None
-        assert "txt2img_sdxl" in workflow_patch._state["loaded_path"]
+        assert workflow_patch._get_state()["current_workflow"] is not None
+        assert "txt2img_sdxl" in workflow_patch._get_state()["loaded_path"]
 
     def test_load_template_not_found(self):
         result = json.loads(workflow_templates.handle("get_workflow_template", {
@@ -528,7 +528,7 @@ class TestWorkflowTemplates:
             "value": 123,
         }))
         assert result["set"] is True
-        assert workflow_patch._state["current_workflow"]["5"]["inputs"]["seed"] == 123
+        assert workflow_patch._get_state()["current_workflow"]["5"]["inputs"]["seed"] == 123
 
     def test_template_nodes_have_editable_inputs(self):
         result = json.loads(workflow_templates.handle("get_workflow_template", {

@@ -201,8 +201,8 @@ def _handle_get_replacements(tool_input: dict) -> str:
 def _handle_check_deprecations(tool_input: dict) -> str:
     """Check loaded workflow for deprecated nodes."""
     try:
-        from .workflow_patch import _state
-        workflow = _state.get("working")
+        from .workflow_patch import _get_state
+        workflow = _get_state()["current_workflow"]
     except (ImportError, AttributeError):
         workflow = None
 
@@ -252,10 +252,10 @@ def _handle_check_deprecations(tool_input: dict) -> str:
 def _handle_migrate(tool_input: dict) -> str:
     """Migrate deprecated nodes to their replacements via RFC6902 patches."""
     try:
-        from .workflow_patch import _state
+        from .workflow_patch import _get_state
         from .workflow_patch import handle as patch_handle
-        workflow = _state.get("working")
-    except (ImportError, AttributeError):
+        workflow = _get_state()["current_workflow"]
+    except (ImportError, AttributeError, KeyError):
         workflow = None
 
     if not workflow or not isinstance(workflow, dict):

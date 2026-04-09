@@ -6,7 +6,7 @@ import json
 import pytest
 
 from agent.tools import auto_wire
-from agent.tools.workflow_patch import _state, _state_lock
+from agent.tools.workflow_patch import _get_state
 
 
 # ---------------------------------------------------------------------------
@@ -88,24 +88,26 @@ _NO_LOADER_WORKFLOW = {
 
 def _load_mock_workflow(workflow: dict):
     """Inject a mock workflow into the patch state."""
-    with _state_lock:
-        _state["loaded_path"] = "<test>"
-        _state["format"] = "api"
-        _state["base_workflow"] = copy.deepcopy(workflow)
-        _state["current_workflow"] = copy.deepcopy(workflow)
-        _state["history"] = []
-        _state["_engine"] = None
+    s = _get_state()
+    with s._lock:
+        s["loaded_path"] = "<test>"
+        s["format"] = "api"
+        s["base_workflow"] = copy.deepcopy(workflow)
+        s["current_workflow"] = copy.deepcopy(workflow)
+        s["history"] = []
+        s["_engine"] = None
 
 
 def _clear_workflow():
     """Clear any loaded workflow."""
-    with _state_lock:
-        _state["loaded_path"] = None
-        _state["format"] = None
-        _state["base_workflow"] = None
-        _state["current_workflow"] = None
-        _state["history"] = []
-        _state["_engine"] = None
+    s = _get_state()
+    with s._lock:
+        s["loaded_path"] = None
+        s["format"] = None
+        s["base_workflow"] = None
+        s["current_workflow"] = None
+        s["history"] = []
+        s["_engine"] = None
 
 
 @pytest.fixture(autouse=True)

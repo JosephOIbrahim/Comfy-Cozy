@@ -153,8 +153,8 @@ def _lazy_tool_dispatcher(name: str, tool_input: dict) -> str:
 
 
 def _lazy_get_workflow_state() -> dict:
-    from ..tools.workflow_patch import _state
-    return _state
+    from ..tools.workflow_patch import _get_state
+    return _get_state()
 
 
 def _lazy_patch_handle(name: str, tool_input: dict) -> str:
