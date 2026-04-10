@@ -578,12 +578,20 @@ class OptimizerAgent(BrainAgent):
                 if not isinstance(node, dict):
                     continue
                 if node.get("class_type") == "VAEDecode":
-                    patch_handle("apply_workflow_patch", {
+                    patch_raw = patch_handle("apply_workflow_patch", {
                         "patches": [
                             {"op": "replace", "path": f"/{nid}/class_type", "value": "VAEDecodeTiled"},
                             {"op": "add", "path": f"/{nid}/inputs/tile_size", "value": 512},
                         ],
                     })
+                    # Check for patch error — skip this node if patch failed. (Cycle 32 fix)
+                    try:
+                        import json as _json
+                        patch_result = _json.loads(patch_raw) if isinstance(patch_raw, str) else patch_raw
+                        if isinstance(patch_result, dict) and "error" in patch_result:
+                            continue
+                    except Exception:
+                        pass
                     swapped.append(nid)
             return self.to_json({
                 "applied": "vae_tiling",
@@ -593,6 +601,14 @@ class OptimizerAgent(BrainAgent):
 
         elif opt_id == "batch_size":
             target_batch = params.get("batch_size")
+            if target_batch is not None:
+                # Validate before using — must be a positive integer. (Cycle 32 fix)
+                try:
+                    target_batch = int(target_batch)
+                    if target_batch < 1:
+                        raise ValueError("batch_size must be >= 1")
+                except (ValueError, TypeError) as e:
+                    return self.to_json({"error": f"Invalid batch_size: {e}"})
             if not target_batch:
                 # Auto-detect from GPU profile
                 spots = gpu.get("sweet_spots", {})
@@ -624,6 +640,13 @@ class OptimizerAgent(BrainAgent):
 
         elif opt_id == "step_optimization":
             target_steps = params.get("steps", 20)
+            # Validate steps — must be a positive integer. (Cycle 32 fix)
+            try:
+                target_steps = int(target_steps)
+                if target_steps < 1:
+                    raise ValueError("steps must be >= 1")
+            except (ValueError, TypeError) as e:
+                return self.to_json({"error": f"Invalid steps: {e}"})
             updated = []
             for nid, node in wf.items():
                 if not isinstance(node, dict):
@@ -649,6 +672,11 @@ class OptimizerAgent(BrainAgent):
         elif opt_id == "sampler_efficiency":
             sampler = params.get("sampler", "dpmpp_2m")
             scheduler = params.get("scheduler", "karras")
+            # Validate sampler and scheduler are non-empty strings. (Cycle 32 fix)
+            if not isinstance(sampler, str) or not sampler.strip():
+                return self.to_json({"error": "Invalid sampler: must be a non-empty string."})
+            if not isinstance(scheduler, str) or not scheduler.strip():
+                return self.to_json({"error": "Invalid scheduler: must be a non-empty string."})
             updated = []
             for nid, node in wf.items():
                 if not isinstance(node, dict):

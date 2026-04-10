@@ -241,3 +241,48 @@ class TestRegistration:
         names = [t["name"] for t in model_compat.TOOLS]
         assert "check_model_compatibility" in names
         assert "identify_model_family" in names
+
+
+# ---------------------------------------------------------------------------
+# Cycle 32: MODEL_FAMILIES unknown family key guard
+# ---------------------------------------------------------------------------
+
+class TestUnknownFamilyKeyGuard:
+    """MODEL_FAMILIES[f] must not KeyError on unknown family strings."""
+
+    def test_identify_family_unknown_incompatible_family(self):
+        """incompatible_with must use .get() — no KeyError on unknown family."""
+        import copy
+        from unittest.mock import patch
+        # Patch real MODEL_FAMILIES so one family's incompatible_families references a ghost key.
+        # Keeps all required fields intact (avoids KeyError from other code paths).
+        real_families = copy.deepcopy(model_compat.MODEL_FAMILIES)
+        real_families["sd15"]["incompatible_families"] = ["GHOST_FAMILY"]
+        with patch.object(model_compat, "MODEL_FAMILIES", real_families):
+            result = json.loads(model_compat.handle("identify_model_family", {
+                "model_name": "sd1.5_base.safetensors",
+            }))
+        # Must not raise KeyError; incompatible_with entry falls back to the key itself
+        assert "incompatible_with" in result
+        assert result["incompatible_with"] == ["GHOST_FAMILY"]
+
+    def test_check_compatibility_unknown_family_in_conflict_message(self):
+        """_check_compatibility conflict reason must not KeyError on unknown family string."""
+        import copy
+        from unittest.mock import patch
+        # Patch sd15's incompatible_families to include a ghost key.
+        # Real family dicts keep all required fields (vae_patterns, controlnet_patterns, etc.)
+        # intact so _identify_family doesn't error. Only the ghost incompatible key matters.
+        real_families = copy.deepcopy(model_compat.MODEL_FAMILIES)
+        real_families["sd15"]["incompatible_families"] = ["GHOST_FAMILY"]
+        real_families["sdxl"]["incompatible_families"] = ["sd15"]
+        with patch.object(model_compat, "MODEL_FAMILIES", real_families):
+            result = json.loads(model_compat.handle("check_model_compatibility", {
+                "models": ["sd1.5_base.safetensors", "sdxl_base_1.0.safetensors"],
+            }))
+        assert result["compatible"] is False
+        assert "conflicts" in result
+        assert len(result["conflicts"]) > 0
+        # reason and message must not KeyError — GHOST_FAMILY falls back to its key name
+        assert isinstance(result["conflicts"][0]["reason"], str)
+        assert isinstance(result["message"], str)

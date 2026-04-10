@@ -185,3 +185,112 @@ class TestApplyOptimization:
             "optimization_id": "nonexistent",
         }))
         assert "error" in result
+
+
+# ---------------------------------------------------------------------------
+# Cycle 32: optimizer input validation guards
+# ---------------------------------------------------------------------------
+
+def _load_sample():
+    """Helper: load the sample workflow into workflow_patch state."""
+    workflow_patch._get_state()["current_workflow"] = copy.deepcopy(SAMPLE_WORKFLOW)
+
+
+class TestOptimizerInputValidation:
+    """apply_optimization must validate user-supplied params before applying."""
+
+    def test_batch_size_zero_returns_error(self):
+        """batch_size=0 is invalid and must return an error dict."""
+        _load_sample()
+        result = json.loads(handle("apply_optimization", {
+            "optimization_id": "batch_size",
+            "params": {"batch_size": 0},
+        }))
+        assert "error" in result
+        assert "batch_size" in result["error"]
+
+    def test_batch_size_negative_returns_error(self):
+        """Negative batch_size must return error."""
+        _load_sample()
+        result = json.loads(handle("apply_optimization", {
+            "optimization_id": "batch_size",
+            "params": {"batch_size": -1},
+        }))
+        assert "error" in result
+
+    def test_batch_size_non_integer_string_returns_error(self):
+        """Non-numeric batch_size must return error, not ValueError crash."""
+        _load_sample()
+        result = json.loads(handle("apply_optimization", {
+            "optimization_id": "batch_size",
+            "params": {"batch_size": "lots"},
+        }))
+        assert "error" in result
+
+    def test_steps_zero_returns_error(self):
+        """steps=0 is invalid and must return an error dict."""
+        _load_sample()
+        result = json.loads(handle("apply_optimization", {
+            "optimization_id": "step_optimization",
+            "params": {"steps": 0},
+        }))
+        assert "error" in result
+        assert "steps" in result["error"]
+
+    def test_steps_negative_returns_error(self):
+        """Negative steps must return error."""
+        _load_sample()
+        result = json.loads(handle("apply_optimization", {
+            "optimization_id": "step_optimization",
+            "params": {"steps": -5},
+        }))
+        assert "error" in result
+
+    def test_sampler_empty_string_returns_error(self):
+        """Empty sampler string must return error."""
+        _load_sample()
+        result = json.loads(handle("apply_optimization", {
+            "optimization_id": "sampler_efficiency",
+            "params": {"sampler": "", "scheduler": "karras"},
+        }))
+        assert "error" in result
+        assert "sampler" in result["error"]
+
+    def test_scheduler_empty_string_returns_error(self):
+        """Empty scheduler string must return error."""
+        _load_sample()
+        result = json.loads(handle("apply_optimization", {
+            "optimization_id": "sampler_efficiency",
+            "params": {"sampler": "euler", "scheduler": ""},
+        }))
+        assert "error" in result
+        assert "scheduler" in result["error"]
+
+    def test_sampler_none_returns_error(self):
+        """None sampler must return error, not AttributeError crash."""
+        _load_sample()
+        result = json.loads(handle("apply_optimization", {
+            "optimization_id": "sampler_efficiency",
+            "params": {"sampler": None, "scheduler": "karras"},
+        }))
+        assert "error" in result
+
+    def test_valid_batch_size_still_applies(self):
+        """A valid positive batch_size must still apply normally."""
+        _load_sample()
+        result = json.loads(handle("apply_optimization", {
+            "optimization_id": "batch_size",
+            "params": {"batch_size": 4},
+        }))
+        assert "error" not in result
+        assert result.get("batch_size") == 4
+
+    def test_valid_steps_still_applies(self):
+        """A valid positive steps value must still apply normally."""
+        _load_sample()
+        result = json.loads(handle("apply_optimization", {
+            "optimization_id": "step_optimization",
+            "params": {"steps": 25},
+        }))
+        assert "error" not in result
+        assert result.get("steps") == 25

@@ -205,9 +205,14 @@ def _handle_provision_model(tool_input: dict) -> str:
         })
 
     # Step 5: Identify model family (verification)
-    family = json.loads(compat_handle("identify_model_family", {
-        "model_name": filename,
-    }))
+    try:
+        family = json.loads(compat_handle("identify_model_family", {
+            "model_name": filename,
+        }))
+    except Exception as e:
+        # Family identification failure is non-fatal — continue with partial result.
+        # (Cycle 32 fix)
+        family = {"error": f"Family identification failed: {e}", "family": "unknown"}
 
     # Step 6: Auto-wire if requested
     response = {
@@ -217,11 +222,19 @@ def _handle_provision_model(tool_input: dict) -> str:
     }
 
     if auto_wire:
-        wire_result = json.loads(auto_wire_handle("wire_model", {
-            "filename": filename,
-            "model_type": detected_type,
-        }))
-        response["wired"] = wire_result
+        try:
+            wire_result = json.loads(auto_wire_handle("wire_model", {
+                "filename": filename,
+                "model_type": detected_type,
+            }))
+            response["wired"] = wire_result
+        except Exception as e:
+            # Wire failure after successful download — partial success.
+            # Caller can retry wiring independently. (Cycle 32 fix)
+            response["wired"] = {
+                "error": f"Auto-wire failed: {e}",
+                "hint": "Download succeeded. Run wire_model manually to complete wiring.",
+            }
 
     return to_json(response)
 

@@ -164,3 +164,33 @@ class TestReadNodeSource:
             )
             assert "error" not in result
             assert result["source"] == ""
+
+
+# ---------------------------------------------------------------------------
+# Cycle 32: model_type required guard
+# ---------------------------------------------------------------------------
+
+class TestListModelsRequiredField:
+    """list_models must validate model_type is present and non-empty."""
+
+    def test_missing_model_type_returns_error(self, fake_custom_nodes, tmp_path):
+        """Omitting model_type must return error, not KeyError."""
+        from unittest.mock import patch
+        with patch.object(comfy_inspect, "MODELS_DIR", tmp_path):
+            result = json.loads(comfy_inspect.handle("list_models", {}))
+        assert "error" in result
+        assert "model_type" in result["error"]
+
+    def test_none_model_type_returns_error(self, fake_custom_nodes, tmp_path):
+        """Explicit None model_type must return error."""
+        from unittest.mock import patch
+        with patch.object(comfy_inspect, "MODELS_DIR", tmp_path):
+            result = json.loads(comfy_inspect.handle("list_models", {"model_type": None}))
+        assert "error" in result
+
+    def test_empty_string_model_type_returns_error(self, fake_custom_nodes, tmp_path):
+        """Empty string model_type must return error."""
+        from unittest.mock import patch
+        with patch.object(comfy_inspect, "MODELS_DIR", tmp_path):
+            result = json.loads(comfy_inspect.handle("list_models", {"model_type": ""}))
+        assert "error" in result

@@ -282,3 +282,56 @@ class TestCivitAIResponseTypeGuards:
             result = json.loads(civitai_api.handle("get_trending_models", {}))
         assert "error" in result
         assert "unexpected" in result["error"].lower() or "format" in result["error"].lower()
+
+
+# ---------------------------------------------------------------------------
+# Cycle 32: items list guard
+# ---------------------------------------------------------------------------
+
+class TestItemsListGuard:
+    """items field must be guarded as a list before iteration."""
+
+    def _make_resp(self, data):
+        from unittest.mock import MagicMock
+        resp = MagicMock()
+        resp.json.return_value = data
+        resp.raise_for_status = MagicMock()
+        return resp
+
+    def test_trending_items_non_list_returns_empty_results(self):
+        """If items is a dict (API weirdness), trending must return 0 results, not crash."""
+        from unittest.mock import patch, MagicMock
+        with patch("agent.tools.civitai_api.CIVITAI_LIMITER") as mock_limiter, \
+             patch("httpx.Client") as mock_client:
+            mock_limiter.return_value.return_value.acquire.return_value = True
+            mock_client.return_value.__enter__ = MagicMock(return_value=mock_client.return_value)
+            mock_client.return_value.__exit__ = MagicMock(return_value=False)
+            mock_client.return_value.get.return_value = self._make_resp({
+                "items": {"nested": "dict"},  # not a list
+                "metadata": {},
+            })
+            result = json.loads(civitai_api.handle("get_trending_models", {}))
+        # Should not crash; must have results key (empty list)
+        assert "results" in result or "error" in result
+        if "results" in result:
+            assert isinstance(result["results"], list)
+            assert len(result["results"]) == 0  # items was a dict, guarded to []
+
+    def test_trending_items_none_returns_empty_results(self):
+        """If items is None, trending must not crash (TypeError on None iteration)."""
+        from unittest.mock import patch, MagicMock
+        with patch("agent.tools.civitai_api.CIVITAI_LIMITER") as mock_limiter, \
+             patch("httpx.Client") as mock_client:
+            mock_limiter.return_value.return_value.acquire.return_value = True
+            mock_client.return_value.__enter__ = MagicMock(return_value=mock_client.return_value)
+            mock_client.return_value.__exit__ = MagicMock(return_value=False)
+            mock_client.return_value.get.return_value = self._make_resp({
+                "items": None,  # explicit null
+                "metadata": {},
+            })
+            result = json.loads(civitai_api.handle("get_trending_models", {}))
+        # Must not raise TypeError; results should be empty list
+        assert "results" in result or "error" in result
+        if "results" in result:
+            assert isinstance(result["results"], list)
+            assert len(result["results"]) == 0  # items was None, guarded to []

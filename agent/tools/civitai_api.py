@@ -307,6 +307,8 @@ def _handle_search_civitai(tool_input: dict) -> str:
         })
 
     items = data.get("items", [])
+    if not isinstance(items, list):
+        items = []
     results = [_parse_model(m) for m in items]
 
     return to_json({
@@ -398,6 +400,8 @@ def _handle_get_trending_models(tool_input: dict) -> str:
         })
 
     items = data.get("items", [])
+    if not isinstance(items, list):
+        items = []
     results = [_parse_model(m) for m in items]
 
     return to_json({

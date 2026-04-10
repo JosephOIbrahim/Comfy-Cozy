@@ -584,3 +584,51 @@ class TestAutoresearch:
         result = autoresearch(engine, config, initial_quality=0.3)
         assert result.stopped_reason == "max_steps_reached"
         assert result.steps_taken == 3
+
+
+# ---------------------------------------------------------------------------
+# Cycle 32: compose_workflow no-match template fallback
+# ---------------------------------------------------------------------------
+
+class TestComposeWorkflowTemplateGuard:
+    """When available_templates is provided but none match, fallback to first template."""
+
+    def test_no_matching_template_uses_fallback(self):
+        """Available templates exist but none match — must use first as fallback, not return empty data."""
+        result = compose_workflow(
+            "a landscape",  # → SD1.5
+            available_templates=[
+                {"name": "flux_base", "family": "Flux", "data": {"1": {"class_type": "CLIPTextEncode"}}},
+                {"name": "sdxl_base", "family": "SDXL", "data": {"2": {}}},
+            ],
+        )
+        # Must succeed (not fail) and use fallback — workflow_data is non-empty
+        assert result.success is True
+        assert result.workflow_data != {}
+        assert result.plan.base_template == "flux_base"  # First template used as fallback
+        assert "Warning" in result.plan.reasoning or "fallback" in result.plan.reasoning.lower()
+
+    def test_matching_template_still_succeeds(self):
+        """When a template matches the model family, success must remain True."""
+        result = compose_workflow(
+            "flux style image",
+            available_templates=[
+                {"name": "flux_base", "family": "Flux", "data": {"1": {"class_type": "CheckpointLoaderSimple"}}},
+            ],
+        )
+        assert result.success is True
+        assert result.plan.base_template == "flux_base"
+
+    def test_empty_templates_list_does_not_trigger_fallback(self):
+        """Empty list = no templates provided = compose proceeds with empty workflow_data."""
+        result = compose_workflow(
+            "a sunny day",
+            available_templates=[],
+        )
+        # available_templates is falsy — the template selection block is skipped
+        assert result.success is True
+
+    def test_none_templates_does_not_trigger_failure(self):
+        """None templates = compose proceeds normally."""
+        result = compose_workflow("a cloudy night", available_templates=None)
+        assert result.success is True

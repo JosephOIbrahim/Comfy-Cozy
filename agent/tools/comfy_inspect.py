@@ -179,7 +179,13 @@ def _handle_list_custom_nodes(tool_input: dict) -> str:
 
 
 def _handle_list_models(tool_input: dict) -> str:
-    model_type = tool_input["model_type"]
+    model_type = tool_input.get("model_type")
+    if not model_type or not isinstance(model_type, str):
+        available = sorted(d.name for d in MODELS_DIR.iterdir() if d.is_dir()) if MODELS_DIR.exists() else []
+        return to_json({
+            "error": "model_type is required.",
+            "available_types": available,
+        })
     fmt = tool_input.get("format", "summary")
     model_dir = MODELS_DIR / model_type
 

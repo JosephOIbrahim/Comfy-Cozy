@@ -456,3 +456,76 @@ class TestDispatch:
              patch("agent.tools.model_compat.handle", return_value=json.dumps(_COMPAT_OK)):
             result = json.loads(provision_pipeline.handle("provision_pipeline_status", {}))
         assert "status" in result
+
+
+# ---------------------------------------------------------------------------
+# Cycle 32: family identification and wire failure resilience
+# ---------------------------------------------------------------------------
+
+# Distinct names to avoid shadowing module-level _DOWNLOAD_OK fixture.
+_C32_DOWNLOAD_OK = {
+    "downloaded": "flux1-dev-fp8.safetensors",
+    "path": "G:/COMFYUI_Database/models/checkpoints/flux1-dev-fp8.safetensors",
+    "model_type": "checkpoints",
+    "size_gb": 11.9,
+    "elapsed_seconds": 120.0,
+    "speed_mbps": 101.5,
+    "message": "Downloaded 'flux1-dev-fp8.safetensors' (11.9 GB) to checkpoints/.",
+}
+
+_C32_FAMILY_OK = {
+    "model": "flux1-dev-fp8.safetensors",
+    "family": "flux",
+    "label": "Flux",
+    "resolution": "1024x1024",
+    "lora_compatible": True,
+    "incompatible_with": [],
+}
+
+_C32_DISCOVER = {
+    "results": [{
+        "name": "Flux.1 Dev",
+        "filename": "flux1-dev-fp8.safetensors",
+        "url": "https://example.com/flux1-dev-fp8.safetensors",
+        "model_type": "checkpoints",
+        "installed": False,
+    }],
+}
+
+
+class TestProvisionFamilyAndWireResilience:
+    """provision_model must not crash when family ID or wiring raises."""
+
+    def test_family_id_exception_returns_partial_success(self):
+        """If identify_model_family raises, provision_model must still return a result."""
+        from unittest.mock import patch
+        with patch("agent.tools.comfy_discover.handle", return_value=json.dumps(_C32_DISCOVER)), \
+             patch("agent.tools.comfy_provision.handle", return_value=json.dumps(_C32_DOWNLOAD_OK)), \
+             patch("agent.tools.model_compat.handle", side_effect=RuntimeError("compat boom")):
+            result = json.loads(provision_pipeline.handle("provision_model", {
+                "query": "flux dev",
+                "auto_download": True,  # required to proceed past candidates step
+                "auto_wire": False,
+            }))
+        # Should not propagate the exception; step should be "complete"
+        assert "step" in result
+        assert result["step"] == "complete"
+        # Family should contain error info
+        family = result.get("model_family", {})
+        assert "error" in family or family.get("family") == "unknown"
+
+    def test_wire_exception_returns_partial_success(self):
+        """If auto_wire_handle raises, provision_model must still return a result with wired.error."""
+        from unittest.mock import patch
+        with patch("agent.tools.comfy_discover.handle", return_value=json.dumps(_C32_DISCOVER)), \
+             patch("agent.tools.comfy_provision.handle", return_value=json.dumps(_C32_DOWNLOAD_OK)), \
+             patch("agent.tools.model_compat.handle", return_value=json.dumps(_C32_FAMILY_OK)), \
+             patch("agent.tools.auto_wire.handle", side_effect=RuntimeError("wire boom")):
+            result = json.loads(provision_pipeline.handle("provision_model", {
+                "query": "flux dev",
+                "auto_download": True,  # required to proceed past candidates step
+                "auto_wire": True,
+            }))
+        assert "wired" in result
+        assert "error" in result["wired"]
+        assert result["step"] == "complete"

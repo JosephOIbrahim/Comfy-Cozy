@@ -109,11 +109,23 @@ def compose_workflow(
 
     # Template selection
     if available_templates:
+        matched = False
         for tmpl in available_templates:
             if tmpl.get("family", "").lower() == plan.model_family.lower():
                 plan.base_template = tmpl.get("name", "")
                 result.workflow_data = tmpl.get("data", {})
+                matched = True
                 break
+        if not matched:
+            # No family-exact match — fall back to first available template rather
+            # than returning empty workflow_data silently. (Cycle 32 fix)
+            fallback = available_templates[0]
+            plan.base_template = fallback.get("name", "")
+            result.workflow_data = fallback.get("data", {})
+            plan.reasoning += (
+                f" [Warning: No template for '{plan.model_family}'; "
+                f"using fallback '{plan.base_template}'.]"
+            )
 
     result.mutations_applied = len(plan.parameters)
     return result

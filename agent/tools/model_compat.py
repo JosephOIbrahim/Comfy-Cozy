@@ -269,7 +269,10 @@ def _check_compatibility(models: list[str]) -> dict:
                 "family_b": f2,
                 "models_a": f1_models,
                 "models_b": f2_models,
-                "reason": f"{MODEL_FAMILIES[f1]['label']} models are incompatible with {MODEL_FAMILIES[f2]['label']}",
+                "reason": (
+                    f"{MODEL_FAMILIES.get(f1, {}).get('label', f1)} models are incompatible "
+                    f"with {MODEL_FAMILIES.get(f2, {}).get('label', f2)}"
+                ),
             })
 
     return {
@@ -277,7 +280,7 @@ def _check_compatibility(models: list[str]) -> dict:
         "families_detected": family_list,
         "models": identified,
         "conflicts": conflicts,
-        "message": f"Incompatible model families detected: {', '.join(MODEL_FAMILIES[f]['label'] for f in family_list)}",
+        "message": f"Incompatible model families detected: {', '.join(MODEL_FAMILIES.get(f, {}).get('label', f) for f in family_list)}",
         "suggestion": f"Use models from the same family. Detected: {', '.join(family_list)}",
     }
 
@@ -340,7 +343,7 @@ def _handle_identify_family(tool_input: dict) -> str:
         "resolution": info.get("resolution", "unknown"),
         "lora_compatible": info.get("lora_compatible", False),
         "incompatible_with": [
-            MODEL_FAMILIES[f]["label"]
+            MODEL_FAMILIES.get(f, {}).get("label", f)
             for f in info.get("incompatible_families", [])
         ],
     })
