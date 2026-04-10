@@ -898,3 +898,42 @@ class TestPathTraversalSecurity:
             "path": "\\\\attacker\\share\\evil.json",
         }))
         assert "error" in result
+
+
+# ---------------------------------------------------------------------------
+# Cycle 34: _flatten_autogrow_inputs / _group_autogrow_inputs non-dict guard
+# ---------------------------------------------------------------------------
+
+class TestNullInputsGuard:
+    """_flatten_autogrow_inputs and _group_autogrow_inputs must survive non-dict inputs."""
+
+    def test_flatten_none_returns_empty_dict(self):
+        """_flatten_autogrow_inputs(None) must return {} not AttributeError."""
+        from agent.tools.workflow_parse import _flatten_autogrow_inputs
+        result = _flatten_autogrow_inputs(None)  # type: ignore[arg-type]
+        assert result == {}
+
+    def test_flatten_string_returns_empty_dict(self):
+        """_flatten_autogrow_inputs('bad') must return {} not AttributeError."""
+        from agent.tools.workflow_parse import _flatten_autogrow_inputs
+        result = _flatten_autogrow_inputs("bad")  # type: ignore[arg-type]
+        assert result == {}
+
+    def test_group_none_returns_empty_dict(self):
+        """_group_autogrow_inputs(None) must return {} not AttributeError."""
+        from agent.tools.workflow_parse import _group_autogrow_inputs
+        result = _group_autogrow_inputs(None)  # type: ignore[arg-type]
+        assert result == {}
+
+    def test_get_editable_fields_node_with_null_inputs(self, tmp_path):
+        """A workflow node with inputs: null must not crash get_editable_fields."""
+        import json as _json
+        wf = {
+            "1": {"class_type": "CheckpointLoaderSimple", "inputs": None},
+            "2": {"class_type": "KSampler", "inputs": {"steps": 20}},
+        }
+        path = tmp_path / "null_inputs.json"
+        path.write_text(_json.dumps(wf), encoding="utf-8")
+        result = _json.loads(workflow_parse.handle("get_editable_fields", {"path": str(path)}))
+        # Should not error — node 1 treated as no-inputs, node 2 has steps
+        assert "error" not in result or result.get("fields") is not None

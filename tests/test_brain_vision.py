@@ -328,3 +328,52 @@ class TestImageSizeLimit:
             assert "too large" not in str(e), "Small image should not fail size check"
         except Exception:
             pass  # Other exceptions (PIL decode, etc.) are acceptable here
+
+
+# ---------------------------------------------------------------------------
+# Cycle 34: TOCTOU — file disappears between stat() and read_bytes()
+# ---------------------------------------------------------------------------
+
+class TestTOCTOUFileDisappears:
+    """_read_image_as_base64 must raise FileNotFoundError (not OSError or crash)
+    if the file is removed between the size-check stat() and the read_bytes()."""
+
+    def test_file_removed_after_stat_raises_file_not_found(self, tmp_path):
+        """Simulate TOCTOU: inject OSError in read_bytes() call."""
+        from agent.brain.vision import VisionAgent
+        from agent.brain._sdk import BrainConfig
+        from pathlib import Path
+        from unittest.mock import patch, MagicMock
+
+        img = tmp_path / "victim.png"
+        img.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 100)
+
+        cfg = BrainConfig(validate_path=lambda *a, **kw: None)
+        agent = VisionAgent(cfg)
+
+        # Patch Path.read_bytes to raise FileNotFoundError after stat() succeeds
+        original_stat = Path.stat
+
+        def stat_then_die(self_path, *args, **kwargs):
+            return original_stat(self_path, *args, **kwargs)
+
+        with patch.object(Path, "read_bytes", side_effect=FileNotFoundError("gone")):
+            with pytest.raises(FileNotFoundError, match="unavailable"):
+                agent._read_image_as_base64(str(img))
+
+    def test_oserror_on_read_raises_file_not_found(self, tmp_path):
+        """OSError during read_bytes() is translated to FileNotFoundError."""
+        from agent.brain.vision import VisionAgent
+        from agent.brain._sdk import BrainConfig
+        from pathlib import Path
+        from unittest.mock import patch
+
+        img = tmp_path / "victim2.png"
+        img.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 100)
+
+        cfg = BrainConfig(validate_path=lambda *a, **kw: None)
+        agent = VisionAgent(cfg)
+
+        with patch.object(Path, "read_bytes", side_effect=OSError("disk error")):
+            with pytest.raises(FileNotFoundError, match="unavailable"):
+                agent._read_image_as_base64(str(img))

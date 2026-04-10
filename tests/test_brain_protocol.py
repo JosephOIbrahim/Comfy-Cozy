@@ -96,10 +96,12 @@ class TestDispatchBrainMessage:
         with patch("agent.tools.handle"):
             assert dispatch_brain_message(msg) is True
 
-    def test_unknown_route_returns_true(self):
+    def test_unknown_route_returns_false(self):
+        # Changed in Cycle 34: unknown routes return False (not dispatched),
+        # not True, so callers can distinguish successful dispatch from silent drop.
         msg = brain_message("planner", "optimizer", "request", {"goal": "speed"})
         result = dispatch_brain_message(msg)
-        assert result is True
+        assert result is False
 
     @patch("agent.brain._protocol.time.sleep")
     def test_retry_on_failure(self, mock_sleep):
@@ -148,9 +150,10 @@ class TestDispatchBrainMessage:
         assert details["similarity"] == 0.92
 
     def test_empty_message_handled(self):
-        # Empty dict should not crash — falls through to no-route path
+        # Empty dict should not crash — falls through to no-route path.
+        # No route matches, so returns False (not dispatched). (Cycle 34 fix)
         result = dispatch_brain_message({})
-        assert result is True
+        assert result is False
 
     @patch("agent.brain._protocol.time.sleep")
     def test_backoff_delays(self, mock_sleep):
@@ -164,3 +167,37 @@ class TestDispatchBrainMessage:
         assert mock_sleep.call_count == 2
         mock_sleep.assert_any_call(0.1)
         mock_sleep.assert_any_call(0.2)
+
+
+# ---------------------------------------------------------------------------
+# Cycle 34: unknown-target returns False (not True)
+# ---------------------------------------------------------------------------
+
+class TestUnknownTargetDispatch:
+    """dispatch_brain_message must return False for unregistered source/target pairs."""
+
+    def test_unknown_target_returns_false(self):
+        """A message with no registered route must return False."""
+        msg = brain_message("vision", "nonexistent_module", "result", {"action": "test"})
+        result = dispatch_brain_message(msg)
+        assert result is False
+
+    def test_unknown_source_returns_false(self):
+        """A message from an unknown source must return False."""
+        msg = brain_message("unknown_module", "memory", "result", {"action": "test"})
+        result = dispatch_brain_message(msg)
+        assert result is False
+
+    def test_known_route_still_returns_true(self):
+        """vision->memory route must still succeed and return True."""
+        msg = brain_message("vision", "memory", "result", {"action": "image_analyzed", "quality_score": 0.9})
+        with patch("agent.tools.handle", return_value="{}"):
+            result = dispatch_brain_message(msg)
+        assert result is True
+
+    def test_unknown_target_does_not_raise(self):
+        """Unknown target must never propagate an exception."""
+        msg = brain_message("planner", "optimizer", "status", {"phase": "x"})
+        # Should not raise — returns False gracefully
+        result = dispatch_brain_message(msg)
+        assert result is False

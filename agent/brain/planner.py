@@ -9,6 +9,7 @@ import json
 import logging
 import os
 import tempfile
+import threading
 import time
 from pathlib import Path
 
@@ -16,6 +17,18 @@ from ._protocol import make_id
 from ._sdk import BrainAgent
 
 log = logging.getLogger(__name__)
+
+# Per-session locks — prevents lost-update race on load-modify-save. (Cycle 34 fix)
+_plan_locks: dict[str, threading.Lock] = {}
+_plan_locks_mutex = threading.Lock()
+
+
+def _get_plan_lock(session: str) -> threading.Lock:
+    """Return (creating if needed) a per-session lock for plan mutations."""
+    with _plan_locks_mutex:
+        if session not in _plan_locks:
+            _plan_locks[session] = threading.Lock()
+        return _plan_locks[session]
 
 # ---------------------------------------------------------------------------
 # Goal decomposition templates
@@ -410,7 +423,9 @@ class PlannerAgent(BrainAgent):
             log.warning("Failed to record goal completion to memory: %s", e)
 
     def _handle_plan_goal(self, tool_input: dict) -> str:
-        goal = tool_input["goal"]
+        goal = tool_input.get("goal")
+        if not goal or not isinstance(goal, str) or not goal.strip():
+            return self.to_json({"error": "goal is required and must be a non-empty string."})
         session = tool_input.get("session", "default")
 
         # Query memory for learned patterns to inform planning
@@ -500,35 +515,41 @@ class PlannerAgent(BrainAgent):
         })
 
     def _handle_complete_step(self, tool_input: dict) -> str:
-        step_id = tool_input["step_id"]
-        result = tool_input["result"]
+        step_id = tool_input.get("step_id")
+        if not step_id or not isinstance(step_id, str):
+            return self.to_json({"error": "step_id is required and must be a non-empty string."})
+        result = tool_input.get("result", "")
         session = tool_input.get("session", "default")
 
-        plan = self._load_plan(session)
-        if plan is None:
-            return self.to_json({"error": "No active plan."})
+        with _get_plan_lock(session):  # Cycle 34: serialize load-modify-save
+            plan = self._load_plan(session)
+            if plan is None:
+                return self.to_json({"error": "No active plan."})
 
-        # Find and complete the step
-        step = next((s for s in plan["steps"] if s["id"] == step_id), None)
-        if step is None:
-            return self.to_json({"error": f"Step '{step_id}' not found in plan."})
+            # Find and complete the step
+            step = next((s for s in plan["steps"] if s["id"] == step_id), None)
+            if step is None:
+                return self.to_json({"error": f"Step '{step_id}' not found in plan."})
 
-        step["status"] = "done"
-        step["result"] = result
+            step["status"] = "done"
+            step["result"] = result
 
-        # Advance to next pending step
-        next_step = next((s for s in plan["steps"] if s["status"] == "pending"), None)
-        if next_step:
-            next_step["status"] = "active"
+            # Advance to next pending step
+            next_step = next((s for s in plan["steps"] if s["status"] == "pending"), None)
+            if next_step:
+                next_step["status"] = "active"
 
-        # Check if plan is complete
-        all_done = all(s["status"] == "done" for s in plan["steps"])
+            # Check if plan is complete
+            all_done = all(s["status"] == "done" for s in plan["steps"])
+            if all_done:
+                plan["status"] = "completed"
+
+            plan["updated_at"] = time.time()
+            self._save_plan(session, plan)
+
+        # Record completion outside lock — this calls out to memory, which has its own locks
         if all_done:
-            plan["status"] = "completed"
             self._record_goal_completion(plan)
-
-        plan["updated_at"] = time.time()
-        self._save_plan(session, plan)
 
         completed = sum(1 for s in plan["steps"] if s["status"] == "done")
         total = len(plan["steps"])
@@ -552,46 +573,49 @@ class PlannerAgent(BrainAgent):
         return self.to_json(response)
 
     def _handle_replan(self, tool_input: dict) -> str:
-        reason = tool_input["reason"]
+        reason = tool_input.get("reason")
+        if not reason or not isinstance(reason, str) or not reason.strip():
+            return self.to_json({"error": "reason is required and must be a non-empty string."})
         new_steps_raw = tool_input.get("new_remaining_steps", [])
         session = tool_input.get("session", "default")
 
-        plan = self._load_plan(session)
-        if plan is None:
-            return self.to_json({"error": "No active plan."})
+        with _get_plan_lock(session):  # Cycle 34: serialize load-modify-save
+            plan = self._load_plan(session)
+            if plan is None:
+                return self.to_json({"error": "No active plan."})
 
-        # Save replan history
-        plan["replan_history"].append({
-            "reason": reason,
-            "timestamp": time.time(),
-            "old_remaining": [
-                s for s in plan["steps"] if s["status"] in ("pending", "active")
-            ],
-        })
+            # Save replan history
+            plan["replan_history"].append({
+                "reason": reason,
+                "timestamp": time.time(),
+                "old_remaining": [
+                    s for s in plan["steps"] if s["status"] in ("pending", "active")
+                ],
+            })
 
-        # Keep completed steps, replace remaining
-        completed_steps = [s for s in plan["steps"] if s["status"] == "done"]
+            # Keep completed steps, replace remaining
+            completed_steps = [s for s in plan["steps"] if s["status"] == "done"]
 
-        if new_steps_raw:
-            new_steps = []
-            for i, step_def in enumerate(new_steps_raw):
-                new_steps.append({
-                    "id": step_def["id"],
-                    "action": step_def["action"],
-                    "tools": step_def.get("tools", []),
-                    "status": "active" if i == 0 else "pending",
-                    "result": None,
-                })
-            plan["steps"] = completed_steps + new_steps
-        else:
-            # If no new steps provided, just mark remaining as cancelled
-            for s in plan["steps"]:
-                if s["status"] in ("pending", "active"):
-                    s["status"] = "cancelled"
-            plan["status"] = "replanned"
+            if new_steps_raw:
+                new_steps = []
+                for i, step_def in enumerate(new_steps_raw):
+                    new_steps.append({
+                        "id": step_def["id"],
+                        "action": step_def["action"],
+                        "tools": step_def.get("tools", []),
+                        "status": "active" if i == 0 else "pending",
+                        "result": None,
+                    })
+                plan["steps"] = completed_steps + new_steps
+            else:
+                # If no new steps provided, just mark remaining as cancelled
+                for s in plan["steps"]:
+                    if s["status"] in ("pending", "active"):
+                        s["status"] = "cancelled"
+                plan["status"] = "replanned"
 
-        plan["updated_at"] = time.time()
-        self._save_plan(session, plan)
+            plan["updated_at"] = time.time()
+            self._save_plan(session, plan)
 
         active = next((s for s in plan["steps"] if s["status"] == "active"), None)
 

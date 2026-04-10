@@ -260,3 +260,39 @@ class TestGoalId:
             "session": "test_goal_unique2",
         }))
         assert r1["goal_id"] != r2["goal_id"]
+
+
+# ---------------------------------------------------------------------------
+# Cycle 34: required-field validation + per-session lock
+# ---------------------------------------------------------------------------
+
+class TestPlannerRequiredFields:
+    """plan_goal / complete_step / replan must reject missing required fields."""
+
+    def test_plan_goal_missing_goal_returns_error(self):
+        """plan_goal with no 'goal' key must return error JSON, not raise KeyError."""
+        result = json.loads(handle("plan_goal", {"session": "test_c34_missing"}))
+        assert "error" in result
+
+    def test_plan_goal_empty_string_goal_returns_error(self):
+        """plan_goal with empty-string goal must return error JSON."""
+        result = json.loads(handle("plan_goal", {"goal": "", "session": "test_c34_empty"}))
+        assert "error" in result
+
+    def test_plan_goal_whitespace_only_returns_error(self):
+        """plan_goal with whitespace-only goal must return error JSON."""
+        result = json.loads(handle("plan_goal", {"goal": "   ", "session": "test_c34_ws"}))
+        assert "error" in result
+
+    def test_complete_step_missing_step_id_returns_error(self):
+        """complete_step with no 'step_id' must return error JSON, not raise KeyError."""
+        # Create a plan first so the session has one
+        handle("plan_goal", {"goal": "Build something", "session": "test_c34_cs"})
+        result = json.loads(handle("complete_step", {"session": "test_c34_cs", "result": "done"}))
+        assert "error" in result
+
+    def test_replan_missing_reason_returns_error(self):
+        """replan with no 'reason' must return error JSON, not raise KeyError."""
+        handle("plan_goal", {"goal": "Build something", "session": "test_c34_rp"})
+        result = json.loads(handle("replan", {"session": "test_c34_rp"}))
+        assert "error" in result

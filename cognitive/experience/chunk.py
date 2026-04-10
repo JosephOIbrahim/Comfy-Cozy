@@ -96,9 +96,11 @@ class ExperienceChunk:
         """Temporal decay weight. Newer experiences weight more heavily.
 
         Uses exponential decay with a half-life of 7 days.
+        Clamped to [0.0, 1.0] — clock skew or future timestamps cannot
+        produce weights above 1.0. (Cycle 34 fix)
         """
         half_life_seconds = 7 * 24 * 3600  # 7 days
-        return 2.0 ** (-self.age_seconds / half_life_seconds)
+        return min(1.0, max(0.0, 2.0 ** (-self.age_seconds / half_life_seconds)))
 
     def matches_context(self, other: ExperienceChunk, threshold: float = 0.5) -> bool:
         """Quick similarity check against another chunk."""

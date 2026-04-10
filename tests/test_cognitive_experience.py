@@ -435,3 +435,32 @@ class TestAccumulatorLoadErrorHandling:
         assert any("Failed" in r.message or "chunk" in r.message.lower() for r in caplog.records)
         with acc._chunks_lock:
             assert len(acc._chunks) == 0
+
+
+# ---------------------------------------------------------------------------
+# Cycle 34: decay_weight clamped to [0.0, 1.0]
+# ---------------------------------------------------------------------------
+
+class TestDecayWeightClamp:
+    """decay_weight must never exceed 1.0 regardless of timestamp."""
+
+    def test_future_timestamp_clamped_to_one(self):
+        """A chunk with a future timestamp (clock skew) must yield weight == 1.0."""
+        from cognitive.experience.chunk import ExperienceChunk
+        import time
+        chunk = ExperienceChunk()
+        chunk.timestamp = time.time() + 86400  # 1 day in the future
+        assert chunk.decay_weight == 1.0
+
+    def test_current_timestamp_at_most_one(self):
+        """A brand-new chunk's weight must be <= 1.0."""
+        from cognitive.experience.chunk import ExperienceChunk
+        chunk = ExperienceChunk()
+        assert 0.0 <= chunk.decay_weight <= 1.0
+
+    def test_old_chunk_weight_non_negative(self):
+        """A very old chunk's weight must be >= 0.0 (never negative)."""
+        from cognitive.experience.chunk import ExperienceChunk
+        chunk = ExperienceChunk()
+        chunk.timestamp = 0.0  # Unix epoch — very old
+        assert chunk.decay_weight >= 0.0

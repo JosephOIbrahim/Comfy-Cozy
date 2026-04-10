@@ -179,7 +179,13 @@ class VisionAgent(BrainAgent):
                 f"(limit: {_MAX_IMAGE_BYTES // (1024 * 1024)} MB). "
                 "Resize the image before analyzing."
             )
-        data = base64.b64encode(p.read_bytes()).decode("ascii")
+        # Guard against TOCTOU: file could be deleted/replaced between stat() and
+        # read_bytes(). Translate OSError into FileNotFoundError with context. (Cycle 34 fix)
+        try:
+            raw = p.read_bytes()
+        except (FileNotFoundError, OSError) as e:
+            raise FileNotFoundError(f"Image file unavailable (removed after size check?): {e}") from e
+        data = base64.b64encode(raw).decode("ascii")
         return data, media_type
 
     def _call_vision(self, system_prompt: str, user_content: list) -> str:

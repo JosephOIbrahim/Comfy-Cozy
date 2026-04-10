@@ -161,6 +161,8 @@ def _group_autogrow_inputs(inputs: dict) -> dict:
     API format: {"values": {"a": 42, "b": 7}}
     Non-dotted inputs pass through unchanged.
     """
+    if not isinstance(inputs, dict):  # Cycle 34: guard None/non-dict inputs
+        return {}
     result = {}
     for name, value in inputs.items():
         if _is_autogrow_dotted_name(name):
@@ -178,6 +180,8 @@ def _flatten_autogrow_inputs(inputs: dict) -> dict:
     Flat format: {"values.a": 42, "values.b": 7}
     Connection lists and dicts with class_type are left as-is.
     """
+    if not isinstance(inputs, dict):  # Cycle 34: guard None/non-dict inputs
+        return {}
     result = {}
     for name, value in inputs.items():
         if (

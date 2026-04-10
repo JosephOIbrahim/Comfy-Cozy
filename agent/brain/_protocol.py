@@ -52,8 +52,8 @@ def dispatch_brain_message(msg: dict, *, max_retries: int = 3) -> bool:
 
     First tries the adapter registry (typed, pure-function translators).
     Falls back to legacy hardcoded routing if no adapter found.
-    Retries with exponential backoff on failure. Returns True on success
-    (or when no route matches), False when all retries are exhausted.
+    Retries with exponential backoff on failure. Returns True on success,
+    False when all retries are exhausted OR when no route matches.
     """
     import logging
 
@@ -118,5 +118,8 @@ def dispatch_brain_message(msg: dict, *, max_retries: int = 3) -> bool:
                     )
         return False
     else:
-        _log.debug("No dispatch route for %s->%s, skipping", source, target)
-        return True
+        # No route registered — log at warning so misconfigured targets are visible.
+        # Returns False (not dispatched) rather than True so callers can distinguish
+        # "dispatched successfully" from "silently dropped". (Cycle 34 fix)
+        _log.warning("No dispatch route for %s->%s — message not delivered", source, target)
+        return False
