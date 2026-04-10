@@ -897,3 +897,48 @@ class TestProvisionVerifyStatToctooCycle69:
 
         assert result.get("exists") is True
         assert result.get("size_bytes") == 4_000_000_000
+
+
+# ---------------------------------------------------------------------------
+# Cycle 70: bool coercion for auto_wire / auto_download in provision_model
+# ---------------------------------------------------------------------------
+
+class TestProvisionModelBoolCoercionCycle70:
+    """Cycle 70: auto_wire and auto_download must not treat string 'false' as True."""
+
+    def test_auto_download_string_false_returns_candidates(self):
+        """auto_download='false' (string) must not trigger download."""
+        from unittest.mock import patch
+        discover_result = json.dumps({"results": [
+            {"name": "Flux Dev", "filename": "flux.safetensors",
+             "url": "https://example.com/flux.safetensors",
+             "model_type": "checkpoints", "installed": False},
+        ]})
+        with patch("agent.tools.comfy_discover.handle", return_value=discover_result):
+            result = json.loads(provision_pipeline.handle("provision_model", {
+                "query": "Flux dev",
+                "auto_download": "false",  # string "false" — Cycle 70 guard
+            }))
+        # Must NOT download — must return candidates
+        assert result.get("step") == "candidates", \
+            "auto_download='false' (string) was truthy — download was triggered"
+
+    def test_auto_wire_string_false_skips_wiring(self):
+        """auto_wire='false' (string) must not trigger wiring on already-installed model."""
+        from unittest.mock import patch
+        discover_result = json.dumps({"results": [
+            {"name": "Flux Dev", "filename": "flux.safetensors",
+             "url": "https://example.com/flux.safetensors",
+             "model_type": "checkpoints", "installed": True},  # already installed
+        ]})
+        mock_wire = patch("agent.tools.auto_wire.handle",
+                          return_value=json.dumps({"wired": True}))
+        with patch("agent.tools.comfy_discover.handle", return_value=discover_result), \
+             mock_wire as wire_mock:
+            result = json.loads(provision_pipeline.handle("provision_model", {
+                "query": "Flux dev",
+                "auto_wire": "false",  # string "false" — Cycle 70 guard
+            }))
+        assert wire_mock.call_count == 0, \
+            "auto_wire='false' (string) was truthy — wiring was triggered"
+        assert result.get("step") == "already_installed"

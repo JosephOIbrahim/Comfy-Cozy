@@ -160,10 +160,13 @@ class IntentCollectorAgent(BrainAgent):
                 return self.to_json({"error": "user_request is required and must be a non-empty string."})
             if not interpretation or not isinstance(interpretation, str):
                 return self.to_json({"error": "interpretation is required and must be a non-empty string."})
+            style_refs = tool_input.get("style_references", [])
+            if not isinstance(style_refs, list):  # Cycle 70: guard non-list (string is iterable but wrong type)
+                return self.to_json({"error": "style_references must be a list of strings."})
             intent = self.capture(
                 user_request=user_request,
                 interpretation=interpretation,
-                style_references=tool_input.get("style_references", []),
+                style_references=style_refs,
                 session_context=tool_input.get("session_context", ""),
             )
             return self.to_json({

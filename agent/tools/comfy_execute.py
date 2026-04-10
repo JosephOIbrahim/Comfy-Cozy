@@ -688,8 +688,8 @@ def _handle_validate_before_execute(tool_input: dict) -> str:
                 "controlnet": wi.model_requirements.controlnet_present,
                 "tensorrt_eligible": wi.optimization.tensorrt_eligible,
             }
-    except Exception:
-        pass  # DAG unavailable — degrade silently
+    except Exception as _e:  # Cycle 70: silent swallow → debug log (DAG is optional)
+        log.debug("DAG analysis unavailable, proceeding without: %s", _e)
 
     if errors:
         result = {

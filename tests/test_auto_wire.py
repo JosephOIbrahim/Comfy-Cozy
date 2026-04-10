@@ -309,9 +309,9 @@ class TestFilenameValidation:
             "filename": "flux-1-dev.safetensors",
             "model_type": "checkpoints",
         }))
-        # Error may occur (no matching loader or wrong family), but NOT about filename
+        # Error may occur (no matching loader or wrong family), but NOT about filename/path
         if "error" in result:
-            assert "path" not in result["error"].lower() or "filename" not in result["error"]
+            assert "path" not in result["error"].lower() and "filename" not in result["error"].lower()  # Cycle 70: or→and (logic bug: OR let one false positive through)
 
 
 # ---------------------------------------------------------------------------

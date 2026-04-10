@@ -789,3 +789,65 @@ class TestPlanLockWeakRef:
         # All returned locks must be identical objects (same session, same lock)
         assert len(set(id(lk) for lk in results)) == 1, \
             "All concurrent callers must receive the same lock object"
+
+
+# ---------------------------------------------------------------------------
+# Cycle 70: replan active step .get() guard (KeyError prevention)
+# ---------------------------------------------------------------------------
+
+class TestReplanActiveStepGuardCycle70:
+    """Cycle 70: replan current_step must use .get("id") not ["id"] on active step."""
+
+    def _base_plan(self, steps):
+        return {
+            "goal": "Test", "goal_id": "abc123", "pattern": "generic",
+            "status": "active", "created_at": 0.0, "updated_at": 0.0,
+            "replan_history": [],  # required by _handle_replan
+            "steps": steps,
+        }
+
+    def test_replan_no_active_after_cancel_returns_none_current_step(self):
+        """When new_remaining_steps=[] (cancel all), current_step must be None."""
+        import json as _json
+        import unittest.mock
+        from agent.brain import planner as planner_mod
+
+        plan = self._base_plan([
+            {"id": "s1", "action": "First", "status": "active", "tools": []},
+        ])
+
+        with unittest.mock.patch.object(planner_mod.PlannerAgent, "_load_plan", return_value=plan), \
+             unittest.mock.patch.object(planner_mod.PlannerAgent, "_save_plan"):
+            result = _json.loads(planner_mod.PlannerAgent().handle("replan", {
+                "session": "test_c70_cancel",
+                "reason": "abort",
+                "new_remaining_steps": [],  # cancels all remaining — active=None after
+            }))
+
+        assert result.get("replanned") is True
+        assert result.get("current_step") is None  # Cycle 70: no active step → None
+
+    def test_replan_with_new_steps_returns_first_step_id(self):
+        """When new steps are provided, current_step must be the first new step's id."""
+        import json as _json
+        import unittest.mock
+        from agent.brain import planner as planner_mod
+
+        plan = self._base_plan([
+            {"id": "old-1", "action": "Old step", "status": "active", "tools": []},
+        ])
+
+        with unittest.mock.patch.object(planner_mod.PlannerAgent, "_load_plan", return_value=plan), \
+             unittest.mock.patch.object(planner_mod.PlannerAgent, "_save_plan"):
+            result = _json.loads(planner_mod.PlannerAgent().handle("replan", {
+                "session": "test_c70_newsteps",
+                "reason": "pivot",
+                "new_remaining_steps": [
+                    {"id": "new-1", "action": "New first step", "tools": []},
+                    {"id": "new-2", "action": "New second step", "tools": []},
+                ],
+            }))
+
+        assert result.get("replanned") is True
+        assert result.get("current_step") == "new-1"  # Cycle 70: .get("id") returns value
+        assert result.get("current_action") == "New first step"  # Cycle 70: .get("action")

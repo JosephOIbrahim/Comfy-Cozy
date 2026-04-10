@@ -207,7 +207,10 @@ def _handle_iterative_refine(tool_input: dict) -> str:
     model_id = tool_input.get("model_id", "")
     workflow_state = tool_input.get("workflow_state")
     output_analysis = tool_input.get("output_analysis")
-    max_iterations = tool_input.get("max_iterations", 3)
+    try:  # Cycle 70: coerce string input before arithmetic (TypeError on max/min)
+        max_iterations = int(tool_input.get("max_iterations", 3))
+    except (TypeError, ValueError):
+        max_iterations = 3
     schemas = tool_input.get("schemas")
 
     # Clamp max_iterations to a sane range

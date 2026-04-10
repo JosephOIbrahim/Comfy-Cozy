@@ -138,8 +138,10 @@ def _handle_provision_model(tool_input: dict) -> str:
         return to_json({"error": "query is required and must be a non-empty string."})
     model_type = tool_input.get("model_type")
     source = tool_input.get("source", "auto")
-    auto_wire = tool_input.get("auto_wire", True)
-    auto_download = tool_input.get("auto_download", False)
+    _raw_wire = tool_input.get("auto_wire", True)  # Cycle 70: coerce string "false" (truthy)
+    auto_wire = _raw_wire if isinstance(_raw_wire, bool) else str(_raw_wire).lower() not in ("false", "0", "no", "")
+    _raw_dl = tool_input.get("auto_download", False)  # Cycle 70: coerce string "false" (truthy)
+    auto_download = _raw_dl if isinstance(_raw_dl, bool) else str(_raw_dl).lower() not in ("false", "0", "no", "")
 
     # Step 1: Discover
     sources = (

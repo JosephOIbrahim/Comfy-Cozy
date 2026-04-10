@@ -495,3 +495,58 @@ class TestVerifyEnrichment:
             "output_analysis": {"quality_score": 0.8, "artifacts": []},
         }))
         assert "validation" in result
+
+
+# ---------------------------------------------------------------------------
+# Cycle 70: max_iterations int() coercion guard
+# ---------------------------------------------------------------------------
+
+class TestMaxIterationsCoercionCycle70:
+    """Cycle 70: max_iterations must be coerced to int before max()/min() arithmetic."""
+
+    @patch("agent.brain.iterative_refine.BrainAgent.dispatch")
+    @patch("agent.brain.iterative_refine._is_comfyui_available", return_value=False)
+    def test_string_max_iterations_does_not_crash(self, mock_avail, mock_dispatch):
+        """max_iterations='5' (string) must be coerced, not crash with TypeError."""
+        mock_dispatch.return_value = json.dumps({
+            "intent_type": "refine", "target_nodes": [], "parameter_changes": [],
+            "rationale": "ok", "precondition_warnings": [],
+        })
+        result = json.loads(handle("iterative_refine", {
+            "user_intent": "make it dreamier",
+            "model_id": "sdxl-base",
+            "max_iterations": "5",  # string instead of int — Cycle 70 guard
+        }))
+        assert result.get("status") != "error" or "max_iterations" not in result.get("precondition_warnings", [])
+
+    @patch("agent.brain.iterative_refine.BrainAgent.dispatch")
+    @patch("agent.brain.iterative_refine._is_comfyui_available", return_value=False)
+    def test_float_max_iterations_coerced_to_int(self, mock_avail, mock_dispatch):
+        """max_iterations=2.7 (float) must be coerced to int without crashing."""
+        mock_dispatch.return_value = json.dumps({
+            "intent_type": "refine", "target_nodes": [], "parameter_changes": [],
+            "rationale": "ok", "precondition_warnings": [],
+        })
+        result = json.loads(handle("iterative_refine", {
+            "user_intent": "make it dreamier",
+            "model_id": "sdxl-base",
+            "max_iterations": 2.7,  # float — Cycle 70: int() coerces cleanly
+        }))
+        # Should not crash
+        assert "status" in result
+
+    @patch("agent.brain.iterative_refine.BrainAgent.dispatch")
+    @patch("agent.brain.iterative_refine._is_comfyui_available", return_value=False)
+    def test_invalid_max_iterations_falls_back_to_default(self, mock_avail, mock_dispatch):
+        """max_iterations='abc' (non-numeric string) must fall back to default 3."""
+        mock_dispatch.return_value = json.dumps({
+            "intent_type": "refine", "target_nodes": [], "parameter_changes": [],
+            "rationale": "ok", "precondition_warnings": [],
+        })
+        result = json.loads(handle("iterative_refine", {
+            "user_intent": "make it dreamier",
+            "model_id": "sdxl-base",
+            "max_iterations": "abc",  # unparseable — Cycle 70: falls back to 3
+        }))
+        # Must not crash with TypeError/ValueError — fallback to default
+        assert "status" in result

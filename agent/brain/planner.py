@@ -670,8 +670,8 @@ class PlannerAgent(BrainAgent):
             "reason": reason,
             "completed_preserved": len(completed_steps),
             "new_steps": len(plan["steps"]) - len(completed_steps),
-            "current_step": active["id"] if active else None,
-            "current_action": active["action"] if active else None,
+            "current_step": active.get("id") if active else None,  # Cycle 70: bracket → .get() (KeyError guard)
+            "current_action": active.get("action") if active else None,  # Cycle 70
             "message": f"Plan revised: {reason}. {len(completed_steps)} completed steps preserved.",
         })
 

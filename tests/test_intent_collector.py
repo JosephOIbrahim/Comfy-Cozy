@@ -240,3 +240,54 @@ class TestSessionIsolation:
         assert instance.get_current() is not None
         assert instance.get_current()["user_request"] == "A request"
         _conn_session.reset(token_a)
+
+
+# ---------------------------------------------------------------------------
+# Cycle 70: style_references isinstance(list) guard
+# ---------------------------------------------------------------------------
+
+class TestStyleReferencesGuardCycle70:
+    """Cycle 70: style_references must be validated as list before passing to capture()."""
+
+    def test_string_style_references_returns_error(self):
+        """style_references='some_style' (string) must return structured error."""
+        from agent.brain import handle
+        result = json.loads(handle("capture_intent", {
+            "user_request": "make it dreamier",
+            "interpretation": "lower CFG, dreamier palette",
+            "style_references": "baroque",  # string instead of list — Cycle 70 guard
+        }))
+        assert "error" in result
+        assert "style_references" in result["error"].lower()
+
+    def test_dict_style_references_returns_error(self):
+        """style_references={} (dict) must return structured error, not silent corruption."""
+        from agent.brain import handle
+        result = json.loads(handle("capture_intent", {
+            "user_request": "make it dreamier",
+            "interpretation": "lower CFG",
+            "style_references": {"key": "value"},  # dict instead of list — Cycle 70 guard
+        }))
+        assert "error" in result
+        assert "style_references" in result["error"].lower()
+
+    def test_valid_list_style_references_captured(self):
+        """Well-formed list style_references must pass through and be stored."""
+        from agent.brain import handle
+        result = json.loads(handle("capture_intent", {
+            "user_request": "make it dreamier",
+            "interpretation": "lower CFG",
+            "style_references": ["baroque", "impressionist"],  # valid list — Cycle 70
+        }))
+        assert result.get("status") == "captured"
+        assert result["intent"]["style_references"] == ["baroque", "impressionist"]
+
+    def test_empty_list_style_references_captured(self):
+        """Empty list style_references must be accepted (optional field)."""
+        from agent.brain import handle
+        result = json.loads(handle("capture_intent", {
+            "user_request": "make it dreamier",
+            "interpretation": "lower CFG",
+            "style_references": [],  # empty list — valid
+        }))
+        assert result.get("status") == "captured"
