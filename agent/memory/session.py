@@ -25,7 +25,10 @@ SCHEMA_VERSION = 2
 
 # Per-session write lock: prevents read-modify-write races on the notes list
 # when concurrent requests call add_note() for the same session file.
-_NOTE_LOCK = threading.Lock()
+# RLock (not Lock) so _handle_save_session() can acquire it BEFORE calling
+# load_session() + save_session() without deadlocking on the re-entrant save.
+# (Cycle 28 TOCTOU fix)
+_NOTE_LOCK = threading.RLock()
 
 NOTE_TYPES = ("preference", "observation", "decision", "tip")
 

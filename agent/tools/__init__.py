@@ -199,6 +199,12 @@ def handle(
         from ..session_context import get_session_context
         ctx = get_session_context(session_id)
 
+    # Ensure brain is loaded BEFORE the gate check — _BRAIN_TOOL_NAMES is
+    # populated by _ensure_brain(). Without this, brain tools on their first
+    # call are not present in _BRAIN_TOOL_NAMES, so _is_known=False and the
+    # gate is silently skipped for high-risk brain tools. (Cycle 28 fix)
+    _ensure_brain()
+
     # Pre-dispatch gate (guarded by kill switch, only for known tools)
     _is_known = name in _HANDLERS or name in _BRAIN_TOOL_NAMES
     try:
@@ -241,8 +247,7 @@ def handle(
             f"Gate unavailable for '{name}' — denied for safety. Check logs."
         )
 
-    # Check brain tools (lazy loaded)
-    _ensure_brain()
+    # Check brain tools (_ensure_brain already called above before gate check)
     if name in _BRAIN_TOOL_NAMES:
         from ..brain import handle as handle_brain
         try:

@@ -125,11 +125,16 @@ def _handle_save_session(tool_input: dict) -> str:
     wf_state = get_session("default")
     workflow_state = copy.deepcopy(dict(wf_state.items())) if wf_state.get("current_workflow") else None
 
-    # Preserve existing notes from prior add_note calls
-    existing = load_session(name)
-    notes = existing.get("notes", []) if "error" not in existing else None
-
-    result = save_session(name, workflow_state=workflow_state, notes=notes)
+    # Preserve existing notes from prior add_note calls.
+    # Acquire _NOTE_LOCK before load_session() so a concurrent add_note() call
+    # cannot slip in between the read and the write and lose its note.
+    # _NOTE_LOCK is an RLock so save_session() (which also acquires it) re-enters
+    # safely rather than deadlocking. (Cycle 28 TOCTOU fix)
+    from ..memory.session import _NOTE_LOCK
+    with _NOTE_LOCK:
+        existing = load_session(name)
+        notes = existing.get("notes", []) if "error" not in existing else None
+        result = save_session(name, workflow_state=workflow_state, notes=notes)
 
     # Save CognitiveWorkflowStage alongside JSON if available
     from ..session_context import get_session_context

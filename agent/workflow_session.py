@@ -77,18 +77,26 @@ class WorkflowSession:
             return new
 
     def _ensure_observation_log(self):
-        """Lazily create observation log on first use. Never raises."""
+        """Lazily create observation log on first use. Never raises.
+
+        Guard with self._lock (RLock — re-entrant) to prevent the
+        check-then-set race when two threads call observe() concurrently.
+        (Cycle 28 fix)
+        """
         if self._observation_log_checked:
             return
-        self._observation_log_checked = True
-        try:
-            from .config import OBSERVATION_ENABLED
-            if not OBSERVATION_ENABLED:
+        with self._lock:
+            if self._observation_log_checked:  # Re-check under lock
                 return
-            from .workflow_observation_log import WorkflowObservationLog
-            self._observation_log = WorkflowObservationLog(self.session_id)
-        except Exception:
-            pass
+            self._observation_log_checked = True
+            try:
+                from .config import OBSERVATION_ENABLED
+                if not OBSERVATION_ENABLED:
+                    return
+                from .workflow_observation_log import WorkflowObservationLog
+                self._observation_log = WorkflowObservationLog(self.session_id)
+            except Exception:
+                pass
 
     def observe(self, tool_name: str, tool_input: dict) -> "int | None":
         """Record a workflow observation after a tool call. Returns step_index or None."""
@@ -103,11 +111,11 @@ class WorkflowSession:
                 WorkflowObservation, ActionBlock, WorkflowStateBlock,
                 WorkflowPhase,
             )
-            # Determine phase from workflow state
-            phase = WorkflowPhase.EMPTY
-            wf = self._data.get("current_workflow")
-            if wf:
-                phase = WorkflowPhase.LOADED
+            # Snapshot current_workflow under lock to prevent TOCTOU with
+            # concurrent patch/undo calls. (Cycle 28 fix)
+            with self._lock:
+                wf = self._data.get("current_workflow")
+            phase = WorkflowPhase.LOADED if wf else WorkflowPhase.EMPTY
 
             # Build observation
             obs = WorkflowObservation(

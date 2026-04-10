@@ -284,6 +284,15 @@ class AutonomousPipeline:
 
         model_family = composition.plan.model_family if composition.plan else ""
         params = composition.plan.parameters if composition.plan else {}
+
+        # Guard: if model_family is empty (compose step returned no plan or
+        # reported an unknown family), fall back to SD1.5 explicitly so that
+        # predict() uses an intentional baseline rather than an empty-string
+        # lookup that silently matches nothing. (Cycle 28 fix)
+        if not model_family:
+            log.warning("model_family is empty after compose — defaulting to SD1.5")
+            model_family = "SD1.5"
+
         result.log(f"Composed workflow: family={model_family}, params={len(params)}")
 
         # Stage 3: PREDICT

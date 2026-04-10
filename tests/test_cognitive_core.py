@@ -656,3 +656,74 @@ class TestEdgeCases:
         assert resolved["4"]["inputs"]["denoise"] == 0.5
         # Links still intact
         assert resolved["4"]["inputs"]["model"] == ["1", 0]
+
+
+# ---------------------------------------------------------------------------
+# Thread safety (Cycle 28 fix — _delta_stack_lock)
+# ---------------------------------------------------------------------------
+
+class TestDeltaStackThreadSafety:
+    """Concurrent mutate/pop/resolve must not corrupt _delta_stack."""
+
+    def test_concurrent_mutate_no_corruption(self, engine):
+        """100 concurrent mutate_workflow() calls must all land in the stack."""
+        import threading
+
+        results = []
+        errors = []
+
+        def mutate(i):
+            try:
+                engine.mutate_workflow({"4": {"cfg": float(i)}}, opinion="L")
+                results.append(i)
+            except Exception as e:
+                errors.append(str(e))
+
+        threads = [threading.Thread(target=mutate, args=(i,)) for i in range(100)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert not errors, f"concurrent mutate raised: {errors}"
+        assert len(engine.delta_stack) == 100
+
+    def test_concurrent_mutate_and_resolve(self, engine):
+        """Concurrent mutate() + to_api_json() must never raise."""
+        import threading
+
+        errors = []
+
+        def mutate():
+            for i in range(10):
+                try:
+                    engine.mutate_workflow({"4": {"cfg": float(i)}}, opinion="L")
+                except Exception as e:
+                    errors.append(f"mutate: {e}")
+
+        def resolve():
+            for _ in range(10):
+                try:
+                    engine.to_api_json()
+                except Exception as e:
+                    errors.append(f"resolve: {e}")
+
+        threads = (
+            [threading.Thread(target=mutate) for _ in range(4)]
+            + [threading.Thread(target=resolve) for _ in range(4)]
+        )
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert not errors, f"concurrent mutate/resolve raised: {errors}"
+
+    def test_deepcopy_with_lock_succeeds(self, engine):
+        """copy.deepcopy(engine) must not raise even after _delta_stack_lock added."""
+        engine.mutate_workflow({"4": {"cfg": 5.0}}, opinion="L")
+        clone = copy.deepcopy(engine)
+        # Clone is independent
+        clone.mutate_workflow({"4": {"cfg": 99.0}}, opinion="L")
+        assert engine.to_api_json()["4"]["inputs"]["cfg"] == 5.0
+        assert clone.to_api_json()["4"]["inputs"]["cfg"] == 99.0

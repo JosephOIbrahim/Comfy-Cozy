@@ -9,6 +9,7 @@ targeted by a mutation.
 from __future__ import annotations
 
 import copy
+import threading
 from typing import Any
 
 from .delta import DeltaLayer, LIVRPS_PRIORITY, Opinion
@@ -33,6 +34,7 @@ class CognitiveGraphEngine:
         self._base = WorkflowGraph.from_api_json(base_workflow_data)
         self._base_raw = copy.deepcopy(base_workflow_data)
         self._delta_stack: list[DeltaLayer] = []
+        self._delta_stack_lock = threading.Lock()  # Guards all _delta_stack mutations
 
     @property
     def base(self) -> WorkflowGraph:
@@ -41,8 +43,9 @@ class CognitiveGraphEngine:
 
     @property
     def delta_stack(self) -> list[DeltaLayer]:
-        """Defensive copy of the delta stack."""
-        return list(self._delta_stack)
+        """Defensive copy of the delta stack (snapshot under lock)."""
+        with self._delta_stack_lock:
+            return list(self._delta_stack)
 
     def mutate_workflow(
         self,
@@ -70,7 +73,8 @@ class CognitiveGraphEngine:
             layer_id=layer_id,
             description=description,
         )
-        self._delta_stack.append(delta)
+        with self._delta_stack_lock:
+            self._delta_stack.append(delta)
         return delta
 
     def get_resolved_graph(self, up_to_index: int | None = None) -> WorkflowGraph:
@@ -97,7 +101,8 @@ class CognitiveGraphEngine:
         """Internal resolution on raw dicts for maximum link fidelity."""
         result = copy.deepcopy(self._base_raw)
 
-        deltas = self._delta_stack[:up_to_index]
+        with self._delta_stack_lock:
+            deltas = list(self._delta_stack[:up_to_index])  # Snapshot under lock
 
         # Stable sort by LIVRPS priority: same priority preserves insertion order
         sorted_deltas = sorted(deltas, key=lambda d: d.priority)
@@ -135,7 +140,9 @@ class CognitiveGraphEngine:
             Empty error list when all layers are intact.
         """
         errors = []
-        for delta in self._delta_stack:
+        with self._delta_stack_lock:
+            snapshot = list(self._delta_stack)
+        for delta in snapshot:
             if not delta.is_intact:
                 errors.append(
                     f"Layer {delta.layer_id!r} (opinion={delta.opinion}) "
@@ -156,7 +163,9 @@ class CognitiveGraphEngine:
         """
         if back_steps <= 0:
             return self.get_resolved_graph()
-        idx = max(0, len(self._delta_stack) - back_steps)
+        with self._delta_stack_lock:
+            stack_len = len(self._delta_stack)
+        idx = max(0, stack_len - back_steps)
         return self.get_resolved_graph(up_to_index=idx)
 
     def pop_delta(self) -> DeltaLayer | None:
@@ -164,9 +173,25 @@ class CognitiveGraphEngine:
 
         Returns None if the stack is empty.
         """
-        if self._delta_stack:
-            return self._delta_stack.pop()
+        with self._delta_stack_lock:
+            if self._delta_stack:
+                return self._delta_stack.pop()
         return None
+
+    def __deepcopy__(self, memo: dict) -> "CognitiveGraphEngine":
+        """Support copy.deepcopy() — creates a fresh lock, copies data.
+
+        threading.Lock() cannot be pickled or deep-copied, so we must
+        implement __deepcopy__ explicitly (same pattern as WorkflowSession).
+        The new engine gets its own independent lock.
+        """
+        with self._delta_stack_lock:
+            new = CognitiveGraphEngine.__new__(CognitiveGraphEngine)
+            new._base = copy.deepcopy(self._base, memo)
+            new._base_raw = copy.deepcopy(self._base_raw, memo)
+            new._delta_stack = copy.deepcopy(self._delta_stack, memo)
+            new._delta_stack_lock = threading.Lock()
+            return new
 
     def to_api_json(self) -> dict[str, Any]:
         """Get the fully resolved workflow as ComfyUI API JSON.

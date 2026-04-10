@@ -384,25 +384,29 @@ async def websocket_handler(request):
                     thread.start()
 
                     accumulated_text = []
-                    while True:
-                        try:
-                            event = await loop.run_in_executor(
-                                None, lambda: msg_queue.get(timeout=0.1),
-                            )
-                        except queue.Empty:
-                            if not thread.is_alive():
-                                while not msg_queue.empty():
-                                    event = msg_queue.get_nowait()
-                                    await _forward_event(ws, event, accumulated_text)
+                    try:
+                        while True:
+                            try:
+                                event = await loop.run_in_executor(
+                                    None, lambda: msg_queue.get(timeout=0.1),
+                                )
+                            except queue.Empty:
+                                if not thread.is_alive():
+                                    while not msg_queue.empty():
+                                        event = msg_queue.get_nowait()
+                                        await _forward_event(ws, event, accumulated_text)
+                                    break
+                                continue
+
+                            await _forward_event(ws, event, accumulated_text)
+
+                            if event["type"] in ("done", "error"):
                                 break
-                            continue
-
-                        await _forward_event(ws, event, accumulated_text)
-
-                        if event["type"] in ("done", "error"):
-                            break
-
-                    conv.busy = False
+                    finally:
+                        # Guarantee busy is cleared even if _forward_event()
+                        # raises (e.g., client disconnects mid-stream).
+                        # (Cycle 28 fix)
+                        conv.busy = False
 
                 elif msg_type == "workflow":
                     workflow_data = data.get("data")

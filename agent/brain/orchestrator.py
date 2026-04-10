@@ -286,11 +286,22 @@ class OrchestratorAgent(BrainAgent):
             self._evict_stale_tasks()
             if task_ids:
                 tasks = {tid: self._active_tasks[tid] for tid in task_ids if tid in self._active_tasks}
+                # Report which requested IDs were not found — helps caller
+                # distinguish eviction from wrong ID. (Cycle 28 fix)
+                not_found = [tid for tid in task_ids if tid not in self._active_tasks]
             else:
                 tasks = dict(self._active_tasks)
+                not_found = []
 
         if not tasks:
-            return self.to_json({"tasks": [], "message": "No active sub-tasks."})
+            result = {"tasks": [], "message": "No active sub-tasks."}
+            if not_found:
+                result["not_found"] = not_found
+                result["message"] = (
+                    f"None of the requested task IDs are active "
+                    f"(may have completed and been evicted): {not_found}"
+                )
+            return self.to_json(result)
 
         summaries = []
         for tid, task in sorted(tasks.items()):
@@ -318,7 +329,7 @@ class OrchestratorAgent(BrainAgent):
         completed = sum(1 for s in summaries if s["status"] == "completed")
         running = sum(1 for s in summaries if s["status"] == "running")
 
-        return self.to_json({
+        response = {
             "tasks": summaries,
             "summary": {
                 "total": len(summaries),
@@ -326,6 +337,10 @@ class OrchestratorAgent(BrainAgent):
                 "running": running,
                 "errors": sum(1 for s in summaries if s["status"] in ("error", "timeout")),
             },
-        })
+        }
+        if not_found:
+            response["not_found"] = not_found
+
+        return self.to_json(response)
 
 
