@@ -643,3 +643,87 @@ class TestReplanStepItemValidation:
         }))
         assert "error" not in result
         assert result.get("replanned") is True
+
+
+# ---------------------------------------------------------------------------
+# Cycle 57: plan schema guard in _handle_get_plan
+# ---------------------------------------------------------------------------
+
+class TestGetPlanCorruptSchema:
+    """_handle_get_plan must guard against disk-corrupt plan files."""
+
+    def test_missing_steps_key_returns_error(self):
+        """Plan file without 'steps' key → structured error, no KeyError crash."""
+        import json as _json
+        from unittest.mock import patch
+        from agent.brain import planner as planner_mod
+
+        bad_plan = {"goal": "test goal", "pattern": "generic", "status": "active"}
+        with patch.object(planner_mod.PlannerAgent, "_load_plan", return_value=bad_plan):
+            result = _json.loads(handle("get_plan", {"session": "test_c57_bad_steps"}))
+
+        assert "error" in result
+        assert "steps" in result["error"]
+
+    def test_steps_as_dict_returns_error(self):
+        """Plan with steps as dict (not list) → structured error, no crash."""
+        import json as _json
+        from unittest.mock import patch
+        from agent.brain import planner as planner_mod
+
+        bad_plan = {"goal": "g", "pattern": "p", "status": "active", "steps": {}}
+        with patch.object(planner_mod.PlannerAgent, "_load_plan", return_value=bad_plan):
+            result = _json.loads(handle("get_plan", {"session": "test_c57_bad_dict"}))
+
+        assert "error" in result
+        assert "steps" in result["error"]
+
+    def test_missing_goal_key_returns_error(self):
+        """Plan file without 'goal' key → structured error, no KeyError crash."""
+        import json as _json
+        from unittest.mock import patch
+        from agent.brain import planner as planner_mod
+
+        bad_plan = {"steps": [], "pattern": "generic", "status": "active"}
+        with patch.object(planner_mod.PlannerAgent, "_load_plan", return_value=bad_plan):
+            result = _json.loads(handle("get_plan", {"session": "test_c57_no_goal"}))
+
+        assert "error" in result
+        assert "goal" in result["error"]
+
+    def test_missing_pattern_key_returns_error(self):
+        """Plan file without 'pattern' key → structured error."""
+        import json as _json
+        from unittest.mock import patch
+        from agent.brain import planner as planner_mod
+
+        bad_plan = {"steps": [], "goal": "test", "status": "active"}
+        with patch.object(planner_mod.PlannerAgent, "_load_plan", return_value=bad_plan):
+            result = _json.loads(handle("get_plan", {"session": "test_c57_no_pattern"}))
+
+        assert "error" in result
+        assert "pattern" in result["error"]
+
+    def test_missing_status_key_returns_error(self):
+        """Plan file without 'status' key → structured error."""
+        import json as _json
+        from unittest.mock import patch
+        from agent.brain import planner as planner_mod
+
+        bad_plan = {"steps": [], "goal": "test", "pattern": "generic"}
+        with patch.object(planner_mod.PlannerAgent, "_load_plan", return_value=bad_plan):
+            result = _json.loads(handle("get_plan", {"session": "test_c57_no_status"}))
+
+        assert "error" in result
+        assert "status" in result["error"]
+
+    def test_valid_plan_still_works(self):
+        """A properly structured plan must still return the correct response."""
+        import json as _json
+        result = _json.loads(handle("plan_goal", {"goal": "Build workflow", "session": "test_c57_valid"}))
+        assert "error" not in result
+
+        result = _json.loads(handle("get_plan", {"session": "test_c57_valid"}))
+        assert "error" not in result
+        assert result["goal"] == "Build workflow"
+        assert "steps" in result

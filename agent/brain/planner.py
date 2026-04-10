@@ -363,7 +363,7 @@ class PlannerAgent(BrainAgent):
         fd, tmp = tempfile.mkstemp(dir=str(path.parent), suffix=".tmp")
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as f:
-                f.write(json.dumps(plan, indent=2, sort_keys=True))
+                f.write(json.dumps(plan, indent=2, sort_keys=True, allow_nan=False))  # Cycle 57
                 f.flush()
                 os.fsync(f.fileno())
             os.replace(tmp, str(path))
@@ -502,9 +502,16 @@ class PlannerAgent(BrainAgent):
         if plan is None:
             return self.to_json({"error": "No active plan.", "hint": "Use plan_goal to create one."})
 
-        completed = sum(1 for s in plan["steps"] if s["status"] == "done")
+        # Cycle 57: guard required keys — disk-loaded JSON may be corrupt
+        if not isinstance(plan.get("steps"), list):
+            return self.to_json({"error": "Plan is corrupt: 'steps' is missing or not a list."})
+        for _key in ("goal", "pattern", "status"):
+            if _key not in plan:
+                return self.to_json({"error": f"Plan is corrupt: '{_key}' is missing."})
+
+        completed = sum(1 for s in plan["steps"] if s.get("status") == "done")
         total = len(plan["steps"])
-        active = next((s for s in plan["steps"] if s["status"] == "active"), None)
+        active = next((s for s in plan["steps"] if s.get("status") == "active"), None)
 
         return self.to_json({
             "goal_id": plan.get("goal_id"),
@@ -512,14 +519,14 @@ class PlannerAgent(BrainAgent):
             "pattern": plan["pattern"],
             "status": plan["status"],
             "progress": f"{completed}/{total}",
-            "current_step": active["id"] if active else None,
-            "current_action": active["action"] if active else None,
+            "current_step": active.get("id") if active else None,  # Cycle 57: .get() on step dict
+            "current_action": active.get("action") if active else None,
             "steps": [
                 {
-                    "id": s["id"],
-                    "action": s["action"],
-                    "status": s["status"],
-                    "result": s["result"],
+                    "id": s.get("id"),
+                    "action": s.get("action"),
+                    "status": s.get("status"),
+                    "result": s.get("result"),
                 }
                 for s in plan["steps"]
             ],

@@ -117,7 +117,7 @@ def _safe_to_json(obj: dict) -> str:
         return to_json(obj)
     except Exception:
         import json
-        return json.dumps(obj, sort_keys=True)
+        return json.dumps(obj, sort_keys=True, allow_nan=False)  # Cycle 57: NaN-safe fallback
 
 
 def _record_to_memory(

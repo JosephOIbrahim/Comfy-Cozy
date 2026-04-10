@@ -176,10 +176,12 @@ def _read_png_metadata(image_path: str) -> tuple[dict | None, dict]:
         return None, {}
 
     img = Image.open(image_path)
-    text_chunks = {}
-    if hasattr(img, "text"):
-        text_chunks = dict(img.text)
-    img.close()
+    try:  # Cycle 57: ensure img.close() runs even if dict(img.text) raises
+        text_chunks = {}
+        if hasattr(img, "text"):
+            text_chunks = dict(img.text)
+    finally:
+        img.close()
 
     our_data = None
     raw = text_chunks.get(METADATA_CHUNK_KEY)

@@ -761,3 +761,83 @@ class TestVerifyExecutionRequiredField:
         from agent.tools import verify_execution
         result = json.loads(verify_execution.handle("verify_execution", {"prompt_id": None}))
         assert "error" in result
+
+
+# ---------------------------------------------------------------------------
+# Cycle 57: silent exception swallow → log.warning
+# ---------------------------------------------------------------------------
+
+class TestSilentExceptionLogging:
+    """Cycle 57: exceptions during workflow extraction and intent capture must log."""
+
+    def test_workflow_extraction_exception_logs_warning(self, caplog):
+        """Exception in workflow extraction must call log.warning, not silently pass."""
+        import logging
+        from unittest.mock import patch, MagicMock
+        from agent.tools import verify_execution
+
+        history = {
+            "boom-id": {
+                "status": {"status_str": "success", "completed": True},
+                "outputs": {},
+            },
+        }
+
+        with patch("agent.tools.verify_execution.httpx.Client") as MockClient:
+            mock_resp = MagicMock()
+            mock_resp.json.return_value = history
+            MockClient.return_value.__enter__.return_value.get.return_value = mock_resp
+
+            with patch(
+                "agent.tools.workflow_patch.get_current_workflow",
+                side_effect=RuntimeError("disk read failed"),
+            ):
+                with caplog.at_level(logging.WARNING, logger="agent.tools.verify_execution"):
+                    verify_execution._verify_prompt("boom-id")
+
+        assert any("workflow" in r.message.lower() for r in caplog.records)
+
+    def test_intent_capture_exception_logs_warning(self, caplog, mock_comfyui_database):
+        """Exception during intent capture must call log.warning, not silently pass."""
+        import logging
+        from unittest.mock import patch, MagicMock
+        from agent.tools import verify_execution
+
+        history = {
+            "intent-id": {
+                "status": {"status_str": "success", "completed": True},
+                "outputs": {},
+            },
+        }
+
+        with patch("agent.tools.verify_execution.httpx.Client") as MockClient:
+            mock_resp = MagicMock()
+            mock_resp.json.return_value = history
+            MockClient.return_value.__enter__.return_value.get.return_value = mock_resp
+
+            # Make the intent dispatch raise
+            import agent.tools as tools_pkg
+            orig_handle = tools_pkg.handle
+
+            call_count = 0
+
+            def _raise_on_intent(name, tool_input):
+                nonlocal call_count
+                if name == "get_current_intent":
+                    raise ValueError("intent service down")
+                return orig_handle(name, tool_input)
+
+            with patch.object(tools_pkg, "handle", _raise_on_intent):
+                with caplog.at_level(logging.WARNING, logger="agent.tools.verify_execution"):
+                    verify_execution._verify_prompt("intent-id")
+
+        assert any("intent" in r.message.lower() for r in caplog.records)
+
+    def test_workflow_hash_rejects_nan(self):
+        """_workflow_hash must raise ValueError on NaN-containing workflow."""
+        import math
+        from agent.tools.verify_execution import _workflow_hash
+
+        wf_with_nan = {"1": {"class_type": "KSampler", "inputs": {"cfg": float("nan")}}}
+        with pytest.raises((ValueError, OverflowError)):
+            _workflow_hash(wf_with_nan)

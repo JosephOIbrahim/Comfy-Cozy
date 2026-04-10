@@ -176,7 +176,7 @@ def _extract_key_params(workflow: dict) -> dict:
 
 def _workflow_hash(workflow: dict) -> str:
     """Deterministic hash of workflow for fingerprinting."""
-    raw = json.dumps(workflow, sort_keys=True, separators=(",", ":"))
+    raw = json.dumps(workflow, sort_keys=True, separators=(",", ":"), allow_nan=False)  # Cycle 57
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
 
 
@@ -321,8 +321,8 @@ def _verify_prompt(
         if wf:
             key_params = _extract_key_params(wf)
             workflow_hash = _workflow_hash(wf)
-    except Exception:
-        pass
+    except Exception as _wf_err:  # Cycle 57: log instead of silently swallow
+        log.warning("Failed to extract workflow context for outcome recording: %s", _wf_err)
 
     # 4. Optional vision analysis
     vision_analysis = None
@@ -379,8 +379,8 @@ def _verify_prompt(
         intent_result = json.loads(intent_raw)
         if intent_result.get("status") == "ok":
             intent_data = intent_result["intent"]
-    except Exception:
-        pass
+    except Exception as _intent_err:  # Cycle 57: log instead of silently swallow
+        log.warning("Failed to capture intent for metadata embedding: %s", _intent_err)
 
     # 5.6 Embed creative metadata into PNG outputs
     metadata_embedded = False
