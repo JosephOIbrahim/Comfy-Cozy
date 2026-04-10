@@ -94,7 +94,7 @@ def save_session(
         }
 
         try:
-            content = json.dumps(session_data, sort_keys=True, indent=2)
+            content = json.dumps(session_data, sort_keys=True, indent=2, allow_nan=False)  # Cycle 60
             _atomic_write(path, content)
             return {"saved": str(path), "size_bytes": len(content)}
         except Exception as e:
@@ -213,7 +213,7 @@ def add_note(name: str, note: str, *, note_type: str = "observation") -> dict:
         data["saved_at"] = time.strftime("%Y-%m-%dT%H:%M:%S")
 
         try:
-            content = json.dumps(data, sort_keys=True, indent=2)
+            content = json.dumps(data, sort_keys=True, indent=2, allow_nan=False)  # Cycle 60
             _atomic_write(path, content)
             return {"added": True, "total_notes": len(data["notes"])}
         except Exception as e:
@@ -384,7 +384,7 @@ def save_ratchet(name: str, ratchet: "object") -> dict:
             "weights": ratchet.weights,
             "history": history,
         }
-        _atomic_write(path, json.dumps(data, sort_keys=True, indent=2))
+        _atomic_write(path, json.dumps(data, sort_keys=True, indent=2, allow_nan=False))  # Cycle 60
         return {"saved_ratchet": str(path), "decisions": len(history)}
     except Exception as e:
         log.warning("Failed to save ratchet for session '%s': %s", name, e)
@@ -449,7 +449,7 @@ def save_experience(name: str, stage: "object") -> dict:
             "count": len(chunks),
             "experiences": [c.to_dict() for c in chunks],
         }
-        _atomic_write(path, json.dumps(data, sort_keys=True, indent=2))
+        _atomic_write(path, json.dumps(data, sort_keys=True, indent=2, allow_nan=False))  # Cycle 60
         return {"saved_experience": str(path), "count": len(chunks)}
     except Exception as e:
         log.warning("Failed to save experience for session '%s': %s", name, e)

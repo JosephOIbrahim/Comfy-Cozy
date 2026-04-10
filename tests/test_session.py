@@ -525,3 +525,31 @@ class TestAtomicWriteCleanupLogging:
             for rec in caplog.records
             if rec.levelno >= logging.WARNING
         ), "Expected a WARNING log about temp file cleanup failure"
+
+
+# ---------------------------------------------------------------------------
+# Cycle 60 — allow_nan=False coverage for session writes
+# ---------------------------------------------------------------------------
+
+class TestSessionNaNSafety:
+    """Cycle 60: session write functions must reject NaN/Infinity (allow_nan=False)."""
+
+    def test_save_session_returns_error_on_nan_metadata(self):
+        """save_session must return error dict when metadata contains NaN (not silently write)."""
+        from agent.memory.session import save_session
+        result = save_session("test_c60_nan", metadata={"score": float("nan")})
+        # json.dumps with allow_nan=False raises ValueError, caught and returned as error dict
+        assert "error" in result
+
+    def test_save_session_returns_error_on_inf_metadata(self):
+        """save_session must return error dict when metadata contains Infinity."""
+        from agent.memory.session import save_session
+        result = save_session("test_c60_inf", metadata={"cfg": float("inf")})
+        assert "error" in result
+
+    def test_save_session_valid_data_still_works(self):
+        """save_session must succeed with normal finite float values."""
+        from agent.memory.session import save_session
+        result = save_session("test_c60_valid", metadata={"cfg": 7.0, "steps": 20})
+        assert "error" not in result
+        assert "saved" in result

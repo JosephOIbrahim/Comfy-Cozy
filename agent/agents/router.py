@@ -13,8 +13,11 @@ Specialists have domain authority. The Router has control flow authority.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from typing import Any, Literal
+
+log = logging.getLogger(__name__)
 
 from agent.agents.intent_agent import IntentAgent, IntentSpecification
 from agent.agents.verify_agent import VerifyAgent, VerificationResult
@@ -307,10 +310,11 @@ class Router:
                         f"Schema '{schema_name}' not found for agent "
                         f"'{agent_name}'. Available: {available}"
                     )
-            except Exception:
-                # If the agent directory doesn't exist, that's fine for
-                # agents that don't have schemas yet (e.g., execution)
-                pass
+            except Exception as _e:  # Cycle 60: log instead of silently swallow
+                log.debug(
+                    "Schema list failed for agent %r — agent may not have schemas yet: %s",
+                    agent_name, _e,
+                )
 
         return warnings
 

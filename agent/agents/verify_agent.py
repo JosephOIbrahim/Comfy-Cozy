@@ -13,6 +13,7 @@ of model profiles loaded via :mod:`agent.profiles`.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
@@ -197,7 +198,15 @@ class VerifyAgent:
         )
         intent = self._score_intent_alignment(output_analysis, original_intent)
 
+        # Cycle 60: guard individual scores before merge — sub-scoring helpers guard their own
+        # returns, but a mocked/overridden method could still yield NaN. Defense-in-depth.
+        if not math.isfinite(technical):
+            technical = 0.0
+        if not math.isfinite(intent):
+            intent = 0.5  # uncertain, not failure
         overall = intent * self.INTENT_WEIGHT + technical * self.TECHNICAL_WEIGHT
+        if not math.isfinite(overall):
+            overall = 0.0
 
         diagnosed_issues, model_limitations = self._diagnose_issues(
             output_analysis, quality_section, parameters_used
@@ -314,7 +323,8 @@ class VerifyAgent:
             except (TypeError, ValueError):
                 pass  # Non-numeric quality_score: skip this signal
 
-        return max(0.0, min(1.0, score))
+        # Cycle 60: math.isfinite guards NaN/Inf — max/min alone don't catch NaN
+        return max(0.0, min(1.0, score)) if math.isfinite(score) else 0.0
 
     def _score_parameter_fit(
         self,
@@ -363,7 +373,9 @@ class VerifyAgent:
             if isinstance(mi, bool):
                 return 1.0 if mi else 0.0
             try:
-                return max(0.0, min(1.0, float(mi)))
+                v = float(mi)
+                # Cycle 60: math.isfinite guards NaN/Inf — max/min alone don't catch NaN
+                return max(0.0, min(1.0, v)) if math.isfinite(v) else 0.5
             except (TypeError, ValueError):
                 pass
 
@@ -371,7 +383,8 @@ class VerifyAgent:
         qs = output_analysis.get("quality_score")
         if qs is not None:
             try:
-                return max(0.0, min(1.0, float(qs) * 0.5 + 0.25))
+                v = float(qs) * 0.5 + 0.25
+                return max(0.0, min(1.0, v)) if math.isfinite(v) else 0.5  # Cycle 60
             except (TypeError, ValueError):
                 pass
 

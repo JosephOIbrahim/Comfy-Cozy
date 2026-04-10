@@ -756,3 +756,71 @@ class TestLookupIntent:
         translations = {"dreamier": {"cfg_direction": "lower"}}
         result = agent._lookup_intent("DREAMIER", translations)
         assert result is not None
+
+
+# ---------------------------------------------------------------------------
+# Cycle 60 — _direction_to_value float() guards for corrupt profile data
+# ---------------------------------------------------------------------------
+
+class TestDirectionToValueCorruptProfile:
+    """Cycle 60: _direction_to_value must return None (not raise) on malformed profile data."""
+
+    def test_non_numeric_range_low_returns_none(self, agent):
+        """If range[0] is non-numeric string, must return None not raise ValueError."""
+        param_space = {"cfg": {"range": ["invalid", 10.0], "default": 7.0}}
+        result = agent._direction_to_value("lower", "cfg", param_space, None)
+        assert result is None
+
+    def test_non_numeric_range_high_returns_none(self, agent):
+        """If range[1] is non-numeric string, must return None not raise ValueError."""
+        param_space = {"cfg": {"range": [1.0, "high"], "default": 7.0}}
+        result = agent._direction_to_value("higher", "cfg", param_space, None)
+        assert result is None
+
+    def test_non_numeric_default_direction_returns_none(self, agent):
+        """If default is non-numeric for 'default' direction, must return None."""
+        param_space = {"cfg": {"range": [1.0, 10.0], "default": "auto"}}
+        result = agent._direction_to_value("default", "cfg", param_space, None)
+        assert result is None
+
+    def test_none_default_direction_returns_none(self, agent):
+        """If default is None for 'default' direction, must return None (not crash)."""
+        param_space = {"cfg": {"range": [1.0, 10.0]}}
+        result = agent._direction_to_value("default", "cfg", param_space, None)
+        assert result is None
+
+    def test_non_numeric_current_value_falls_back_to_midpoint(self, agent):
+        """If current_value is non-numeric, must fall back to midpoint (not raise)."""
+        param_space = {"cfg": {"range": [1.0, 10.0], "default": 7.0}}
+        # current_value="auto" is non-numeric — should fall back to midpoint (5.5)
+        result = agent._direction_to_value("lower", "cfg", param_space, "auto")
+        assert result is not None
+        assert isinstance(result, float)
+
+    def test_non_numeric_sweet_spot_skipped_gracefully(self, agent):
+        """If sweet_spot values are non-numeric, sweet_spot is skipped (result still returned)."""
+        param_space = {
+            "cfg": {
+                "range": [1.0, 10.0],
+                "default": 7.0,
+                "sweet_spot": ["low", "high"],  # non-numeric
+            }
+        }
+        # Should return a valid float (sweet_spot adjustment skipped)
+        result = agent._direction_to_value("lower", "cfg", param_space, None)
+        assert result is not None
+        assert isinstance(result, float)
+        assert 1.0 <= result <= 10.0
+
+    def test_valid_profile_still_works_after_guard(self, agent):
+        """A valid profile must still produce correct results after adding guards."""
+        param_space = {
+            "cfg": {
+                "range": [1.0, 10.0],
+                "default": 7.0,
+                "sweet_spot": [5.0, 8.0],
+            }
+        }
+        result = agent._direction_to_value("lower", "cfg", param_space, None)
+        assert result is not None
+        assert 1.0 <= result <= 10.0

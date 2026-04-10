@@ -59,6 +59,14 @@ def dispatch_brain_message(msg: dict, *, max_retries: int = 3) -> bool:
 
     _log = logging.getLogger(__name__)
 
+    # Cycle 60: type guard — msg must be a dict; crash without this if caller passes None/str
+    if not isinstance(msg, dict):
+        _log.warning(
+            "dispatch_brain_message: expected dict, got %s — dropping message",
+            type(msg).__name__,
+        )
+        return False
+
     source = msg.get("source", "")
     target = msg.get("target", "")
     payload = msg.get("payload", {})
@@ -73,8 +81,8 @@ def dispatch_brain_message(msg: dict, *, max_retries: int = 3) -> bool:
                 "Adapter translated %s->%s (keys: %s)",
                 source, target, sorted(adapted.keys()),
             )
-    except Exception:
-        pass  # Adapter not available — no impact on dispatch
+    except Exception as _e:  # Cycle 60: log instead of silently swallow
+        _log.debug("Adapter translate failed for %s->%s: %s", source, target, _e)
 
     # Legacy routing (battle-tested, preserved as primary dispatch path)
     if source == "vision" and target == "memory":

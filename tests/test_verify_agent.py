@@ -843,3 +843,50 @@ class TestMappings:
         """Issue keywords in the map should be lowercase for matching."""
         for keyword in _ISSUE_SIGNAL_MAP:
             assert keyword == keyword.lower()
+
+
+# ---------------------------------------------------------------------------
+# Cycle 60 — NaN/Infinity guard in scoring pipeline
+# ---------------------------------------------------------------------------
+
+class TestNaNScoringGuard:
+    """Cycle 60: scoring functions must not leak NaN into VerificationResult."""
+
+    def test_technical_quality_nan_input_returns_zero(self, agent):
+        """_score_technical_quality must return 0.0 (not NaN) when score accumulates NaN."""
+        import math
+        # Pass a quality_score of NaN inside output_analysis — float(NaN) won't raise,
+        # so the only guard is math.isfinite on the return.
+        output_analysis = {"quality_score": float("nan")}
+        result = agent._score_technical_quality(output_analysis, {}, {}, {})
+        assert math.isfinite(result), f"Expected finite, got {result}"
+        assert 0.0 <= result <= 1.0
+
+    def test_intent_alignment_nan_mi_returns_safe_default(self, agent):
+        """_score_intent_alignment must return finite value when matches_intent is NaN."""
+        import math
+        output_analysis = {"matches_intent": float("nan")}
+        result = agent._score_intent_alignment(output_analysis, "dreamier")
+        assert math.isfinite(result), f"Expected finite, got {result}"
+
+    def test_intent_alignment_inf_quality_score_returns_safe(self, agent):
+        """_score_intent_alignment must handle Inf in quality_score fallback path."""
+        import math
+        output_analysis = {"quality_score": float("inf")}
+        result = agent._score_intent_alignment(output_analysis, "dreamier")
+        assert math.isfinite(result), f"Expected finite, got {result}"
+        assert 0.0 <= result <= 1.0
+
+    def test_evaluate_overall_score_never_nan(self, agent):
+        """evaluate() must never produce NaN in overall_score even with pathological input."""
+        import math
+        from unittest.mock import patch
+        # Force _score_technical_quality to return NaN — our guard should clamp to 0.0
+        with patch.object(agent, "_score_technical_quality", return_value=float("nan")):
+            result = agent.evaluate(
+                output_analysis={"quality_score": 0.8},
+                original_intent="make it dreamier",
+                model_id="flux1-dev",
+            )
+        assert math.isfinite(result.overall_score), f"overall_score is NaN"
+        assert math.isfinite(result.technical_quality), f"technical_quality is NaN"

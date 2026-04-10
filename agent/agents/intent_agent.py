@@ -517,18 +517,32 @@ class IntentAgent:
         if p_range is None:
             return None
 
-        range_low, range_high = float(p_range[0]), float(p_range[1])
+        try:  # Cycle 60: guard malformed profile range (non-numeric values)
+            range_low, range_high = float(p_range[0]), float(p_range[1])
+        except (TypeError, ValueError):
+            return None
         range_size = range_high - range_low
 
         if direction == "default":
-            return float(default) if default is not None else None
+            if default is None:
+                return None
+            try:
+                return float(default)  # Cycle 60: guarded
+            except (TypeError, ValueError):
+                return None
 
         # Determine current anchor
         anchor: float
         if current_value is not None:
-            anchor = float(current_value)
+            try:
+                anchor = float(current_value)  # Cycle 60: guarded
+            except (TypeError, ValueError):
+                anchor = (range_low + range_high) / 2.0
         elif default is not None:
-            anchor = float(default)
+            try:
+                anchor = float(default)  # Cycle 60: guarded
+            except (TypeError, ValueError):
+                anchor = (range_low + range_high) / 2.0
         else:
             anchor = (range_low + range_high) / 2.0
 
@@ -559,7 +573,11 @@ class IntentAgent:
 
         # Prefer sweet_spot if available
         if sweet:
-            sweet_low, sweet_high = float(sweet[0]), float(sweet[1])
+            try:  # Cycle 60: guard malformed profile sweet_spot
+                sweet_low, sweet_high = float(sweet[0]), float(sweet[1])
+            except (TypeError, ValueError):
+                sweet = None  # Skip sweet_spot adjustment on malformed data
+        if sweet:
             if up_or_down == "down":
                 raw = max(raw, sweet_low)
             else:

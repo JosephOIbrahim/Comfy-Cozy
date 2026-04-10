@@ -201,3 +201,59 @@ class TestUnknownTargetDispatch:
         # Should not raise — returns False gracefully
         result = dispatch_brain_message(msg)
         assert result is False
+
+
+# ---------------------------------------------------------------------------
+# Cycle 60 — type guard on msg + adapter exception logging
+# ---------------------------------------------------------------------------
+
+class TestDispatchBrainMessageTypeGuard:
+    """Cycle 60: dispatch_brain_message must reject non-dict msg gracefully."""
+
+    def test_none_msg_returns_false(self):
+        """None msg must return False, not AttributeError."""
+        result = dispatch_brain_message(None)  # type: ignore[arg-type]
+        assert result is False
+
+    def test_string_msg_returns_false(self):
+        """String msg must return False, not AttributeError."""
+        result = dispatch_brain_message("vision->memory: action=test")  # type: ignore[arg-type]
+        assert result is False
+
+    def test_list_msg_returns_false(self):
+        """List msg must return False, not AttributeError."""
+        result = dispatch_brain_message(["vision", "memory"])  # type: ignore[arg-type]
+        assert result is False
+
+    def test_non_dict_logs_warning(self, caplog):
+        """Non-dict msg must emit a WARNING log entry."""
+        import logging
+        with caplog.at_level(logging.WARNING, logger="agent.brain._protocol"):
+            dispatch_brain_message(42)  # type: ignore[arg-type]
+        assert any("dict" in r.message.lower() or "dropping" in r.message.lower()
+                   for r in caplog.records)
+
+    def test_valid_dict_still_dispatches(self):
+        """A valid dict must still be dispatched normally."""
+        msg = brain_message("vision", "memory", "result", {"action": "image_analyzed", "quality_score": 0.9})
+        with patch("agent.tools.handle", return_value="{}"):
+            result = dispatch_brain_message(msg)
+        assert result is True
+
+
+class TestAdapterExceptionLogging:
+    """Cycle 60: adapter translate failure must be logged at DEBUG, not silently swallowed."""
+
+    def test_adapter_exception_logs_debug(self, caplog):
+        """If adapter raises, a DEBUG log must be emitted and dispatch continues."""
+        import logging
+        msg = brain_message("vision", "memory", "result", {"action": "image_analyzed", "quality_score": 0.8})
+        # get_adapter is imported inside the function body, so patch the source module
+        with patch("agent.brain.adapters.get_adapter", side_effect=RuntimeError("adapter broken")), \
+             patch("agent.tools.handle", return_value="{}"), \
+             caplog.at_level(logging.DEBUG, logger="agent.brain._protocol"):
+            result = dispatch_brain_message(msg)
+        # Dispatch must still succeed (adapter failure doesn't block legacy route)
+        assert result is True
+        assert any("adapter" in r.message.lower() or "translate" in r.message.lower()
+                   for r in caplog.records)

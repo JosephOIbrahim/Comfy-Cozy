@@ -870,3 +870,46 @@ class TestImports:
         from agent.agents import AUTHORITY_RULES, DELEGATION_SEQUENCES
         assert isinstance(AUTHORITY_RULES, dict)
         assert isinstance(DELEGATION_SEQUENCES, dict)
+
+
+# ---------------------------------------------------------------------------
+# Cycle 60 — schema validation exception logging
+# ---------------------------------------------------------------------------
+
+class TestSchemaValidationExceptionLogging:
+    """Cycle 60: check_preconditions must log.debug when schema list raises."""
+
+    def test_schema_list_exception_logs_debug(self, caplog):
+        """If list_schemas raises, a DEBUG log is emitted and preconditions still return."""
+        import logging
+        from unittest.mock import patch
+        from agent.agents import Router
+        router = Router()
+        context = router.create_context(
+            user_intent="make it dreamier",
+            active_model="flux1-dev",
+        )
+        with patch("agent.agents.router.list_schemas", side_effect=OSError("no schemas dir")), \
+             caplog.at_level(logging.DEBUG, logger="agent.agents.router"):
+            warnings = router.check_preconditions(context)
+        # Must not raise and must return a list
+        assert isinstance(warnings, list)
+        assert any(
+            "schema" in r.message.lower() or "agent" in r.message.lower()
+            for r in caplog.records
+        )
+
+    def test_schema_list_exception_does_not_add_warning(self):
+        """Schema list failure must not add a spurious warning to preconditions."""
+        from unittest.mock import patch
+        from agent.agents import Router
+        router = Router()
+        context = router.create_context(
+            user_intent="make it sharper",
+            active_model="sdxl-base",
+        )
+        with patch("agent.agents.router.list_schemas", side_effect=FileNotFoundError("no dir")):
+            warnings = router.check_preconditions(context)
+        # Exception path must not append a warning about schema missing
+        schema_warnings = [w for w in warnings if "schema" in w.lower() and "not found" in w.lower()]
+        assert len(schema_warnings) == 0
