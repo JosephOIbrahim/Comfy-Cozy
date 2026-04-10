@@ -59,6 +59,11 @@ class DeltaLayer:
     creation_hash: str = field(default="", repr=False)
 
     def __post_init__(self):
+        if self.opinion not in LIVRPS_PRIORITY:
+            raise ValueError(
+                f"Invalid LIVRPS opinion {self.opinion!r}. "
+                f"Valid opinions: {sorted(LIVRPS_PRIORITY)}"
+            )
         if not self.creation_hash:
             self.creation_hash = _compute_hash(self.opinion, self.mutations)
 

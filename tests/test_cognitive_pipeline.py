@@ -122,6 +122,21 @@ class TestDelegates:
         assert result.stage == PipelineStage.FAILED
         assert "GPU OOM" in result.error
 
+    def test_evaluator_exception_sets_failed(self, pipeline):
+        """Evaluator exception must set FAILED + stop pipeline (Cycle 25 fix)."""
+        def exploding_evaluator(_result):
+            raise RuntimeError("evaluation exploded")
+
+        result = pipeline.run(PipelineConfig(
+            intent="test explosion",
+            evaluator=exploding_evaluator,
+        ))
+        assert result.stage == PipelineStage.FAILED
+        assert result.error is not None
+        assert "evaluation" in result.error.lower()
+        # Pipeline must not have continued to LEARN stage
+        assert result.experience_chunk is None
+
 
 # ---------------------------------------------------------------------------
 # Arbiter Interrupt

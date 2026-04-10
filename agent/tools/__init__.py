@@ -9,15 +9,39 @@ Brain tools are lazily imported to avoid circular dependencies
 (brain modules import _util from this package).
 """
 
+import importlib
 import logging
 import threading
 
-from . import comfy_api, comfy_inspect, workflow_parse, workflow_patch, comfy_execute, comfy_discover, session_tools, workflow_templates, civitai_api, model_compat, verify_execution, github_releases, pipeline, image_metadata, node_replacement, comfy_provision, auto_wire, provision_pipeline
-from ..stage import provision_tools, stage_tools, foresight_tools, compositor_tools, hyperagent_tools
-
 log = logging.getLogger(__name__)
 
-_MODULES = (comfy_api, comfy_inspect, workflow_parse, workflow_patch, comfy_execute, comfy_discover, session_tools, workflow_templates, civitai_api, model_compat, verify_execution, github_releases, pipeline, image_metadata, node_replacement, comfy_provision, auto_wire, provision_pipeline, provision_tools, stage_tools, foresight_tools, compositor_tools, hyperagent_tools)
+# Intelligence-layer tool module names.  Imported individually so a single
+# broken module (missing dependency, syntax error) degrades gracefully instead
+# of crashing the entire tool registry.
+_INTELLIGENCE_MODULE_NAMES = [
+    "comfy_api", "comfy_inspect", "workflow_parse", "workflow_patch",
+    "comfy_execute", "comfy_discover", "session_tools", "workflow_templates",
+    "civitai_api", "model_compat", "verify_execution", "github_releases",
+    "pipeline", "image_metadata", "node_replacement", "comfy_provision",
+    "auto_wire", "provision_pipeline",
+]
+_STAGE_MODULE_NAMES = [
+    "provision_tools", "stage_tools", "foresight_tools",
+    "compositor_tools", "hyperagent_tools",
+]
+
+_MODULES: list = []
+for _mod_name in _INTELLIGENCE_MODULE_NAMES:
+    try:
+        _MODULES.append(importlib.import_module(f".{_mod_name}", package=__name__))
+    except Exception as _ie:
+        log.warning("Tool module %r failed to import — its tools are unavailable: %s", _mod_name, _ie)
+
+for _mod_name in _STAGE_MODULE_NAMES:
+    try:
+        _MODULES.append(importlib.import_module(f"..stage.{_mod_name}", package=__name__))
+    except Exception as _ie:
+        log.warning("Stage module %r failed to import — its tools are unavailable: %s", _mod_name, _ie)
 
 # Intelligence layer tool schemas
 _LAYER_TOOLS: list[dict] = []
@@ -47,9 +71,14 @@ def _ensure_brain():
     with _brain_lock:
         if _brain_loaded:  # double-check after acquiring lock
             return
-        from ..brain import ALL_BRAIN_TOOLS
-        _BRAIN_TOOL_NAMES.update(t["name"] for t in ALL_BRAIN_TOOLS)
-        _brain_loaded = True
+        try:
+            from ..brain import ALL_BRAIN_TOOLS
+            _BRAIN_TOOL_NAMES.update(t["name"] for t in ALL_BRAIN_TOOLS)
+            _brain_loaded = True
+        except Exception as _be:
+            log.warning(
+                "Brain layer unavailable — brain tools will not be registered: %s", _be
+            )
 
 
 # Capability registry (parallel index for smart routing)

@@ -140,3 +140,27 @@ class TestReadNodeSource:
             )
             assert "error" in result
             assert "similar" in result
+
+    def test_negative_max_lines_rejected(self, fake_custom_nodes):
+        """Negative max_lines must return an error, not invert Python slice semantics (Cycle 25 fix)."""
+        with patch.object(comfy_inspect, "CUSTOM_NODES_DIR", fake_custom_nodes):
+            result = json.loads(
+                comfy_inspect.handle(
+                    "read_node_source",
+                    {"node_pack": "comfyui-impact-pack", "max_lines": -10},
+                )
+            )
+            assert "error" in result
+            assert "non-negative" in result["error"]
+
+    def test_zero_max_lines(self, fake_custom_nodes):
+        """max_lines=0 is a valid (though unusual) request — returns empty source."""
+        with patch.object(comfy_inspect, "CUSTOM_NODES_DIR", fake_custom_nodes):
+            result = json.loads(
+                comfy_inspect.handle(
+                    "read_node_source",
+                    {"node_pack": "comfyui-impact-pack", "max_lines": 0},
+                )
+            )
+            assert "error" not in result
+            assert result["source"] == ""

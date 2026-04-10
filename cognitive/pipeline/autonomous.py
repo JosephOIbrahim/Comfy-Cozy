@@ -370,9 +370,13 @@ class AutonomousPipeline:
                 result.execution_result, "output_filenames", [],
             )
 
-        self._accumulator.record(chunk)
-        result.experience_chunk = chunk
-        result.log(f"Recorded experience (total: {self._accumulator.generation_count})")
+        try:
+            self._accumulator.record(chunk)
+            result.experience_chunk = chunk
+            result.log(f"Recorded experience (total: {self._accumulator.generation_count})")
+        except Exception as e:
+            log.warning("Experience record failed (non-fatal): %s", e)
+            result.log(f"Experience record failed (non-fatal): {e}")
 
         # Persist accumulated experience so it survives between sessions
         try:

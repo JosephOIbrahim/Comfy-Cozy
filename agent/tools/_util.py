@@ -47,6 +47,24 @@ def validate_path(path_str: str, *, must_exist: bool = False) -> str | None:
     Returns None if valid, or an error message string if invalid.
     Rejects path traversal attacks and access to system directories.
     """
+    # Block Windows-specific attack vectors before Path.resolve(), which may
+    # silently normalise them in ways that bypass safe-dir checks.
+    if os.name == "nt":
+        _norm = path_str.replace("/", "\\")
+        # UNC paths (\\server\share) — potential SSRF / network-share access
+        if _norm.startswith("\\\\"):
+            return "Access denied: UNC/network paths are not allowed"
+        # Drive-relative paths (C:file.txt with no leading slash) — resolve()
+        # maps them to the CWD of that drive, potentially escaping safe_dirs
+        if len(path_str) >= 2 and path_str[1] == ":" and (
+            len(path_str) < 3 or path_str[2] not in ("\\", "/")
+        ):
+            return "Access denied: drive-relative paths are not allowed"
+        # NTFS alternate data streams (file.txt:stream_name) — any colon after
+        # the drive-letter position (index 1) indicates a stream identifier
+        if ":" in path_str[2:]:
+            return "Access denied: NTFS alternate data streams are not allowed"
+
     try:
         p = Path(path_str).resolve()
     except (OSError, ValueError) as e:

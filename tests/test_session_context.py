@@ -1,5 +1,6 @@
 """Tests for SessionContext and SessionRegistry."""
 
+import threading
 import time
 
 from agent.session_context import (
@@ -153,3 +154,60 @@ class TestGlobalAccessors:
     def test_get_registry(self):
         reg = get_registry()
         assert isinstance(reg, SessionRegistry)
+
+
+class TestConcurrentEnsure:
+    """Regression tests for Cycle 25 double-checked locking fix."""
+
+    def test_ensure_stage_concurrent_same_instance(self):
+        """Concurrent calls to ensure_stage() must never produce multiple instances."""
+        ctx = SessionContext(session_id="concurrent-stage-test")
+        results: list = []
+        errors: list = []
+
+        def call_ensure():
+            try:
+                results.append(ctx.ensure_stage())
+            except Exception as exc:
+                errors.append(str(exc))
+
+        threads = [threading.Thread(target=call_ensure) for _ in range(12)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert not errors, f"ensure_stage raised: {errors}"
+        # All non-None results must be the same object (single instance)
+        non_none = [x for x in results if x is not None]
+        if non_none:
+            first_id = id(non_none[0])
+            assert all(id(x) == first_id for x in non_none), (
+                "ensure_stage() created multiple CognitiveWorkflowStage instances"
+            )
+
+    def test_ensure_arbiter_concurrent_same_instance(self):
+        """Concurrent ensure_arbiter() calls must return the same instance."""
+        ctx = SessionContext(session_id="concurrent-arbiter-test")
+        results: list = []
+        errors: list = []
+
+        def call_ensure():
+            try:
+                results.append(ctx.ensure_arbiter())
+            except Exception as exc:
+                errors.append(str(exc))
+
+        threads = [threading.Thread(target=call_ensure) for _ in range(12)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert not errors, f"ensure_arbiter raised: {errors}"
+        non_none = [x for x in results if x is not None]
+        if non_none:
+            first_id = id(non_none[0])
+            assert all(id(x) == first_id for x in non_none), (
+                "ensure_arbiter() created multiple Arbiter instances"
+            )

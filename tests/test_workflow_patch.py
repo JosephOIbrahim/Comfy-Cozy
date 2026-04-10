@@ -335,6 +335,40 @@ class TestAutogrowSetInput:
         assert result["old_value"] == "a + b"
 
 
+class TestConnectNodesValidation:
+    """Input validation for connect_nodes (Cycle 25 fix)."""
+
+    def test_negative_from_output_rejected(self, sample_workflow):
+        """Negative from_output must return an error, not pass a negative slot index."""
+        workflow_patch.handle("apply_workflow_patch", {
+            "path": str(sample_workflow),
+            "patches": [],
+        })
+        result = json.loads(workflow_patch.handle("connect_nodes", {
+            "from_node": "1",
+            "from_output": -1,
+            "to_node": "3",
+            "to_input": "model",
+        }))
+        assert "error" in result
+        assert "from_output" in result["error"]
+
+    def test_zero_from_output_accepted(self, sample_workflow):
+        """from_output=0 is a valid slot index and must succeed."""
+        workflow_patch.handle("apply_workflow_patch", {
+            "path": str(sample_workflow),
+            "patches": [],
+        })
+        result = json.loads(workflow_patch.handle("connect_nodes", {
+            "from_node": "1",
+            "from_output": 0,
+            "to_node": "3",
+            "to_input": "model",
+        }))
+        # Should succeed or fail for a workflow reason, never from_output validation
+        assert "from_output" not in result.get("error", "")
+
+
 class TestAutogrowConnectNodes:
     """Test connect_nodes with AUTOGROW dotted names."""
 
