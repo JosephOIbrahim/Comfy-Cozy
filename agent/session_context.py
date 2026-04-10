@@ -257,6 +257,21 @@ class SessionRegistry:
             ctx.touch()
             return ctx
 
+    def get_or_create_with_is_new(self, session_id: str = "default") -> tuple[SessionContext, bool]:
+        """Atomically get-or-create a session, returning (ctx, is_new).
+
+        Both the existence check and the creation happen under the same lock
+        acquisition, eliminating the TOCTOU race that exists when callers call
+        get() then get_or_create() separately. (Cycle 30 fix)
+        """
+        with self._lock:
+            is_new = session_id not in self._sessions
+            if is_new:
+                self._sessions[session_id] = SessionContext(session_id=session_id)
+            ctx = self._sessions[session_id]
+            ctx.touch()
+            return ctx, is_new
+
     def get(self, session_id: str) -> SessionContext | None:
         """Get existing session or None."""
         with self._lock:
@@ -314,8 +329,12 @@ def get_session_context(session_id: str = "default") -> SessionContext:
     (model scan, workflow load, session restore) if configured via env vars.
     """
     _registry.gc_stale()  # Clean up sessions idle > 1 hour
-    is_new = _registry.get(session_id) is None
-    ctx = _registry.get_or_create(session_id)
+    # Use the atomic get_or_create_with_is_new() so is_new is determined inside
+    # the same lock acquisition as the creation. The old two-step pattern
+    # (get() → get_or_create()) had a TOCTOU race: another thread could create
+    # the session between the two calls, making is_new a false-positive and
+    # triggering a duplicate run_auto_init(). (Cycle 30 fix)
+    ctx, is_new = _registry.get_or_create_with_is_new(session_id)
 
     # Auto-init on first default session creation
     if is_new and session_id == "default":

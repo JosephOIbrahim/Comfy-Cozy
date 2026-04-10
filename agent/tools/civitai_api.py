@@ -300,6 +300,12 @@ def _handle_search_civitai(tool_input: dict) -> str:
     except Exception as e:
         return to_json({"error": f"CivitAI search failed: {e}"})
 
+    if not isinstance(data, dict):
+        return to_json({
+            "error": "Unexpected CivitAI API response format (expected dict).",
+            "hint": "The API may have changed or returned an error body.",
+        })
+
     items = data.get("items", [])
     results = [_parse_model(m) for m in items]
 
@@ -384,6 +390,12 @@ def _handle_get_trending_models(tool_input: dict) -> str:
         return to_json({"error": f"CivitAI API returned {e.response.status_code}."})
     except Exception as e:
         return to_json({"error": f"CivitAI trending request failed: {e}"})
+
+    if not isinstance(data, dict):
+        return to_json({
+            "error": "Unexpected CivitAI API response format (expected dict).",
+            "hint": "The API may have changed or returned an error body.",
+        })
 
     items = data.get("items", [])
     results = [_parse_model(m) for m in items]

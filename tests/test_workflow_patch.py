@@ -438,3 +438,79 @@ class TestStateRegistryIsolation:
         s1 = workflow_patch._get_state()
         s2 = workflow_patch._get_state()
         assert s1 is s2
+
+
+# ---------------------------------------------------------------------------
+# Cycle 30: patch element validation tests
+# ---------------------------------------------------------------------------
+
+class TestPatchElementValidation:
+    """apply_workflow_patch must validate each patch element type and required fields."""
+
+    def _load_simple_workflow(self):
+        """Load a minimal workflow into patch state."""
+        import copy
+        from agent.tools.workflow_patch import _get_state
+        s = _get_state()
+        with s._lock:
+            s["loaded_path"] = "<test>"
+            s["format"] = "api"
+            s["base_workflow"] = {"1": {"class_type": "KSampler", "inputs": {"seed": 42}}}
+            s["current_workflow"] = copy.deepcopy(s["base_workflow"])
+            s["history"] = []
+            s["_engine"] = None
+
+    def _clear_workflow(self):
+        from agent.tools.workflow_patch import _get_state
+        s = _get_state()
+        with s._lock:
+            s["loaded_path"] = None
+            s["base_workflow"] = None
+            s["current_workflow"] = None
+            s["history"] = []
+            s["_engine"] = None
+
+    def setup_method(self):
+        self._load_simple_workflow()
+
+    def teardown_method(self):
+        self._clear_workflow()
+
+    def test_non_dict_patch_element_returns_error(self):
+        """A string element in patches must return a clear error."""
+        result = json.loads(workflow_patch.handle("apply_workflow_patch", {
+            "patches": ["not_a_dict"],
+        }))
+        assert "error" in result
+        assert "dict" in result["error"].lower() or "patches[0]" in result["error"]
+
+    def test_patch_missing_op_returns_error(self):
+        """A patch element missing 'op' must return a clear error."""
+        result = json.loads(workflow_patch.handle("apply_workflow_patch", {
+            "patches": [{"path": "/1/inputs/seed", "value": 99}],
+        }))
+        assert "error" in result
+        assert "op" in result["error"] or "missing" in result["error"].lower()
+
+    def test_patch_missing_path_returns_error(self):
+        """A patch element missing 'path' must return a clear error."""
+        result = json.loads(workflow_patch.handle("apply_workflow_patch", {
+            "patches": [{"op": "replace", "value": 99}],
+        }))
+        assert "error" in result
+        assert "path" in result["error"] or "missing" in result["error"].lower()
+
+    def test_valid_patch_succeeds(self):
+        """A well-formed patch must apply without error."""
+        result = json.loads(workflow_patch.handle("apply_workflow_patch", {
+            "patches": [{"op": "replace", "path": "/1/inputs/seed", "value": 99}],
+        }))
+        assert "error" not in result
+        assert result.get("applied") == 1
+
+    def test_null_element_in_patches_returns_error(self):
+        """None element in patches list must return a clear error."""
+        result = json.loads(workflow_patch.handle("apply_workflow_patch", {
+            "patches": [None],
+        }))
+        assert "error" in result

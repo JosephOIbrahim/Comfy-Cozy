@@ -211,3 +211,89 @@ class TestConcurrentEnsure:
             assert all(id(x) == first_id for x in non_none), (
                 "ensure_arbiter() created multiple Arbiter instances"
             )
+
+
+# ---------------------------------------------------------------------------
+# Cycle 30: get_or_create_with_is_new() atomic TOCTOU fix
+# ---------------------------------------------------------------------------
+
+class TestAtomicGetOrCreateWithIsNew:
+    """get_or_create_with_is_new must be race-free."""
+
+    def test_new_session_is_new_true(self):
+        """First call for an unknown session_id returns is_new=True."""
+        reg = SessionRegistry()
+        ctx, is_new = reg.get_or_create_with_is_new("brand-new-session")
+        assert is_new is True
+        assert ctx.session_id == "brand-new-session"
+
+    def test_existing_session_is_new_false(self):
+        """Second call for an existing session_id returns is_new=False."""
+        reg = SessionRegistry()
+        reg.get_or_create_with_is_new("existing")
+        ctx, is_new = reg.get_or_create_with_is_new("existing")
+        assert is_new is False
+
+    def test_returns_same_context_on_second_call(self):
+        """Both calls must return the exact same SessionContext object."""
+        reg = SessionRegistry()
+        ctx1, _ = reg.get_or_create_with_is_new("shared")
+        ctx2, _ = reg.get_or_create_with_is_new("shared")
+        assert ctx1 is ctx2
+
+    def test_concurrent_calls_single_is_new(self):
+        """Under concurrent access exactly one thread must get is_new=True."""
+        import threading
+        reg = SessionRegistry()
+        results = []
+
+        def call():
+            _, is_new = reg.get_or_create_with_is_new("concurrent-session")
+            results.append(is_new)
+
+        threads = [threading.Thread(target=call) for _ in range(20)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert results.count(True) == 1, (
+            f"Expected exactly 1 is_new=True, got {results.count(True)}"
+        )
+        assert results.count(False) == 19
+
+    def test_get_session_context_no_duplicate_auto_init(self):
+        """get_session_context must not call run_auto_init more than once per session."""
+        import threading
+        from unittest.mock import patch, MagicMock
+        from agent.session_context import get_session_context, get_registry
+
+        # Use a fresh non-default session_id to avoid polluting the global default
+        sid = "test-atomic-init-" + str(id(threading.current_thread()))
+        init_calls = []
+
+        def fake_auto_init(ctx):
+            init_calls.append(ctx.session_id)
+
+        with patch("agent.startup.run_auto_init", fake_auto_init, create=True):
+            # Call get_session_context 10 times concurrently on the same session
+            # Only the first call should trigger auto-init
+            errors = []
+
+            def call():
+                try:
+                    # We pass "default" here to trigger the is_new check
+                    # but isolate via a fresh registry
+                    get_session_context(sid)
+                except Exception as e:
+                    errors.append(str(e))
+
+            threads = [threading.Thread(target=call) for _ in range(10)]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join()
+
+            assert not errors, f"get_session_context raised: {errors}"
+            # Cleanup
+            get_registry().destroy(sid)

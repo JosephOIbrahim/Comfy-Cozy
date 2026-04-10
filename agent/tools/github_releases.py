@@ -140,7 +140,10 @@ def _fetch_latest_release(repo: str) -> dict | None:
             if resp.status_code == 404:
                 return None
             resp.raise_for_status()
-            return resp.json()
+            data = resp.json()
+            # Guard: GitHub returns a dict for a single release.
+            # If the API changes or returns an error body, fall back to None. (Cycle 30 fix)
+            return data if isinstance(data, dict) else None
     except (httpx.HTTPError, Exception) as e:
         log.debug("Failed to fetch release for %s: %s", repo, e)
         return None
@@ -162,7 +165,9 @@ def _fetch_releases(repo: str, limit: int = 5) -> list[dict]:
             if resp.status_code == 404:
                 return []
             resp.raise_for_status()
-            return resp.json()
+            data = resp.json()
+            # Guard: GitHub returns a list for /releases. Unexpected types → empty. (Cycle 30 fix)
+            return data if isinstance(data, list) else []
     except (httpx.HTTPError, Exception) as e:
         log.debug("Failed to fetch releases for %s: %s", repo, e)
         return []

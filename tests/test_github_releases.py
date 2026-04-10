@@ -1,7 +1,7 @@
 """Tests for GitHub release tracking tools."""
 
 import json
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 
 from agent.tools import github_releases
 
@@ -165,3 +165,61 @@ class TestToolRegistration:
     def test_handle_unknown_tool(self):
         result = json.loads(github_releases.handle("nonexistent", {}))
         assert "error" in result
+
+
+# ---------------------------------------------------------------------------
+# Cycle 30: JSON response type guard tests
+# ---------------------------------------------------------------------------
+
+class TestResponseTypeGuards:
+    """_fetch_latest_release and _fetch_releases must guard against non-dict/non-list."""
+
+    def _make_client(self, mock_client_cls, status=200, data=None):
+        mock_resp = MagicMock()
+        mock_resp.status_code = status
+        mock_resp.json.return_value = data
+        mock_resp.raise_for_status = MagicMock()
+        mc = MagicMock()
+        mc.__enter__ = MagicMock(return_value=mc)
+        mc.__exit__ = MagicMock(return_value=False)
+        mc.get.return_value = mock_resp
+        mock_client_cls.return_value = mc
+        return mc
+
+    def test_fetch_latest_release_list_returns_none(self):
+        """If GitHub returns a list for /releases/latest, treat as no release."""
+        with patch("agent.tools.github_releases.GITHUB_LIMITER") as lim, \
+             patch("httpx.Client") as mock_client:
+            lim.return_value.return_value.acquire.return_value = True
+            self._make_client(mock_client, data=["not", "a", "dict"])
+            result = github_releases._fetch_latest_release("owner/repo")
+        assert result is None
+
+    def test_fetch_latest_release_dict_passes(self):
+        """If GitHub returns a valid dict, return it unchanged."""
+        with patch("agent.tools.github_releases.GITHUB_LIMITER") as lim, \
+             patch("httpx.Client") as mock_client:
+            lim.return_value.return_value.acquire.return_value = True
+            self._make_client(mock_client, data={"tag_name": "v1.0.0", "name": "Release 1.0"})
+            result = github_releases._fetch_latest_release("owner/repo")
+        assert isinstance(result, dict)
+        assert result["tag_name"] == "v1.0.0"
+
+    def test_fetch_releases_dict_returns_empty(self):
+        """If GitHub returns a dict for /releases (not a list), return []."""
+        with patch("agent.tools.github_releases.GITHUB_LIMITER") as lim, \
+             patch("httpx.Client") as mock_client:
+            lim.return_value.return_value.acquire.return_value = True
+            self._make_client(mock_client, data={"message": "Not Found"})
+            result = github_releases._fetch_releases("owner/repo")
+        assert result == []
+
+    def test_fetch_releases_list_passes(self):
+        """If GitHub returns a list, return it."""
+        with patch("agent.tools.github_releases.GITHUB_LIMITER") as lim, \
+             patch("httpx.Client") as mock_client:
+            lim.return_value.return_value.acquire.return_value = True
+            self._make_client(mock_client, data=[{"tag_name": "v1.0"}, {"tag_name": "v0.9"}])
+            result = github_releases._fetch_releases("owner/repo")
+        assert isinstance(result, list)
+        assert len(result) == 2

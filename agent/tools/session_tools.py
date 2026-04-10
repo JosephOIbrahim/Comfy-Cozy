@@ -217,6 +217,10 @@ def _handle_add_note(tool_input: dict) -> str:
     session_name = tool_input["session_name"]
     note = tool_input["note"]
     note_type = tool_input.get("note_type", "observation")
+    # Reject empty or whitespace-only notes — they create useless session log entries.
+    # (Cycle 30 fix)
+    if not note or not str(note).strip():
+        return to_json({"error": "Note text cannot be empty."})
     result = add_note(session_name, note, note_type=note_type)
     return to_json(result)
 

@@ -137,9 +137,18 @@ def _get_all_tools() -> list[dict]:
 
 # Public API — ALL_TOOLS is a property-like accessor
 class _ToolList(list):
-    """Lazy tool list that includes brain tools on first access."""
-    _initialized = False
-    _lock = threading.Lock()
+    """Lazy tool list that includes brain tools on first access.
+
+    Uses instance-level lock and initialized flag (not class-level) so that
+    multiple instances don't share state. Class-level attributes would leave
+    the class attribute False after the first instance sets its own instance
+    attribute True, causing any second instance to re-initialize. (Cycle 30 fix)
+    """
+
+    def __init__(self):
+        super().__init__()
+        self._initialized = False
+        self._lock = threading.Lock()
 
     def _init_once(self):
         if self._initialized:

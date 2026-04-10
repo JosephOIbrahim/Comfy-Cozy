@@ -406,6 +406,19 @@ def _handle_apply_patch(tool_input: dict) -> str:
             "error": "No workflow loaded. Provide a 'path' to load one first."
         })
 
+    # Validate patches list — each element must be a dict with op and path.
+    # A non-dict element (e.g. a string) would cause AttributeError on .get().
+    # Catch this early with a clear error rather than an opaque crash. (Cycle 30 fix)
+    for i, patch in enumerate(patches):
+        if not isinstance(patch, dict):
+            return to_json({
+                "error": f"patches[{i}] must be a dict (RFC6902 patch object), got {type(patch).__name__}.",
+            })
+        if "op" not in patch or "path" not in patch:
+            return to_json({
+                "error": f"patches[{i}] is missing required 'op' or 'path' field.",
+            })
+
     # Record before values for the diff report
     before_values = {}
     for patch in patches:
