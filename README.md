@@ -237,18 +237,16 @@ agent run --verbose              # See what's happening under the hood
 
 ### Option C: Launch with ComfyUI (one click)
 
-If you use the **ComfyUI CLI launcher** (`ComfyUI CLI.lnk`), Comfy Cozy is built in as mode **[6]**:
+If you use the **ComfyUI CLI launcher** (`ComfyUI CLI.lnk`), Comfy Cozy is the default — press Enter and both apps start:
 
 ```
-[1] STABLE        Balanced, recommended
-[2] DETERMINISTIC Reproducible inference
-[3] FAST          Maximum performance
-[4] ORCHESTRATOR  7-Agent system
-[5] BOTH          ComfyUI + Orchestrator
-[6] COMFY COZY    ComfyUI + Comfy Cozy Agent   ← new
+[ 1 ]  STABLE          Start here. Balanced settings, works with everything.
+[ 2 ]  DETERMINISTIC   Lock seed + batch to 1. Same prompt, same pixels.
+[ 3 ]  FAST            Sage attention + async offload. Max throughput.
+[ 4 ]  COMFY COZY  ★  Daily use. Talk to your workflow in plain English.
 ```
 
-Select **[6]** and ComfyUI starts in a background window (stable mode, RTX 4090 optimized), then Comfy Cozy launches in the current window ready to talk — no manual startup needed.
+Select **[4]** (or wait 10 seconds — it auto-selects) and ComfyUI starts in a background window (stable mode, RTX 4090 optimized), then Comfy Cozy launches in the current window ready to talk — no manual startup needed.
 
 ### Handy CLI Commands (no API key needed)
 
