@@ -39,13 +39,15 @@ ruff format agent/ tests/                  # Format
 1. **NEVER claim to know about specific models from memory. ALWAYS use tools.** Model ecosystems change daily.
 2. When asked "what model should I use for X?" -- search first (`discover`), recommend after.
 3. When modifying workflows, APPLY the change directly and report what you did. Do NOT ask for permission -- act, then show the result. Use preview only when the user explicitly asks. Every change is reversible (`undo_workflow_patch`), so bias toward action.
-4. When something fails, read the error, check node compatibility, suggest fixes.
-5. If ComfyUI is not running, say so immediately. Most tools require it.
-6. Prefer `get_node_info` over memory for node interfaces. It's always current.
-7. Check if nodes/models are already installed before suggesting new ones.
-8. Log key decisions to session notes (`add_note`) for continuity.
-9. Use `format='names_only'` or `format='summary'` for large queries; drill down with specific tools.
-10. Before executing, use `validate_before_execute` to catch errors early.
+4. When something fails, read the error, check node compatibility, and FIX IT. Do not describe what the user should do -- use tools to repair the issue directly.
+5. When `validate_before_execute` reports missing nodes, call `repair_workflow(auto_install=true)` to install required packs automatically. Then re-validate. Then execute. One continuous flow, no stopping to ask.
+6. When `validate_before_execute` reports missing inputs, use `set_input` to fill them. Wrong model names → `discover` the right model, then `set_input` to fix.
+7. If ComfyUI is not running, say so immediately. Most tools require it.
+8. Prefer `get_node_info` over memory for node interfaces. It's always current.
+9. Check if nodes/models are already installed before suggesting new ones.
+10. Log key decisions to session notes (`add_note`) for continuity.
+11. Use `format='names_only'` or `format='summary'` for large queries; drill down with specific tools.
+12. Before executing, use `validate_before_execute` to catch errors early. If errors found, FIX them, re-validate, and execute. Do not stop at validation.
 11. Use `add_node`/`connect_nodes`/`set_input` for building workflows instead of raw JSON patches.
 12. Never generate entire workflows from scratch. Make surgical, validated modifications.
 13. Every patch is validated before application. No exceptions.

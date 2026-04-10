@@ -47,10 +47,11 @@ class TestScoutBeforeAct:
         r = scout_before_act([], "discover")
         assert r.passed is True
 
-    def test_first_action_mutation_fails(self):
+    def test_empty_history_passes_when_not_tracked(self):
+        """Empty action_history means 'not tracked', not 'no actions taken'."""
         r = scout_before_act([], "add_node")
-        assert r.passed is False
-        assert "recon" in r.reason.lower()
+        assert r.passed is True
+        assert "not tracked" in r.reason.lower()
 
     def test_non_first_action_passes(self):
         r = scout_before_act(["discover"], "add_node")

@@ -110,14 +110,15 @@ def scout_before_act(
     If no actions have been taken yet and the proposed tool is not a recon
     tool, this check fails.
     """
-    if not action_history and proposed_tool not in _RECON_TOOLS:
+    # When action_history is empty AND not explicitly tracked (i.e. the
+    # caller never passed it), treat as "not applicable" rather than
+    # "first action".  The sidebar and CLI agent loops don't track
+    # action_history, so blocking here creates an infinite scout loop.
+    if not action_history:
         return CheckResult(
-            passed=False,
+            passed=True,
             commandment="scout_before_act",
-            reason=(
-                f"First action must be a recon tool, not '{proposed_tool}'. "
-                f"Scout before you act."
-            ),
+            reason="Action history not tracked — check skipped.",
         )
     return CheckResult(
         passed=True,

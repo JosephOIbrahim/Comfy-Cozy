@@ -94,7 +94,7 @@ class ConversationState:
             extras.append(
                 "\n\n**Missing nodes detected:** "
                 + ", ".join(self.missing_nodes)
-                + "\nWarn the artist if they ask about issues or try to execute."
+                + "\nCall repair_workflow(auto_install=true) to fix these automatically before executing."
             )
 
         self.system_prompt = base + "".join(extras)
