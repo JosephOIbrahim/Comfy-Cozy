@@ -220,13 +220,29 @@ def handle(
         from ..config import GATE_ENABLED
         if GATE_ENABLED and _is_known:
             from ..gate import pre_dispatch_check, GateDecision
+
+            # Determine session_active: either explicit ctx, or a workflow
+            # is loaded in the module-level state (sidebar injects workflow
+            # before agent runs, but never passes ctx).
+            _session_active = ctx is not None
+            _has_undo = bool(
+                ctx and hasattr(ctx, 'workflow')
+                and ctx.workflow.get("history")
+            )
+            if not _session_active:
+                try:
+                    from .workflow_patch import _get_state
+                    _wf = _get_state().get("current_workflow")
+                    if _wf is not None:
+                        _session_active = True
+                        _has_undo = bool(_get_state().get("history"))
+                except Exception:
+                    pass
+
             gate_result = pre_dispatch_check(
                 name, tool_input,
-                session_active=ctx is not None,
-                has_undo=bool(
-                    ctx and hasattr(ctx, 'workflow')
-                    and ctx.workflow.get("history")
-                ),
+                session_active=_session_active,
+                has_undo=_has_undo,
             )
             if gate_result.decision == GateDecision.DENY:
                 from ..errors import error_json
