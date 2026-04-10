@@ -64,7 +64,7 @@ cd Comfy-Cozy
 
 ```bash
 pip install -e .                  # core install (agent + cognitive engine + panel)
-pip install -e ".[dev]"           # + full test suite (2753 passing tests)
+pip install -e ".[dev]"           # + full test suite (3573 passing tests)
 pip install -e ".[dev,stage]"     # + USD stage subsystem (~200MB, optional)
 ```
 
@@ -235,6 +235,21 @@ agent run --session my-project   # Auto-saves so you can pick up later
 agent run --verbose              # See what's happening under the hood
 ```
 
+### Option C: Launch with ComfyUI (one click)
+
+If you use the **ComfyUI CLI launcher** (`ComfyUI CLI.lnk`), Comfy Cozy is built in as mode **[6]**:
+
+```
+[1] STABLE        Balanced, recommended
+[2] DETERMINISTIC Reproducible inference
+[3] FAST          Maximum performance
+[4] ORCHESTRATOR  7-Agent system
+[5] BOTH          ComfyUI + Orchestrator
+[6] COMFY COZY    ComfyUI + Comfy Cozy Agent   ← new
+```
+
+Select **[6]** and ComfyUI starts in a background window (stable mode, RTX 4090 optimized), then Comfy Cozy launches in the current window ready to talk — no manual startup needed.
+
 ### Handy CLI Commands (no API key needed)
 
 ```bash
@@ -284,7 +299,7 @@ graph TB
     end
     subgraph Backend ["Agent Backend (Python)"]
         Routes["49 REST Routes<br/>+ WebSocket"]
-        Tools["113 Tools<br/>workflow · models · vision · session"]
+        Tools["113 Tools<br/>workflow · models · vision · session · provision"]
         Cog["Cognitive Engine<br/>LIVRPS delta stack · CWM · experience"]
     end
     subgraph ComfyUI ["ComfyUI"]
@@ -645,8 +660,8 @@ Every generation is an experiment. The agent tracks what worked:
 
 | Layer | Count | Highlights |
 |-------|-------|-----------|
-| **Intelligence** | 63 | Workflow parsing, model search (CivitAI + HF + 31k nodes), delta patching, auto-wire, provisioning pipeline, execution |
-| **Brain** | 27 | Vision analysis, goal planning, pattern memory, GPU optimization, artistic intent capture |
+| **Intelligence** | 86 | Workflow parsing, model search (CivitAI + HF + 31k nodes), delta patching, auto-wire, provisioning pipeline, execution |
+| **Brain** | 27 | Vision analysis, goal planning, pattern memory, GPU optimization, artistic intent capture, iteration tracking |
 | **Stage** | 23 | USD cognitive state, LIVRPS composition, predictive experiments, scene composition |
 
 ### Workflow Lifecycle
@@ -697,7 +712,7 @@ cognitive/            LIVRPS state engine — installed as top-level package (Ph
 panel/
   server/routes.py    49 REST routes — full tool surface
   web/js/             Panel UI — chat, graph inspector, model browser
-tests/                2753 passing tests, all mocked, ~60s
+tests/                3573 passing tests, all mocked, ~60s
 ```
 
 ### Production Hardening
@@ -763,13 +778,13 @@ All settings live in your `.env` file:
 No ComfyUI needed -- everything is mocked:
 
 ```bash
-python -m pytest tests/ -v        # 2753 passing tests, ~60s
+python -m pytest tests/ -v        # 3573 passing tests, ~60s
 
 # Skip tests that require a real ComfyUI server or API keys
 python -m pytest tests/ -v -m "not integration"
 ```
 
-The `[dev]` install runs the full test suite — no ComfyUI server or API keys required, everything is mocked. The 27 `test_provisioner.py` collection errors require `usd-core` (install with `pip install -e ".[stage]"` to resolve them).
+The `[dev]` install runs the full test suite — no ComfyUI server or API keys required, everything is mocked. The `test_provisioner.py` tests require `usd-core` (install with `pip install -e ".[stage]"` to resolve them).
 
 ---
 
