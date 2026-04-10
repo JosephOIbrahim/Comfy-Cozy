@@ -222,9 +222,10 @@
 
 .sd-message--user {
   align-self: flex-end;
-  background: var(--sd-surface-2);
+  background: var(--sd-accent-dim);
   padding: var(--space-3) var(--space-4);
   border-radius: 2px;
+  border: 1px solid var(--sd-accent-dim);
 }
 
 .sd-message--agent {
@@ -255,7 +256,7 @@
 }
 
 .sd-message--user .sd-message__label {
-  color: var(--sd-text-2);
+  color: rgba(240, 240, 240, 0.7);
   text-align: right;
 }
 
@@ -270,7 +271,7 @@
 }
 
 .sd-message--user .sd-message__body {
-  color: var(--sd-text-1);
+  color: #F0F0F0;
 }
 
 .sd-message--system .sd-message__body {
