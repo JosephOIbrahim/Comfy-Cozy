@@ -244,7 +244,10 @@ def _handle_get_repo_releases(tool_input: dict) -> str:
     repo = tool_input.get("repo")  # Cycle 47: guard required field
     if not repo or not isinstance(repo, str):
         return to_json({"error": "repo is required and must be a non-empty string (e.g. 'owner/name')."})
-    limit = min(tool_input.get("limit", 5), 20)
+    try:
+        limit = min(int(tool_input.get("limit", 5)), 20)  # Cycle 63: guard string input
+    except (TypeError, ValueError):
+        return to_json({"error": "limit must be an integer"})
 
     # Validate repo format
     if "/" not in repo or repo.count("/") != 1:

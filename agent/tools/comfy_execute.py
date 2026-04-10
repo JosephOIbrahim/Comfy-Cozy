@@ -720,7 +720,10 @@ def _handle_execute_workflow(
 ) -> str:
     progress = progress or ProgressReporter.noop()
     path_str = tool_input.get("path")
-    timeout = tool_input.get("timeout", 120)
+    try:
+        timeout = float(tool_input.get("timeout", 120))  # Cycle 63: guard string input
+    except (TypeError, ValueError):
+        return to_json({"error": "timeout must be a number (seconds)"})
 
     # Get workflow
     if path_str:
@@ -759,7 +762,10 @@ def _handle_execute_with_progress(
 ) -> str:
     progress = progress or ProgressReporter.noop()
     path_str = tool_input.get("path")
-    timeout = tool_input.get("timeout", 300)
+    try:
+        timeout = float(tool_input.get("timeout", 300))  # Cycle 63: guard string input
+    except (TypeError, ValueError):
+        return to_json({"error": "timeout must be a number (seconds)"})
     auto_verify = tool_input.get("auto_verify", False)
     session = tool_input.get("session", "default")
     goal_id = tool_input.get("goal_id")

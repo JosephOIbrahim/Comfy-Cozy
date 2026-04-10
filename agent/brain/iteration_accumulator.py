@@ -11,6 +11,7 @@ Thread-safe module-level state (matches orchestrator/demo pattern).
 import logging
 import threading
 import time
+import weakref
 
 from ._sdk import BrainAgent, BrainConfig
 
@@ -129,18 +130,26 @@ class IterationAccumulatorAgent(BrainAgent):
         # Per-session state: session_id → {intent_summary, steps, accepted, started_at}
         self._sessions: dict[str, dict] = {}
         self._sessions_mutex = threading.Lock()  # guards _sessions and _session_locks dicts
-        self._session_locks: dict[str, threading.Lock] = {}
+        # Cycle 63: WeakValueDictionary prevents the lock-eviction race where FIFO
+        # eviction could give a second thread a DIFFERENT lock for the same session
+        # while the first thread still held the old one, destroying mutual exclusion.
+        self._session_locks: weakref.WeakValueDictionary[str, threading.Lock] = (
+            weakref.WeakValueDictionary()
+        )
 
     def _get_session_lock(self, session: str) -> threading.Lock:
-        """Return (creating if needed) a per-session lock. FIFO eviction at cap."""
+        """Return (creating if needed) a per-session lock.
+
+        The caller MUST keep a strong local reference to the returned lock for the
+        duration of use.  The WeakValueDictionary entry survives as long as that
+        reference is held; it is collected naturally when no thread uses it.
+        """
         with self._sessions_mutex:
-            if session not in self._session_locks:
-                if len(self._session_locks) >= _MAX_SESSIONS:
-                    oldest = next(iter(self._session_locks))
-                    del self._session_locks[oldest]
-                    self._sessions.pop(oldest, None)
-                self._session_locks[session] = threading.Lock()
-            return self._session_locks[session]
+            lock = self._session_locks.get(session)
+            if lock is None:
+                lock = threading.Lock()
+                self._session_locks[session] = lock
+            return lock
 
     def _get_state(self, session: str) -> dict:
         """Return (creating if needed) the mutable state dict for session.

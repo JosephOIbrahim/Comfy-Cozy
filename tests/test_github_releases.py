@@ -349,3 +349,32 @@ class TestGetNodeReleasesRequiredField:
                 "repo": "owner/name",
             }))
         assert "repo" not in result.get("error", "").lower() or "required" not in result.get("error", "").lower()
+
+
+# ---------------------------------------------------------------------------
+# Cycle 63: limit type coercion guard
+# ---------------------------------------------------------------------------
+
+class TestLimitTypeGuard:
+    """get_repo_releases must reject non-integer limit (Cycle 63)."""
+
+    def test_string_limit_returns_error(self):
+        """String limit must return JSON error, not crash with TypeError."""
+        import json
+        from agent.tools import github_releases
+        result = json.loads(github_releases.handle("get_repo_releases", {
+            "repo": "owner/name", "limit": "five",
+        }))
+        assert "error" in result
+        assert "limit" in result["error"].lower()
+
+    def test_int_limit_not_blocked(self):
+        """Integer limit must not trigger the type guard."""
+        import json
+        from unittest.mock import patch
+        from agent.tools import github_releases
+        with patch.object(github_releases, "_fetch_releases", return_value=[]):
+            result = json.loads(github_releases.handle("get_repo_releases", {
+                "repo": "owner/name", "limit": 3,
+            }))
+        assert result.get("error", "") != "limit must be an integer"

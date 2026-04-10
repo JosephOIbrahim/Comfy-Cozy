@@ -977,3 +977,38 @@ class TestOutcomeNaNSafety:
         }
         with pytest.raises(ValueError):
             _mem._append_outcome("test_c59_nan_write", nan_outcome)
+
+
+# ---------------------------------------------------------------------------
+# Cycle 63: _get_outcomes_lock — WeakValueDictionary prevents eviction race
+# ---------------------------------------------------------------------------
+
+class TestOutcomesLockWeakRef:
+    """_get_outcomes_lock() must return same lock while caller holds reference (Cycle 63)."""
+
+    def test_same_session_same_lock(self):
+        """Two calls for the same session return the SAME lock object."""
+        from agent.brain.memory import _get_outcomes_lock
+
+        lock_a = _get_outcomes_lock("mem-same-63")
+        lock_b = _get_outcomes_lock("mem-same-63")
+        assert lock_a is lock_b, "Same session must return the same lock object"
+
+    def test_concurrent_same_session_same_lock(self):
+        """Concurrent _get_outcomes_lock() calls for the same session yield the same object."""
+        import threading
+        from agent.brain.memory import _get_outcomes_lock
+
+        results = []
+
+        def grab():
+            results.append(_get_outcomes_lock("mem-concurrent-63"))
+
+        threads = [threading.Thread(target=grab) for _ in range(10)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert len(set(id(lk) for lk in results)) == 1, \
+            "All concurrent callers must receive the same lock object"

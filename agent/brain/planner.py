@@ -11,6 +11,7 @@ import os
 import tempfile
 import threading
 import time
+import weakref
 from pathlib import Path
 
 from ._protocol import make_id
@@ -19,25 +20,30 @@ from ._sdk import BrainAgent
 log = logging.getLogger(__name__)
 
 # Per-session locks — prevents lost-update race on load-modify-save. (Cycle 34 fix)
-_plan_locks: dict[str, threading.Lock] = {}
+# Cycle 63: WeakValueDictionary replaces the FIFO-eviction dict.  With a plain dict,
+# evicting a session that still had an active lock holder gave the next thread a DIFFERENT
+# lock for the same session, breaking mutual exclusion.  WeakValueDictionary keeps the
+# entry alive as long as any thread holds a strong reference to the lock object; it is
+# garbage-collected naturally when the last holder drops the reference.
+_plan_locks: weakref.WeakValueDictionary[str, threading.Lock] = (
+    weakref.WeakValueDictionary()
+)
 _plan_locks_mutex = threading.Lock()
-_MAX_PLAN_LOCKS = 100  # Cycle 46: FIFO cap prevents unbounded growth in long sessions
 
 
 def _get_plan_lock(session: str) -> threading.Lock:
     """Return (creating if needed) a per-session lock for plan mutations.
 
-    Evicts the oldest entry when the dict exceeds _MAX_PLAN_LOCKS (FIFO).
-    Safe: if the evicted session comes back, a new lock is created for it.
+    The caller MUST keep a strong local reference to the returned lock for the
+    duration of use (e.g. ``lock = _get_plan_lock(s); with lock: ...``).
+    The WeakValueDictionary entry is kept alive by that reference.
     """
     with _plan_locks_mutex:
-        if session not in _plan_locks:
-            if len(_plan_locks) >= _MAX_PLAN_LOCKS:
-                # Evict oldest entry (insertion-order guaranteed by dict in Python 3.7+)
-                oldest = next(iter(_plan_locks))
-                del _plan_locks[oldest]
-            _plan_locks[session] = threading.Lock()
-        return _plan_locks[session]
+        lock = _plan_locks.get(session)
+        if lock is None:
+            lock = threading.Lock()
+            _plan_locks[session] = lock
+        return lock
 
 # ---------------------------------------------------------------------------
 # Goal decomposition templates

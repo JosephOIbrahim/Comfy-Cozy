@@ -329,3 +329,54 @@ class TestPreMutationReadLogging:
 
         assert result is not None
         assert result.agent_name == "agent_x"
+
+
+# ---------------------------------------------------------------------------
+# Cycle 63: rollback_agent() lock scope — no lost-delta race
+# ---------------------------------------------------------------------------
+
+class TestRollbackLockScope:
+    """rollback_agent() must hold its lock for the entire USD operation (Cycle 63)."""
+
+    def test_rollback_in_degraded_mode_atomic(self):
+        """Degraded-mode rollback must not lose state between pop and history clear."""
+        bridge = MutationBridge(stage=None)
+        bridge.mutate("set_input", "agent_alpha", {"seed": 1})
+        bridge.mutate("set_input", "agent_alpha", {"seed": 2})
+        assert len(bridge._history) == 2
+
+        removed = bridge.rollback_agent("agent_alpha")
+
+        assert removed == 2
+        assert bridge._history == []
+        assert "agent_alpha" not in bridge._agent_layers
+
+    def test_rollback_concurrent_does_not_corrupt_history(self):
+        """Two concurrent rollbacks for DIFFERENT agents must not lose each other's history."""
+        import threading
+
+        bridge = MutationBridge(stage=None)
+        bridge.mutate("set_input", "alpha", {"x": 1})
+        bridge.mutate("set_input", "beta", {"y": 2})
+
+        errors = []
+
+        def rollback(name):
+            try:
+                bridge.rollback_agent(name)
+            except Exception as e:
+                errors.append(e)
+
+        t1 = threading.Thread(target=rollback, args=("alpha",))
+        t2 = threading.Thread(target=rollback, args=("beta",))
+        t1.start(); t2.start()
+        t1.join(); t2.join()
+
+        assert errors == [], f"Exceptions: {errors}"
+        assert bridge._history == []
+
+    def test_rollback_unknown_agent_returns_zero(self):
+        """rollback_agent() on a non-existent agent must return 0, not crash."""
+        bridge = MutationBridge(stage=None)
+        result = bridge.rollback_agent("nobody")
+        assert result == 0

@@ -411,3 +411,41 @@ class TestGetCivitaiModelRequiredField:
         from agent.tools import civitai_api
         result = json.loads(civitai_api.handle("get_civitai_model", {"model_id": 0}))
         assert "error" in result
+
+
+# ---------------------------------------------------------------------------
+# Cycle 63: max_results type coercion guard
+# ---------------------------------------------------------------------------
+
+class TestMaxResultsTypeGuard:
+    """search_models/get_trending_models must reject non-integer max_results (Cycle 63)."""
+
+    def test_get_civitai_model_trending_string_max_results_returns_error(self):
+        """String max_results in get_trending_models must return JSON error."""
+        import json
+        from agent.tools import civitai_api
+        result = json.loads(civitai_api.handle("get_trending_models", {
+            "max_results": "ten",
+        }))
+        assert "error" in result
+        assert "max_results" in result["error"].lower()
+
+    def test_get_trending_models_string_max_results_returns_error(self):
+        """String max_results 'lots' must return JSON error."""
+        import json
+        from agent.tools import civitai_api
+        result = json.loads(civitai_api.handle("get_trending_models", {
+            "max_results": "lots",
+        }))
+        assert "error" in result
+        assert "max_results" in result["error"].lower()
+
+    def test_get_trending_models_int_max_results_accepted(self):
+        """Integer max_results must not trigger the type guard."""
+        import json
+        from agent.tools import civitai_api
+        result = json.loads(civitai_api.handle("get_trending_models", {
+            "max_results": 5,
+        }))
+        # Should error on network, not on type
+        assert result.get("error", "") != "max_results must be an integer"

@@ -14,6 +14,7 @@ import math
 import os
 import threading
 import time
+import weakref
 from collections import defaultdict
 from pathlib import Path
 
@@ -30,26 +31,28 @@ OUTCOME_BACKUP_COUNT = 5
 DECAY_HALF_LIFE_S = 7 * 24 * 3600  # 604800 seconds
 
 # Per-session write locks — prevents interleaved JSONL lines from concurrent tool dispatch.
-_outcomes_locks: dict[str, threading.Lock] = {}
+# Cycle 63: WeakValueDictionary replaces the FIFO-eviction dict to eliminate the lock-
+# eviction race: evicting a lock while a thread still held it gave the next thread a
+# different lock object for the same session, destroying mutual exclusion on the JSONL file.
+_outcomes_locks: weakref.WeakValueDictionary[str, threading.Lock] = (
+    weakref.WeakValueDictionary()
+)
 _outcomes_locks_mutex = threading.Lock()
-_MAX_OUTCOME_LOCKS = 200  # Matches ~2× the session registry cap (100)
 
 
 def _get_outcomes_lock(session: str) -> threading.Lock:
     """Return (creating if needed) the write lock for a given session's JSONL file.
 
-    Caps the lock dict at _MAX_OUTCOME_LOCKS entries using LRU-style eviction
-    (Python dicts are insertion-ordered since 3.7, so the first entry is oldest).
+    The caller MUST keep a strong local reference to the returned lock for the
+    duration of use.  The WeakValueDictionary entry survives as long as that
+    reference is held; it is collected naturally when no thread uses it.
     """
     with _outcomes_locks_mutex:
-        if session in _outcomes_locks:
-            return _outcomes_locks[session]
-        if len(_outcomes_locks) >= _MAX_OUTCOME_LOCKS:
-            # Evict oldest entry (first key in insertion order)
-            oldest = next(iter(_outcomes_locks))
-            del _outcomes_locks[oldest]
-        _outcomes_locks[session] = threading.Lock()
-        return _outcomes_locks[session]
+        lock = _outcomes_locks.get(session)
+        if lock is None:
+            lock = threading.Lock()
+            _outcomes_locks[session] = lock
+        return lock
 
 
 def _temporal_weight(timestamp: float, now: float | None = None) -> float:

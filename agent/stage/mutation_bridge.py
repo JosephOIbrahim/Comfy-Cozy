@@ -258,46 +258,43 @@ class MutationBridge:
         Returns:
             Number of deltas removed.
         """
+        # Cycle 63: hold lock for the entire operation — prevents a concurrent
+        # mutate() from appending a new delta to stage._agent_deltas between our
+        # read of the list and our write-back of remaining_deltas, which would
+        # silently discard the newly added delta.
         with self._lock:
             layer_ids = self._agent_layers.pop(agent_name, [])
 
-        if not layer_ids:
-            return 0
+            if not layer_ids:
+                return 0
 
-        if self.has_stage:
-            stage = self._stage  # type: ignore[union-attr]
-            removed = 0
-            # The stage tracks deltas by position. We need to use
-            # the layer identifiers to find and remove them.
-            # CognitiveWorkflowStage stores deltas in _agent_deltas list.
-            # We remove matching layers from the sublayer stack.
-            try:
-                layer_id_set = set(layer_ids)
-                # Access internal delta list to find matching layers
-                remaining_deltas = []
-                removed_ids = set()
-                for layer in stage._agent_deltas:
-                    if layer.identifier in layer_id_set:
-                        removed_ids.add(layer.identifier)
-                        removed += 1
-                    else:
-                        remaining_deltas.append(layer)
-                stage._agent_deltas = remaining_deltas
+            if self.has_stage:
+                stage = self._stage  # type: ignore[union-attr]
+                removed = 0
+                try:
+                    layer_id_set = set(layer_ids)
+                    remaining_deltas = []
+                    removed_ids = set()
+                    for layer in stage._agent_deltas:
+                        if layer.identifier in layer_id_set:
+                            removed_ids.add(layer.identifier)
+                            removed += 1
+                        else:
+                            remaining_deltas.append(layer)
+                    stage._agent_deltas = remaining_deltas
 
-                # Update sublayer paths on the root layer
-                root = stage.root_layer
-                root.subLayerPaths = [p for p in root.subLayerPaths if p not in removed_ids]
-            except Exception as exc:
-                log.warning("rollback_agent stage cleanup failed: %s", exc)
-                removed = len(layer_ids)
-        else:
-            # Degraded mode
-            with self._lock:
+                    # Update sublayer paths on the root layer
+                    root = stage.root_layer
+                    root.subLayerPaths = [p for p in root.subLayerPaths if p not in removed_ids]
+                except Exception as exc:
+                    log.warning("rollback_agent stage cleanup failed: %s", exc)
+                    removed = len(layer_ids)
+            else:
+                # Degraded mode
                 self._degraded_deltas.pop(agent_name, None)
-            removed = len(layer_ids)
+                removed = len(layer_ids)
 
-        # Remove from history
-        with self._lock:
+            # Remove from history (same lock scope — consistent snapshot)
             self._history = [r for r in self._history if r.agent_name != agent_name]
 
         log.info("Rolled back %d delta(s) for agent '%s'.", removed, agent_name)

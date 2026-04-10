@@ -264,7 +264,10 @@ def _handle_search_civitai(tool_input: dict) -> str:
     sort = tool_input.get("sort", "most_downloaded")
     period = tool_input.get("period", "all_time")
     nsfw = tool_input.get("nsfw", False)
-    max_results = min(tool_input.get("max_results", 10), 20)
+    try:
+        max_results = min(int(tool_input.get("max_results", 10)), 20)  # Cycle 63: guard string input
+    except (TypeError, ValueError):
+        return to_json({"error": "max_results must be an integer"})
 
     params: dict = {
         "query": query,
@@ -361,7 +364,10 @@ def _handle_get_trending_models(tool_input: dict) -> str:
     model_type = tool_input.get("model_type")
     base_model = tool_input.get("base_model")
     period = tool_input.get("period", "week")
-    max_results = min(tool_input.get("max_results", 10), 20)
+    try:
+        max_results = min(int(tool_input.get("max_results", 10)), 20)  # Cycle 63: guard string input
+    except (TypeError, ValueError):
+        return to_json({"error": "max_results must be an integer"})
 
     params: dict = {
         "limit": max_results,

@@ -310,3 +310,40 @@ class TestThreadSafety:
         for i in range(5):
             steps = agent.get_steps(f"count_{i}")
             assert len(steps) == 3, f"Session count_{i} has {len(steps)} steps, expected 3"
+
+
+# ---------------------------------------------------------------------------
+# Cycle 63: _get_session_lock — WeakValueDictionary prevents eviction race
+# ---------------------------------------------------------------------------
+
+class TestIterationLockWeakRef:
+    """_get_session_lock() must return same lock while caller holds reference (Cycle 63)."""
+
+    def test_same_session_same_lock(self):
+        """Two calls for the same session return the SAME lock object."""
+        from agent.brain.iteration_accumulator import IterationAccumulatorAgent
+
+        agent = IterationAccumulatorAgent()
+        lock_a = agent._get_session_lock("iter-same-63")
+        lock_b = agent._get_session_lock("iter-same-63")
+        assert lock_a is lock_b, "Same session must return the same lock object"
+
+    def test_concurrent_same_session_same_lock(self):
+        """Concurrent _get_session_lock() for the same session yields the same object."""
+        import threading
+        from agent.brain.iteration_accumulator import IterationAccumulatorAgent
+
+        agent = IterationAccumulatorAgent()
+        results = []
+
+        def grab():
+            results.append(agent._get_session_lock("iter-concurrent-63"))
+
+        threads = [threading.Thread(target=grab) for _ in range(10)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert len(set(id(lk) for lk in results)) == 1, \
+            "All concurrent callers must receive the same lock object"

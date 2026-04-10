@@ -642,3 +642,46 @@ class TestGetExecutionStatusPromptIdFormat:
         # Should NOT error on format — may error on empty history but not format
         assert "alphanumeric" not in result.get("error", "")
         assert "too long" not in result.get("error", "")
+
+
+# ---------------------------------------------------------------------------
+# Cycle 63: timeout type coercion guard
+# ---------------------------------------------------------------------------
+
+class TestTimeoutTypeGuard:
+    """execute_workflow/execute_with_progress must reject non-numeric timeout (Cycle 63)."""
+
+    def test_execute_workflow_string_timeout_returns_error(self):
+        """String timeout must return a JSON error, not crash with TypeError."""
+        import json
+        from agent.tools import comfy_execute
+        result = json.loads(comfy_execute.handle("execute_workflow", {"timeout": "notanumber"}))
+        assert "error" in result
+        assert "timeout" in result["error"].lower()
+
+    def test_execute_with_progress_string_timeout_returns_error(self):
+        """String timeout in execute_with_progress must return a JSON error."""
+        import json
+        from agent.tools import comfy_execute
+        result = json.loads(comfy_execute.handle("execute_with_progress", {"timeout": "bad"}))
+        assert "error" in result
+        assert "timeout" in result["error"].lower()
+
+    def test_execute_workflow_numeric_string_timeout_returns_error(self):
+        """Even '120' (numeric-looking string) must be rejected without coercion."""
+        import json
+        from agent.tools import comfy_execute
+        # We intentionally do NOT silently coerce — the schema says number
+        result = json.loads(comfy_execute.handle("execute_workflow", {"timeout": "120"}))
+        assert "error" in result
+
+    def test_execute_workflow_float_timeout_accepted(self):
+        """A float timeout must NOT trigger the type guard (it's a valid number)."""
+        import json
+        from unittest.mock import patch
+        from agent.tools import comfy_execute
+        # Patch the actual execution so we don't need ComfyUI running
+        with patch.object(comfy_execute, "_queue_prompt", return_value=(None, "ComfyUI not reachable")):
+            result = json.loads(comfy_execute.handle("execute_workflow", {"timeout": 60.0}))
+        # Error must not be about timeout type
+        assert result.get("error", "") != "timeout must be a number (seconds)"
