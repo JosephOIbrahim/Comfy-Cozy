@@ -43,82 +43,133 @@ graph LR
 
 ---
 
-## Get Running in 5 Minutes
+## Get Running
 
-**Before you start, you need three things:**
+**You need three things. That's it.**
 
-- [ ] **Python 3.11+** ([python.org/downloads](https://python.org/downloads))
-- [ ] **ComfyUI** running on your machine ([github.com/comfyanonymous/ComfyUI](https://github.com/comfyanonymous/ComfyUI))
-- [ ] **One LLM backend** -- an API key from Anthropic, OpenAI, or Google, OR [Ollama](https://ollama.com) installed locally (free, no API key)
+| # | What | Where to get it |
+|---|------|-----------------|
+| 1 | **Python 3.11+** | [python.org/downloads](https://python.org/downloads) |
+| 2 | **ComfyUI running** | [github.com/comfyanonymous/ComfyUI](https://github.com/comfyanonymous/ComfyUI) |
+| 3 | **One LLM backend** | API key (Anthropic / OpenAI / Google) OR [Ollama](https://ollama.com) (free, local) |
 
-Got all three? Here we go.
+Got all three? Four steps:
 
-### Step 1: Download the agent
+### Step 1 of 4 -- Clone
 
 ```bash
 git clone https://github.com/JosephOIbrahim/Comfy-Cozy.git
 cd Comfy-Cozy
 ```
 
-### Step 2: Install it
+### Step 2 of 4 -- Install
 
 ```bash
-pip install -e .                  # core install (agent + cognitive engine + panel)
-pip install -e ".[dev]"           # + full test suite (3573 passing tests)
-pip install -e ".[dev,stage]"     # + USD stage subsystem (~200MB, optional)
+pip install -e .
 ```
 
-The core install is all you need to run the agent. Add `[dev]` to run the test suite. Add `[stage]` only if you need the USD-backed provisioner — it's a heavy native dependency and most users don't need it.
+Done. That's the only install command you need.
 
-> **Requires Python 3.11+.** ComfyUI also requires 3.11+ — if ComfyUI runs on your machine, you already have the right version.
+<details>
+<summary>Optional installs (click to expand)</summary>
 
-### Step 3: Add your API key
+```bash
+pip install -e ".[dev]"           # + test suite (3579 passing tests)
+pip install -e ".[dev,stage]"     # + USD stage subsystem (~200MB, most users skip this)
+```
+
+</details>
+
+### Step 3 of 4 -- API key
 
 ```bash
 cp .env.example .env
 ```
 
-Open `.env` and configure your LLM provider -- pick any one:
+Open `.env`, paste your key:
 
 ```bash
-# Option 1: Anthropic (default)
 ANTHROPIC_API_KEY=sk-ant-your-key-here
+```
 
-# Option 2: OpenAI (requires: pip install openai)
+<details>
+<summary>Using a different LLM? (click to expand)</summary>
+
+```bash
+# OpenAI (requires: pip install openai)
 LLM_PROVIDER=openai
 OPENAI_API_KEY=sk-your-key-here
 
-# Option 3: Gemini (requires: pip install google-genai)
+# Gemini (requires: pip install google-genai)
 LLM_PROVIDER=gemini
 GEMINI_API_KEY=your-key-here
 
-# Option 4: Ollama (requires: ollama installed locally — no API key)
+# Ollama (no API key needed)
 LLM_PROVIDER=ollama
+AGENT_MODEL=llama3.1
 ```
 
-See [Pick Your LLM](#pick-your-llm) for full details.
+</details>
 
-**If your ComfyUI folder isn't in the default location**, also add:
+**Non-default ComfyUI location?** Add this line too:
 
 ```
 COMFYUI_DATABASE=C:/path/to/your/ComfyUI
 ```
 
-### Step 4: Go
-
-Make sure ComfyUI is running, then:
+### Step 4 of 4 -- Go
 
 ```bash
 agent run
 ```
 
-Type what you want. Type `quit` when you're done. That's it.
+Type what you want. Type `quit` when you're done.
+
+---
+
+## Connect the Sidebar to ComfyUI
+
+The agent also lives **inside ComfyUI** as a native sidebar panel. To enable it, create two symlinks from ComfyUI's `custom_nodes/` folder to Comfy-Cozy:
+
+**Windows (run as Administrator):**
+
+```cmd
+cd C:\path\to\ComfyUI\custom_nodes
+mklink /D comfy-cozy-panel C:\path\to\Comfy-Cozy\panel
+mklink /D comfy-cozy-ui C:\path\to\Comfy-Cozy\ui
+```
+
+**Linux / macOS:**
+
+```bash
+cd /path/to/ComfyUI/custom_nodes
+ln -s /path/to/Comfy-Cozy/panel comfy-cozy-panel
+ln -s /path/to/Comfy-Cozy/ui comfy-cozy-ui
+```
+
+Restart ComfyUI. The Comfy Cozy chat panel appears in the **left sidebar**.
+
+```mermaid
+graph LR
+    CN["ComfyUI/custom_nodes/"] --> P["comfy-cozy-panel/ (symlink)"]
+    CN --> U["comfy-cozy-ui/ (symlink)"]
+    P -->|"canvas sync (headless)"| Panel["panel/__init__.py"]
+    U -->|"sidebar + chat"| UI["ui/__init__.py"]
+
+    style CN fill:#ef4444,color:#fff
+    style P fill:#8b5cf6,color:#fff
+    style U fill:#0066FF,color:#fff
+```
+
+**Both symlinks are required:**
+- **`comfy-cozy-panel`** -- Canvas sync bridge (runs headlessly -- keeps the agent in sync with your live graph)
+- **`comfy-cozy-ui`** -- The visible sidebar: chat window, quick actions, status
 
 ---
 
 ## Pick Your LLM
 
-Comfy Cozy is **provider-agnostic**. The same 113 tools, the same streaming interface, the same vision analysis -- just swap the backend.
+Comfy Cozy is **provider-agnostic**. Same 113 tools, same streaming, same vision analysis -- swap one env var.
 
 ### Anthropic (default)
 
@@ -130,7 +181,7 @@ ANTHROPIC_API_KEY=sk-ant-your-key-here
 agent run
 ```
 
-Ships as the default. No extra install needed. Supports prompt caching for lower costs on long sessions.
+Ships as the default. No extra install. Supports prompt caching for lower costs on long sessions.
 
 ### OpenAI
 
@@ -206,9 +257,9 @@ Common types (`TextBlock`, `ToolUseBlock`, `LLMResponse`), unified error hierarc
 
 ---
 
-## Two Ways to Use It
+## Three Ways to Use It
 
-### Option A: Inside Claude Code / Claude Desktop (recommended)
+### A. Inside Claude Code / Claude Desktop (recommended)
 
 The agent runs as an MCP server -- Claude can use all 113 tools directly.
 
@@ -225,9 +276,9 @@ Add this to your Claude Code or Claude Desktop MCP config:
 }
 ```
 
-Now just talk to Claude about your ComfyUI workflows. It has full access.
+Now talk to Claude about your ComfyUI workflows. It has full access.
 
-### Option B: Standalone CLI
+### B. Standalone CLI
 
 ```bash
 agent run                        # Start a conversation
@@ -235,18 +286,18 @@ agent run --session my-project   # Auto-saves so you can pick up later
 agent run --verbose              # See what's happening under the hood
 ```
 
-### Option C: Launch with ComfyUI (one click)
+### C. One-click launcher (ComfyUI + agent together)
 
-If you use the **ComfyUI CLI launcher** (`ComfyUI CLI.lnk`), Comfy Cozy is the default — press Enter and both apps start:
+If you use the **ComfyUI CLI launcher** (`ComfyUI CLI.lnk`), Comfy Cozy is the default mode:
 
 ```
-[ 1 ]  STABLE          Start here. Balanced settings, works with everything.
-[ 2 ]  DETERMINISTIC   Lock seed + batch to 1. Same prompt, same pixels.
-[ 3 ]  FAST            Sage attention + async offload. Max throughput.
-[ 4 ]  COMFY COZY  ★  Daily use. Talk to your workflow in plain English.
+[ 1 ]  STABLE          Balanced. Works with everything.
+[ 2 ]  DETERMINISTIC   Same prompt = same pixels.
+[ 3 ]  FAST            Sage attention + async offload.
+[ 4 ]  COMFY COZY  *   Talk to your workflow. (auto-selects in 10s)
 ```
 
-Select **[4]** (or wait 10 seconds — it auto-selects) and ComfyUI starts in a background window (stable mode, RTX 4090 optimized), then Comfy Cozy launches in the current window ready to talk — no manual startup needed.
+Select **4** (or wait 10 seconds) -- ComfyUI starts in a background window, then the agent launches ready to talk.
 
 ### Handy CLI Commands (no API key needed)
 
@@ -293,15 +344,15 @@ The agent ships with built-in knowledge about how each model family actually beh
 ```mermaid
 graph TB
     subgraph Browser ["ComfyUI Browser"]
-        Panel["Comfy Cozy Sidebar<br/>Native left panel · Chat · Quick Actions"]
+        Sidebar["Comfy Cozy Sidebar<br/>Native left panel -- Chat -- Quick Actions"]
     end
     subgraph Backend ["Agent Backend (Python)"]
         Routes["49 REST Routes<br/>+ WebSocket"]
-        Tools["113 Tools<br/>workflow · models · vision · session · provision"]
-        Cog["Cognitive Engine<br/>LIVRPS delta stack · CWM · experience"]
+        Tools["113 Tools<br/>workflow -- models -- vision -- session -- provision"]
+        Cog["Cognitive Engine<br/>LIVRPS delta stack -- CWM -- experience"]
     end
     subgraph ComfyUI ["ComfyUI"]
-        API["/prompt · /history · /ws"]
+        API["/prompt -- /history -- /ws"]
         Canvas["Live Canvas"]
     end
     subgraph Disk ["Persistence"]
@@ -309,8 +360,8 @@ graph TB
         Sessions[("sessions/<br/>workflow state")]
     end
 
-    Panel <-->|"fetch / ws"| Routes
-    Panel <-->|"canvas sync"| Canvas
+    Sidebar <-->|"WebSocket + REST"| Routes
+    Sidebar <-->|"canvas sync"| Canvas
     Routes --> Tools
     Tools --> Cog
     Tools -->|httpx| API
@@ -352,20 +403,20 @@ Every change is undoable. Every generation teaches the agent something.
 
 ## Autonomous Mode
 
-Write a creative intent. Hit go. No workflow file needed, no parameters to tune — the agent composes a workflow, runs it on ComfyUI, scores the result, and learns from it automatically.
+Write a creative intent. Hit go. No workflow file needed, no parameters to tune -- the agent composes a workflow, runs it on ComfyUI, scores the result, and learns from it automatically.
 
 ```mermaid
 flowchart TD
-    You(["🎨 Creative Intent\n&quot;cinematic portrait, golden hour&quot;"]) --> INTENT["INTENT\nParse + validate"]
-    INTENT --> COMPOSE["COMPOSE\nLoad template from library\nBlend with accumulated experience"]
-    COMPOSE --> PREDICT["PREDICT\nCognitiveWorldModel\nestimates quality before execution"]
-    PREDICT --> GATE{"GATE\nArbiter:\nproceed?"}
-    GATE -->|Yes| EXECUTE["EXECUTE\nPost to ComfyUI /prompt\nMonitor WebSocket stream"]
-    GATE -->|Interrupt| STOP(["⛔ Interrupted\n+ reason"])
-    EXECUTE --> EVALUATE["EVALUATE\nScore the output\n0.7 success · 0.1 failure"]
-    EVALUATE --> LEARN["LEARN\nRecord to accumulator\nCalibrate CWM priors"]
-    LEARN --> DONE(["✅ Complete\nExperience recorded"])
-    EVALUATE -->|"score < threshold\n(future: auto-retry)"| COMPOSE
+    You(["Creative Intent<br/>'cinematic portrait, golden hour'"]) --> INTENT["INTENT<br/>Parse + validate"]
+    INTENT --> COMPOSE["COMPOSE<br/>Load template<br/>Blend with experience"]
+    COMPOSE --> PREDICT["PREDICT<br/>CognitiveWorldModel<br/>estimates quality"]
+    PREDICT --> GATE{"GATE<br/>Arbiter:<br/>proceed?"}
+    GATE -->|Yes| EXECUTE["EXECUTE<br/>Post to ComfyUI<br/>Monitor WebSocket"]
+    GATE -->|Interrupt| STOP(["Interrupted<br/>+ reason"])
+    EXECUTE --> EVALUATE["EVALUATE<br/>Score the output"]
+    EVALUATE --> LEARN["LEARN<br/>Record to accumulator<br/>Calibrate CWM"]
+    LEARN --> DONE(["Complete<br/>Experience recorded"])
+    EVALUATE -->|"score < threshold"| COMPOSE
 
     style You fill:#0066FF,color:#fff
     style GATE fill:#d97706,color:#fff
@@ -383,7 +434,7 @@ from cognitive.pipeline import create_default_pipeline, PipelineConfig
 pipeline = create_default_pipeline()   # fresh accumulator, CWM, arbiter
 result = pipeline.run(PipelineConfig(
     intent="cinematic portrait, golden hour",
-    model_family="SD1.5",              # optional — agent detects from intent
+    model_family="SD1.5",              # optional -- agent detects from intent
 ))
 print(result.success, result.quality.overall, result.stage.value)
 if result.warnings:
@@ -391,10 +442,10 @@ if result.warnings:
 ```
 
 - **No executor required.** The pipeline calls ComfyUI directly via the real `execute_workflow` implementation.
-- **No evaluator required.** Rule-based scoring (success = 0.7, failure = 0.1) enables CWM calibration from day one. Vision-based scoring comes in Session N+2.
-- **Template library.** Workflows are loaded from `agent/templates/` (SD 1.5 · SDXL · img2img · LoRA). If no template matches the detected model family, a hardcoded 7-node SD 1.5 fallback ensures the pipeline always has a valid starting point.
-- **Experience persists across sessions — crash-safe.** Every run's quality score and parameters are saved atomically to `comfy-cozy-experience.jsonl` (write-to-tmp then `os.replace()` — the live file is never truncated mid-write). After 30+ runs, composition starts using your personal generation history to bias parameter selection.
-- **Pipeline failures are graceful.** If the Cognitive World Model raises during prediction, the pipeline returns `PipelineStage.FAILED` cleanly instead of propagating an unhandled exception. Template family mismatches populate `result.warnings` so callers can detect silent fallbacks.
+- **No evaluator required.** Rule-based scoring (success = 0.7, failure = 0.1) enables CWM calibration from day one.
+- **Template library.** Workflows loaded from `agent/templates/` (SD 1.5 / SDXL / img2img / LoRA). Hardcoded 7-node SD 1.5 fallback if no template matches.
+- **Experience persists across sessions -- crash-safe.** Every run saved atomically (write-to-tmp then `os.replace()`). After 30+ runs, the agent starts using your personal history to bias parameter selection.
+- **Pipeline failures are graceful.** CWM exceptions return `PipelineStage.FAILED` cleanly. Template mismatches populate `result.warnings`.
 
 ```mermaid
 graph LR
@@ -402,11 +453,11 @@ graph LR
         I1["Intent"] --> C1["Compose"] --> E1["Execute"] --> S1["Score"]
     end
     subgraph Session2 ["Session 2+"]
-        I2["Intent"] --> C2["Compose\n(+prior runs)"] --> E2["Execute"] --> S2["Score"]
+        I2["Intent"] --> C2["Compose<br/>(+prior runs)"] --> E2["Execute"] --> S2["Score"]
     end
-    S1 -->|"atomic save()\nwrite→tmp→replace"| JSONL[("experience.jsonl\ncrash-safe")]
-    JSONL -->|"load() on startup"| C2
-    S2 -->|"atomic save() — cumulative"| JSONL
+    S1 -->|"atomic save"| JSONL[("experience.jsonl<br/>crash-safe")]
+    JSONL -->|"load on startup"| C2
+    S2 -->|"atomic save -- cumulative"| JSONL
 
     style JSONL fill:#8b5cf6,color:#fff
     style C2 fill:#10b981,color:#fff
@@ -416,40 +467,46 @@ graph LR
 
 ## Comfy Cozy Sidebar (Native ComfyUI Integration)
 
-A typography-forward chat panel that lives in ComfyUI's native left sidebar — no floating buttons, no separate windows. Uses ComfyUI's own CSS variables so it adapts to any theme automatically.
+A typography-forward chat panel in ComfyUI's native left sidebar. No floating buttons, no separate windows. Uses ComfyUI's own CSS variables -- adapts to any theme automatically.
 
 ```mermaid
 graph TB
-    subgraph Sidebar ["Comfy Cozy — Left Sidebar"]
-        Chat["Chat Window<br/>WebSocket · streaming · rich text"]
-        QA["Quick Actions<br/>Run · Validate · Repair · Optimize · Undo"]
-        Progress["Execution Progress<br/>Pipeline stages · node detail · ETA"]
+    subgraph ComfyUI_App ["ComfyUI"]
+        subgraph Sidebar ["Left Sidebar"]
+            Tab["Comfy Cozy Tab<br/>registerSidebarTab()"]
+            Chat["Chat Window<br/>WebSocket -- streaming -- rich text"]
+            QA["Quick Actions<br/>Run -- Validate -- Repair -- Optimize -- Undo"]
+        end
+        Canvas["Canvas"]
     end
 
     subgraph Bridge ["Bidirectional Canvas Bridge"]
-        C2A["Canvas → Agent<br/>Auto-sync on change"]
-        A2C["Agent → Canvas<br/>Push mutations + node highlights"]
+        C2A["Canvas --> Agent<br/>Auto-sync on change"]
+        A2C["Agent --> Canvas<br/>Push mutations + highlights"]
     end
 
-    Sidebar --> Bridge
+    Tab --> Chat
+    Tab --> QA
+    Sidebar <--> Bridge
+    Bridge <--> Canvas
 
+    style ComfyUI_App fill:#1a1a2e,color:#F0F0F0,stroke:#ef4444
     style Sidebar fill:#1a1a2e,color:#F0F0F0,stroke:#0066FF
     style Bridge fill:#1a1a2e,color:#F0F0F0,stroke:#8b5cf6
 ```
 
-- **Native sidebar tab** -- Registers via `app.extensionManager.registerSidebarTab()`, appears alongside ComfyUI's built-in panels
-- **Design system** -- Inter + JetBrains Mono, ComfyUI native color variables, Pentagram-inspired restraint: hairline borders, generous whitespace, 2px radii, no ornamentation
-- **Chat** -- Auto-growing textarea, streaming responses with typing indicator, rich text (code blocks, bold, inline code), collapsible panels for tool results
-- **Node pills** -- Clickable inline references to workflow nodes, color-coded by slot type. Click to select + center on canvas. Hover to highlight.
-- **Agent dispatch cards** -- Visual MoE routing: shows which specialist agents are working, with live status
+**What you get:**
+- **Native sidebar tab** -- `app.extensionManager.registerSidebarTab()`, sits alongside ComfyUI's built-in panels
+- **Design system v3** -- Inter + JetBrains Mono, ComfyUI CSS variables, Pentagram-inspired: hairline borders, generous whitespace, 2px radii, zero ornamentation
+- **Chat** -- Auto-growing textarea, streaming responses, rich text (code blocks, bold, inline code), collapsible tool results
+- **Node pills** -- Clickable inline node references, color-coded by slot type. Click = select + center on canvas.
 - **Quick actions** -- Context-aware chips: Run, Validate, Repair, Optimize, Undo
-- **Readability controls** -- Font size (S/M/L), text alignment, comfort/compact mode
-- **Bidirectional canvas bridge** -- Agent changes sync to the canvas live with node highlighting; canvas re-syncs automatically after each ComfyUI execution
+- **Canvas bridge** -- Agent changes sync to canvas live with node highlighting; canvas re-syncs after each execution
 - **Self-healing** -- Missing node warnings with one-click repair, deprecated node migration
 
-**49 panel routes** expose the full tool surface: discovery, provisioning, repair, sessions, execution, and more.
+**49 panel routes** expose the full tool surface: discovery, provisioning, repair, sessions, execution.
 
-Every request — including the WebSocket chat endpoint — passes through the same three-layer security chain:
+Every request passes through a three-layer security chain:
 
 ```mermaid
 flowchart TD
@@ -460,10 +517,10 @@ flowchart TD
     Auth -->|"bearer matches"| Rate
     Auth -->|"missing / wrong"| R401(["401 Unauthorized"])
     Rate -->|"tokens available"| Size{check_size}
-    Rate -->|"bucket empty"| R429(["429 · Retry-After: 1s"])
-    Size -->|"Content-Length ≤ 10 MB"| Handler(["Route handler"])
-    Size -->|"Content-Length > 10 MB"| R413(["413 Too Large"])
-    Size -->|"chunked · no length"| R411(["411 Length Required"])
+    Rate -->|"bucket empty"| R429(["429 -- Retry-After: 1s"])
+    Size -->|"Content-Length OK"| Handler(["Route handler"])
+    Size -->|"> 10 MB"| R413(["413 Too Large"])
+    Size -->|"chunked -- no length"| R411(["411 Length Required"])
 
     style R401 fill:#ef4444,color:#fff
     style R429 fill:#d97706,color:#fff
@@ -472,8 +529,6 @@ flowchart TD
     style Handler fill:#10b981,color:#fff
     style Guard fill:#8b5cf6,color:#fff
 ```
-
-Design: monochrome + one accent (#0066FF on #0D0D0D). Inter typography. No gradients, no shadows. Every pixel earns its place.
 
 ---
 
@@ -485,7 +540,7 @@ The agent handles the entire pipeline from "I want Flux" to a wired workflow:
 flowchart LR
     Search["Search<br/>CivitAI + HF + Registry"] --> Download["Download<br/>to correct folder"]
     Download --> Verify["Verify<br/>family + compat"]
-    Verify --> Wire["Auto-Wire<br/>find loader → set input"]
+    Verify --> Wire["Auto-Wire<br/>find loader -- set input"]
     Wire --> Ready["Ready to<br/>Queue"]
 
     style Search fill:#3b82f6,color:#fff
@@ -495,7 +550,7 @@ flowchart LR
     style Ready fill:#10b981,color:#fff
 ```
 
-**`provision_model`** -- one tool call that discovers, downloads, verifies compatibility, finds the right loader node in your workflow, and wires the model in. Also: `provision_status` for gap analysis and `provision_verify` for post-download checks.
+**`provision_model`** -- one tool call that discovers, downloads, verifies compatibility, finds the right loader node in your workflow, and wires the model in.
 
 ---
 
@@ -587,16 +642,16 @@ Your edit beats experience. Safety beats everything. Every conflict is determini
 
 This is an intentional inversion of USD's native LIVRPS (where Specializes is weakest). Safety is promoted to strongest for safety-critical override -- the architectural decision documented in the patent application.
 
-### Cognitive State Engine (Phase 0.5 — live in production)
+### Cognitive State Engine (Phase 0.5 -- live in production)
 
-LIVRPS is no longer a table on a slide. Since Phase 0.5 the engine is a real top-level package (`cognitive/`) installed alongside `agent/`, and `agent/tools/workflow_patch.py` imports it directly at module load — no try/except, no silent fallback. Every PILOT mutation is recorded as a delta layer with SHA-256 tamper detection, then resolved on demand.
+LIVRPS is no longer a table on a slide. Since Phase 0.5 the engine is a real top-level package (`cognitive/`) installed alongside `agent/`, and `agent/tools/workflow_patch.py` imports it directly at module load -- no try/except, no silent fallback. Every PILOT mutation is recorded as a delta layer with SHA-256 tamper detection, then resolved on demand.
 
 ```mermaid
 graph LR
     User([Tool Call<br/>via MCP]) --> WP["agent/tools/<br/>workflow_patch.py"]
     WP -->|"from cognitive.core.graph<br/>import CognitiveGraphEngine"| CGE["CognitiveGraphEngine<br/>(session-scoped)"]
-    CGE --> Stack["Delta Stack<br/>P → R → V → I → L → S"]
-    Stack -->|"sort weakest→strongest<br/>apply, preserve link arrays"| Resolved["Resolved WorkflowGraph"]
+    CGE --> Stack["Delta Stack<br/>P -- R -- V -- I -- L -- S"]
+    Stack -->|"sort weakest to strongest<br/>apply, preserve link arrays"| Resolved["Resolved WorkflowGraph"]
     Resolved -->|"to_api_json()"| Comfy["ComfyUI /prompt"]
 
     style User fill:#0066FF,color:#fff
@@ -607,17 +662,17 @@ graph LR
     style Comfy fill:#ef4444,color:#fff
 ```
 
-The `cognitive/` package is layered by phase — the core engine (Phase 1) is fully tested at 54/54 adversarial cases; later phases are present on disk and being verified incrementally.
+The `cognitive/` package is layered by phase -- the core engine (Phase 1) is fully tested at 54/54 adversarial cases; later phases are present on disk and being verified incrementally.
 
 ```mermaid
 graph TB
     Cognitive["cognitive/<br/>(installed top-level package)"]
-    Cognitive --> Core["core/<br/>graph · delta · models<br/>54/54 tests passing"]
-    Cognitive --> Exp["experience/<br/>chunk · signature · accumulator"]
-    Cognitive --> Pred["prediction/<br/>cwm · arbiter · counterfactual"]
-    Cognitive --> Trans["transport/<br/>schema_cache · events · interrupt"]
-    Cognitive --> Pipe["pipeline/<br/>autonomous · create_default_pipeline<br/>Phase 6A — fully wired"]
-    Cognitive --> Tools["tools/<br/>analyze · compose · execute<br/>mutate · query · series · dependencies"]
+    Cognitive --> Core["core/<br/>graph -- delta -- models<br/>54/54 tests passing"]
+    Cognitive --> Exp["experience/<br/>chunk -- signature -- accumulator"]
+    Cognitive --> Pred["prediction/<br/>cwm -- arbiter -- counterfactual"]
+    Cognitive --> Trans["transport/<br/>schema_cache -- events -- interrupt"]
+    Cognitive --> Pipe["pipeline/<br/>autonomous -- create_default_pipeline<br/>Phase 6A -- fully wired"]
+    Cognitive --> CogTools["tools/<br/>analyze -- compose -- execute<br/>mutate -- query -- series -- dependencies"]
 
     style Cognitive fill:#8b5cf6,color:#fff
     style Core fill:#0066FF,color:#fff
@@ -625,10 +680,10 @@ graph TB
     style Pred fill:#d97706,color:#fff
     style Trans fill:#10b981,color:#fff
     style Pipe fill:#10b981,color:#fff
-    style Tools fill:#3b82f6,color:#fff
+    style CogTools fill:#3b82f6,color:#fff
 ```
 
-Each delta layer carries its `creation_hash` (SHA-256 of `opinion + sorted-JSON mutations`). `verify_stack_integrity()` walks the stack and flags any layer whose `layer_hash` no longer matches its `creation_hash` — making post-hoc tampering detectable. Link arrays (`["node_id", output_index]`) are preserved through every parse/mutate/serialize round-trip, which is the #1 failure mode in ComfyUI agents.
+Each delta layer carries its `creation_hash` (SHA-256 of `opinion + sorted-JSON mutations`). `verify_stack_integrity()` walks the stack and flags any layer whose `layer_hash` no longer matches its `creation_hash` -- making post-hoc tampering detectable. Link arrays (`["node_id", output_index]`) are preserved through every parse/mutate/serialize round-trip, which is the #1 failure mode in ComfyUI agents.
 
 ### Graceful Degradation
 
@@ -636,7 +691,7 @@ Every subsystem has an independent kill switch. Set any of these to `0` in your 
 
 `BRAIN_ENABLED` `DAG_ENABLED` `GATE_ENABLED` `OBSERVATION_ENABLED`
 
-All default to ON. The agent works fine with any combination disabled -- features just gracefully disappear.
+All default to ON. The agent works fine with any combination disabled -- features gracefully disappear.
 
 ### Experience Loop
 
@@ -684,17 +739,17 @@ flowchart LR
 ```
 agent/
   llm/                Multi-provider abstraction (Anthropic, OpenAI, Gemini, Ollama)
-  tools/              63 tools — workflow ops, model search, provisioning, auto-wire
+  tools/              63 tools -- workflow ops, model search, provisioning, auto-wire
                       workflow_patch.py wraps the cognitive engine for non-destructive PILOT
-  brain/              27 tools — vision, planning, memory, optimization
+  brain/              27 tools -- vision, planning, memory, optimization
     adapters/         Pure-function translators between brain modules
-  stage/              23 tools — USD state, prediction, composition (USD optional via [stage])
+  stage/              23 tools -- USD state, prediction, composition (USD optional via [stage])
     dag/              Workflow intelligence (6 computation nodes)
   gate/               Pre-dispatch safety (5-check pipeline)
   degradation.py      Fault isolation manager
   config.py           Environment + 4 kill switches + LLM provider selection
   mcp_server.py       MCP server (primary interface)
-cognitive/            LIVRPS state engine — installed as top-level package (Phase 0.5)
+cognitive/            LIVRPS state engine -- installed as top-level package (Phase 0.5)
   core/               CognitiveGraphEngine, DeltaLayer, WorkflowGraph (link-preserving)
   experience/         ExperienceChunk, GenerationContextSignature, Accumulator
   prediction/         CognitiveWorldModel, SimulationArbiter, CounterfactualGenerator
@@ -702,11 +757,14 @@ cognitive/            LIVRPS state engine — installed as top-level package (Ph
   pipeline/           Autonomous end-to-end orchestration
   tools/              Phase 3 macro-tools (analyze, mutate, query, compose, ...)
 ui/
-  web/js/sidebar.js   Native left sidebar — chat, quick actions, progress
-  web/css/            Design system v3 — ComfyUI-native CSS variables
+  __init__.py         WEB_DIRECTORY + route registration
+  web/js/sidebar.js   Native left sidebar -- chat, quick actions, progress
+  web/css/            Design system v3 -- ComfyUI-native CSS variables
+  server/routes.py    WebSocket + REST endpoints for sidebar chat
 panel/
-  server/routes.py    49 REST routes — full tool surface
-  web/js/             Canvas sync bridge (headless — no visible UI)
+  __init__.py         WEB_DIRECTORY + route registration + sys.path injection
+  server/routes.py    49 REST routes -- full tool surface
+  web/js/             Canvas sync bridge (headless -- no visible UI)
 tests/                3579 passing tests, all mocked, ~60s
 ```
 
@@ -715,30 +773,30 @@ tests/                3579 passing tests, all mocked, ~60s
 | Domain | What it means |
 |--------|-------------|
 | **Safety** | 5-check default-deny gate. Risk levels 0-4. Destructive ops never auto-execute. |
-| **Fault Isolation** | Each subsystem fails independently. Circuit breakers prevent cascading failures. `brain` (threshold=3, timeout=30s) and `comfyui_http` (threshold=5, timeout=60s) registered; `BRAIN_ENABLED=0` kill switch fully enforced in tool registry. Session isolation: each `agent mcp` process gets a unique `conn_XXXXXXXX` namespace; ContextVar set in executor thread before dispatch. Parallel tool dispatch routes through `agent.tools.handle` live module reference — monkey-patch visible to all ThreadPoolExecutor workers. |
+| **Fault Isolation** | Each subsystem fails independently. Circuit breakers prevent cascading failures. `brain` (threshold=3, timeout=30s) and `comfyui_http` (threshold=5, timeout=60s) registered; `BRAIN_ENABLED=0` kill switch fully enforced in tool registry. Session isolation: each `agent mcp` process gets a unique `conn_XXXXXXXX` namespace; ContextVar set in executor thread before dispatch. Parallel tool dispatch routes through `agent.tools.handle` live module reference -- monkey-patch visible to all ThreadPoolExecutor workers. |
 | **Determinism** | Pure computation DAG. Deterministic JSON. Ordinal state enums. Same input = same output. |
 | **Audit Trail** | Every mutation logged: who changed what, when, and what got overridden. |
-| **Security** | Bearer token auth on all routes including WebSocket. Path traversal blocked. SSRF prevented on initial URL and every redirect hop (RFC 1918 + loopback + link-local + CGNAT rejected via DNS resolution). MCP tool errors return `isError=True` per protocol. Gate exceptions deny by default (no silent allow). 10 MB + chunked-transfer size guards. Max 20 concurrent WebSocket connections. Atomic file writes (write→tmp→`os.replace()`). Thread-safe token bucket rate limiter. |
+| **Security** | Bearer token auth on all routes including WebSocket. Path traversal blocked. SSRF prevented on initial URL and every redirect hop (RFC 1918 + loopback + link-local + CGNAT rejected via DNS resolution). MCP tool errors return `isError=True` per protocol. Gate exceptions deny by default (no silent allow). 10 MB + chunked-transfer size guards. Max 20 concurrent WebSocket connections. Atomic file writes (write-to-tmp-then-`os.replace()`). Thread-safe token bucket rate limiter. |
 | **Bounded Resources** | Intent history (100), iteration steps (200), demo checkpoints (100). No unbounded growth. |
 
 ```mermaid
 graph TB
     subgraph Sec ["Security"]
-        A1["Auth — Bearer token\n(REST + WebSocket)"]
-        A2["Rate limit — Token bucket\nper category"]
-        A3["Size guard — 10 MB limit\n+ chunked-transfer block"]
-        A4["WS cap — 20 connections max"]
+        A1["Auth -- Bearer token<br/>(REST + WebSocket)"]
+        A2["Rate limit -- Token bucket<br/>per category"]
+        A3["Size guard -- 10 MB limit<br/>+ chunked-transfer block"]
+        A4["WS cap -- 20 connections max"]
     end
     subgraph Atom ["Persistence"]
-        B1["_save_lock\nthreading.Lock"]
-        B2["Write → .jsonl.tmp"]
-        B3["os.replace()\natomic swap"]
+        B1["_save_lock<br/>threading.Lock"]
+        B2["Write to .jsonl.tmp"]
+        B3["os.replace()<br/>atomic swap"]
         B1 --> B2 --> B3
     end
     subgraph Resil ["Resilience"]
-        C1["CWM exception\n→ PipelineStage.FAILED"]
-        C2["Template mismatch\n→ result.warnings"]
-        C3["Save failure\n→ non-fatal log\nexcept Exception"]
+        C1["CWM exception<br/>--> PipelineStage.FAILED"]
+        C2["Template mismatch<br/>--> result.warnings"]
+        C3["Save failure<br/>--> non-fatal log"]
     end
 
     style Sec fill:#1a1a2e,color:#F0F0F0,stroke:#ef4444
@@ -773,13 +831,13 @@ All settings live in your `.env` file:
 No ComfyUI needed -- everything is mocked:
 
 ```bash
-python -m pytest tests/ -v        # 3573 passing tests, ~60s
+python -m pytest tests/ -v        # 3579 passing tests, ~60s
 
 # Skip tests that require a real ComfyUI server or API keys
 python -m pytest tests/ -v -m "not integration"
 ```
 
-The `[dev]` install runs the full test suite — no ComfyUI server or API keys required, everything is mocked. The `test_provisioner.py` tests require `usd-core` (install with `pip install -e ".[stage]"` to resolve them).
+The `[dev]` install runs the full test suite -- no ComfyUI server or API keys required, everything is mocked. The `test_provisioner.py` tests require `usd-core` (install with `pip install -e ".[stage]"` to resolve them).
 
 ---
 
