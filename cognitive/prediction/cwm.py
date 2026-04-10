@@ -114,6 +114,13 @@ class CognitiveWorldModel:
         """
         prediction = Prediction()
 
+        # Clamp experience_weight to [0, 1]. An out-of-range value produces a
+        # negative layer weight for the prior (1 - weight < 0), corrupting the
+        # weighted blend. counterfactual_adjustment is additive and already
+        # clamped via max/min after blending, so no guard needed there.
+        # (Cycle 31 fix)
+        experience_weight = max(0.0, min(1.0, experience_weight))
+
         # Layer 1: Prior rules (opinion R, priority 2)
         prior_score, prior_risks = self._evaluate_priors(model_family, parameters)
 
@@ -172,6 +179,12 @@ class CognitiveWorldModel:
             predicted: The predicted quality (0.0-1.0).
             actual: The actual quality (0.0-1.0).
         """
+        # Clamp both values to [0, 1] so calibration stats remain meaningful.
+        # Out-of-range inputs would skew mean_error and bias calculations in
+        # get_calibration(), masking whether the model is actually well-calibrated.
+        # (Cycle 31 fix)
+        predicted = max(0.0, min(1.0, float(predicted)))
+        actual = max(0.0, min(1.0, float(actual)))
         with self._lock:
             self._confidence_history.append((predicted, actual))
 

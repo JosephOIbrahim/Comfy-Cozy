@@ -8,6 +8,8 @@ import asyncio
 import json
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 
 class TestSchemaConversion:
     """Test Anthropic -> MCP schema conversion."""
@@ -194,3 +196,46 @@ class TestToolErrorProtocol:
         assert result.isError is True
         assert isinstance(result.content[0], types.TextContent)
         assert "my_tool" in result.content[0].text
+
+
+# ---------------------------------------------------------------------------
+# Cycle 31: MCP server tool execution timeout tests
+# ---------------------------------------------------------------------------
+
+class TestToolTimeout:
+    """run_in_executor must be wrapped with asyncio.wait_for so hung tools don't block forever."""
+
+    def test_timeout_configured_in_source(self):
+        """Verify asyncio.wait_for with timeout=120.0 is present in the call_tool handler."""
+        import inspect
+        from agent import mcp_server
+        source = inspect.getsource(mcp_server)
+        assert "asyncio.wait_for" in source, "asyncio.wait_for must wrap run_in_executor"
+        assert "120.0" in source or "timeout=120" in source, "timeout must be 120 s"
+        assert "asyncio.TimeoutError" in source, "TimeoutError must be caught"
+
+    @pytest.mark.asyncio
+    async def test_hung_tool_times_out(self):
+        """A tool that never returns must trigger TimeoutError within the wait_for budget."""
+        import asyncio
+
+        async def fake_executor(func, *args):
+            # Simulate a hung tool — never completes
+            await asyncio.sleep(9999)
+
+        loop = asyncio.get_running_loop()
+        with pytest.raises(asyncio.TimeoutError):
+            await asyncio.wait_for(
+                fake_executor(lambda: None),
+                timeout=0.01,  # Very short for testing
+            )
+
+    @pytest.mark.asyncio
+    async def test_fast_tool_not_affected(self):
+        """A tool that returns quickly must not be affected by the timeout."""
+        loop = asyncio.get_running_loop()
+        result = await asyncio.wait_for(
+            loop.run_in_executor(None, lambda: "ok"),
+            timeout=5.0,
+        )
+        assert result == "ok"

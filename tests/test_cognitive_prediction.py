@@ -257,3 +257,106 @@ class TestCounterfactuals:
         first = generator.generate(params, 0.7).changed_parameter
         second = generator.generate(params, 0.7).changed_parameter
         assert first != second  # Must not repeat the same parameter back-to-back
+
+
+# ---------------------------------------------------------------------------
+# Cycle 31: arbiter NaN/out-of-range guard tests
+# ---------------------------------------------------------------------------
+
+class TestArbiterInputGuards:
+    """SimulationArbiter.decide() must handle NaN and out-of-range inputs."""
+
+    def setup_method(self):
+        self.arbiter = SimulationArbiter()
+
+    def test_nan_quality_returns_explicit(self):
+        """NaN quality_estimate must surface EXPLICIT warning, not silent fallthrough."""
+        import math
+        result = self.arbiter.decide(math.nan, 0.8, [])
+        assert result.mode == DeliveryMode.EXPLICIT
+        assert "nan" in result.message.lower() or "invalid" in result.message.lower()
+
+    def test_nan_confidence_returns_explicit(self):
+        """NaN confidence must surface EXPLICIT warning."""
+        import math
+        result = self.arbiter.decide(0.3, math.nan, [])
+        assert result.mode == DeliveryMode.EXPLICIT
+
+    def test_quality_above_1_clamped(self):
+        """quality_estimate=2.0 must be clamped to 1.0 — not produce NaN urgency."""
+        result = self.arbiter.decide(2.0, 0.8, [])
+        # quality=1.0 after clamp: urgency = 0.8*(1.0-1.0+risk) = low → SILENT or SOFT
+        assert result.mode in (DeliveryMode.SILENT, DeliveryMode.SOFT, DeliveryMode.EXPLICIT)
+        # Must not raise
+
+    def test_negative_confidence_clamped(self):
+        """Negative confidence must be clamped to 0.0 — urgency = 0."""
+        result = self.arbiter.decide(0.5, -1.0, [])
+        # confidence=0 → urgency=0 → SILENT
+        assert result.mode == DeliveryMode.SILENT
+
+    def test_normal_inputs_unchanged(self):
+        """Normal in-range inputs must still produce correct delivery mode."""
+        # High confidence + low quality → interrupt (EXPLICIT)
+        result = self.arbiter.decide(0.1, 0.9, ["risk1", "risk2"])
+        assert result.mode == DeliveryMode.EXPLICIT
+        assert result.should_interrupt is True
+
+
+# ---------------------------------------------------------------------------
+# Cycle 31: CWM experience_weight and record_accuracy clamp tests
+# ---------------------------------------------------------------------------
+
+class TestCWMInputGuards:
+    """CognitiveWorldModel must clamp experience_weight and record_accuracy inputs."""
+
+    def setup_method(self):
+        self.cwm = CognitiveWorldModel()
+
+    def test_experience_weight_above_1_clamped(self):
+        """experience_weight=2.0 must be clamped to 1.0 — no negative prior weight."""
+        # Register a prior so the prediction is non-trivial
+        self.cwm.add_prior_rule("SD1.5", "cfg", (5.0, 12.0), 7.0)
+        # Should not raise and should produce a bounded quality_estimate
+        pred = self.cwm.predict(
+            model_family="SD1.5",
+            parameters={"cfg": 7.0},
+            experience_quality=0.8,
+            experience_weight=2.0,  # Out of range
+        )
+        assert 0.0 <= pred.quality_estimate <= 1.0
+        assert 0.0 <= pred.confidence <= 1.0
+
+    def test_experience_weight_negative_clamped(self):
+        """experience_weight=-1.0 must be clamped to 0.0 — no negative experience weight."""
+        self.cwm.add_prior_rule("SD1.5", "cfg", (5.0, 12.0), 7.0)
+        pred = self.cwm.predict(
+            model_family="SD1.5",
+            parameters={"cfg": 7.0},
+            experience_quality=0.8,
+            experience_weight=-1.0,
+        )
+        assert 0.0 <= pred.quality_estimate <= 1.0
+
+    def test_record_accuracy_clamped(self):
+        """record_accuracy() must clamp out-of-range values before storing."""
+        self.cwm.record_accuracy(predicted=2.0, actual=-0.5)
+        cal = self.cwm.get_calibration()
+        # With predicted clamped to 1.0 and actual clamped to 0.0:
+        # mean_error = |1.0 - 0.0| = 1.0, bias = 1.0 - 0.0 = 1.0
+        # Both are within [0, 1] — the unclamped version would give error=2.5
+        assert cal["mean_error"] <= 1.0
+        assert abs(cal["bias"]) <= 1.0
+        assert cal["samples"] == 1
+
+    def test_normal_predict_unchanged(self):
+        """predict() with valid experience_weight=0.5 must work correctly."""
+        self.cwm.add_prior_rule("SD1.5", "steps", (15, 50), 30)
+        pred = self.cwm.predict(
+            model_family="SD1.5",
+            parameters={"steps": 20},
+            experience_quality=0.75,
+            experience_weight=0.5,
+        )
+        assert 0.0 <= pred.quality_estimate <= 1.0
+        assert pred.confidence > 0

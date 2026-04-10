@@ -251,7 +251,27 @@ def create_mcp_server() -> "Server":
             return _partial()
 
         try:
-            result = await loop.run_in_executor(None, _handler)
+            # Wrap in asyncio.wait_for so a hung tool handler (e.g. ComfyUI
+            # unreachable, stuck lock) cannot block the MCP event loop
+            # indefinitely. 120 s covers the slowest legitimate operations
+            # (large model downloads are handled separately with their own
+            # streaming timeout). (Cycle 31 fix)
+            result = await asyncio.wait_for(
+                loop.run_in_executor(None, _handler),
+                timeout=120.0,
+            )
+        except asyncio.TimeoutError:
+            log.error("Tool %s timed out after 120 s", name)
+            return types.CallToolResult(
+                isError=True,
+                content=[types.TextContent(
+                    type="text",
+                    text=(
+                        f"Tool '{name}' timed out after 120 s. "
+                        "ComfyUI may be unresponsive — check that it is running."
+                    ),
+                )],
+            )
         except Exception as e:
             log.error("Tool %s failed: %s", name, e, exc_info=True)
             return types.CallToolResult(

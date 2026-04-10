@@ -10,6 +10,7 @@ The mode is selected based on prediction confidence and risk level.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any
@@ -68,6 +69,19 @@ class SimulationArbiter:
         Returns:
             ArbiterDecision with delivery mode and optional message.
         """
+        # Clamp inputs to [0, 1]. NaN or out-of-range values from upstream
+        # prediction produce nonsensical urgency scores — NaN comparisons always
+        # return False, silently forcing SILENT mode even for high-risk predictions.
+        # Clamping makes the fallback explicit and predictable. (Cycle 31 fix)
+        if math.isnan(quality_estimate) or math.isnan(confidence):
+            return ArbiterDecision(
+                mode=DeliveryMode.EXPLICIT,
+                message="Prediction produced invalid (NaN) quality or confidence values.",
+                reasoning="NaN inputs clamped to safe default — explicit warning surfaced.",
+            )
+        quality_estimate = max(0.0, min(1.0, quality_estimate))
+        confidence = max(0.0, min(1.0, confidence))
+
         risk_level = len(risk_factors) / max(1, 5)  # Normalize to 0-1
         urgency = confidence * (1.0 - quality_estimate + risk_level)
 

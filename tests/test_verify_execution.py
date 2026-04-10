@@ -666,3 +666,74 @@ class TestNarrativeSummary:
         """Empty dict returns 'unknown'."""
         summary = _build_narrative_summary({})
         assert "unknown" in summary.lower()
+
+
+# ---------------------------------------------------------------------------
+# Cycle 31: verify_execution outputs null/non-dict guard tests
+# ---------------------------------------------------------------------------
+
+class TestOutputsNullGuard:
+    """_verify_prompt must handle null/non-dict 'outputs' without crashing."""
+
+    def _history_with_outputs(self, outputs_value):
+        return {
+            "test-id": {
+                "status": {"status_str": "success", "completed": True},
+                "outputs": outputs_value,
+            },
+        }
+
+    def test_null_outputs_returns_empty_list(self, mock_comfyui_database):
+        """outputs=null in ComfyUI history must produce empty output list, not crash."""
+        history = self._history_with_outputs(None)
+
+        with patch("agent.tools.verify_execution.httpx.Client") as MockClient:
+            mock_resp = MagicMock()
+            mock_resp.json.return_value = history
+            MockClient.return_value.__enter__.return_value.get.return_value = mock_resp
+
+            result = _verify_prompt("test-id")
+
+        assert "error" not in result or result.get("output_count") == 0
+        assert result["outputs"] == []
+
+    def test_list_outputs_returns_empty_list(self, mock_comfyui_database):
+        """outputs=[] (list instead of dict) must not crash."""
+        history = self._history_with_outputs([])
+
+        with patch("agent.tools.verify_execution.httpx.Client") as MockClient:
+            mock_resp = MagicMock()
+            mock_resp.json.return_value = history
+            MockClient.return_value.__enter__.return_value.get.return_value = mock_resp
+
+            result = _verify_prompt("test-id")
+
+        assert result["outputs"] == []
+
+    def test_node_out_null_skipped(self, mock_comfyui_database):
+        """A null value for a node output must be skipped, not crash on .get()."""
+        history = self._history_with_outputs({"9": None, "10": {"images": []}})
+
+        with patch("agent.tools.verify_execution.httpx.Client") as MockClient:
+            mock_resp = MagicMock()
+            mock_resp.json.return_value = history
+            MockClient.return_value.__enter__.return_value.get.return_value = mock_resp
+
+            result = _verify_prompt("test-id")
+
+        # Should process node "10" (no images) and skip null node "9"
+        assert result["outputs"] == []
+
+    def test_normal_outputs_still_work(self, mock_comfyui_database, mock_history_success):
+        """Normal dict outputs must continue to work correctly after the guard."""
+        (mock_comfyui_database / "ComfyUI_00001_.png").write_bytes(b"x" * 1024)
+
+        with patch("agent.tools.verify_execution.httpx.Client") as MockClient:
+            mock_resp = MagicMock()
+            mock_resp.json.return_value = mock_history_success
+            MockClient.return_value.__enter__.return_value.get.return_value = mock_resp
+
+            result = _verify_prompt("abc123")
+
+        assert result["output_count"] == 1
+        assert result["outputs"][0]["exists"] is True

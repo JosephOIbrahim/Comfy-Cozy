@@ -286,7 +286,13 @@ def _verify_prompt(
     # 2. Resolve each output to absolute path
     outputs = []
     # He2025: sort for deterministic output order
-    for node_id, node_out in sorted(entry.get("outputs", {}).items()):
+    # Use `entry.get("outputs") or {}` instead of `entry.get("outputs", {})` so
+    # that an explicit null value (ComfyUI sometimes returns {"outputs": null})
+    # is treated as empty rather than causing None.items() to crash. (Cycle 31 fix)
+    raw_outputs = entry.get("outputs") or {}
+    for node_id, node_out in sorted(raw_outputs.items() if isinstance(raw_outputs, dict) else []):
+        if not isinstance(node_out, dict):
+            continue
         for img in node_out.get("images", []):
             resolved = _resolve_output_path(
                 img.get("filename", ""),

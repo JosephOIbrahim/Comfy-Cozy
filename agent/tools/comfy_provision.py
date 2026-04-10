@@ -588,10 +588,20 @@ def _handle_download_model(tool_input: dict) -> str:
                         msg = f"Download failed (server returned {sc}). Try again later."
                     return to_json({"error": msg, "url": url})
 
+                # 20 GB hard cap — guards against runaway/malicious responses
+                # that a CDN redirect could return after the Content-Length header
+                # has already been consumed. Legitimate model files are rarely
+                # above 15 GB; this limit preserves disk headroom. (Cycle 31 fix)
+                _MAX_DOWNLOAD_BYTES = 20 * 1024 ** 3  # 20 GB
                 with open(temp_path, "wb") as f:
                     for chunk in response.iter_bytes(chunk_size=1024 * 1024):  # 1MB chunks
                         f.write(chunk)
                         downloaded += len(chunk)
+                        if downloaded > _MAX_DOWNLOAD_BYTES:
+                            raise RuntimeError(
+                                f"Download aborted: file exceeds the 20 GB safety limit "
+                                f"({downloaded / 1024**3:.1f} GB downloaded so far)."
+                            )
                 break  # Download complete
         else:
             return to_json({"error": "Too many redirects during download (max 10).", "url": url})
