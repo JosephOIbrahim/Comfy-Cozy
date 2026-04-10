@@ -421,8 +421,8 @@ document.addEventListener("comfy-cozy:node_touch", (e) => {
 app.registerExtension({
   name: "comfy-cozy.panel",
   async setup() {
-    createPillButton();
-    createPanelShell();
+    // UI removed — Comfy Cozy now lives in the native left sidebar (ui/ extension).
+    // Canvas sync and event listeners below remain active (headless).
 
     // Health check
     try {

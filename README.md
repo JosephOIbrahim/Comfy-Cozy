@@ -293,7 +293,7 @@ The agent ships with built-in knowledge about how each model family actually beh
 ```mermaid
 graph TB
     subgraph Browser ["ComfyUI Browser"]
-        Panel["Comfy Cozy Panel<br/>APP · GRAPH · Browse"]
+        Panel["Comfy Cozy Sidebar<br/>Native left panel · Chat · Quick Actions"]
     end
     subgraph Backend ["Agent Backend (Python)"]
         Routes["49 REST Routes<br/>+ WebSocket"]
@@ -414,44 +414,38 @@ graph LR
 
 ---
 
-## Comfy Cozy Panel (ComfyUI Sidebar)
+## Comfy Cozy Sidebar (Native ComfyUI Integration)
 
-A minimal, typography-forward sidebar that lives right inside ComfyUI:
+A typography-forward chat panel that lives in ComfyUI's native left sidebar — no floating buttons, no separate windows. Uses ComfyUI's own CSS variables so it adapts to any theme automatically.
 
 ```mermaid
 graph TB
-    subgraph Panel ["Comfy Cozy Panel"]
-        APP["APP Mode<br/>Chat + Quick Actions"]
-        GRAPH["GRAPH Mode<br/>Node Inspector + Status"]
-        BROWSE["Model Browser<br/>Search + Install"]
+    subgraph Sidebar ["Comfy Cozy — Left Sidebar"]
+        Chat["Chat Window<br/>WebSocket · streaming · rich text"]
+        QA["Quick Actions<br/>Run · Validate · Repair · Optimize · Undo"]
+        Progress["Execution Progress<br/>Pipeline stages · node detail · ETA"]
     end
 
     subgraph Bridge ["Bidirectional Canvas Bridge"]
         C2A["Canvas → Agent<br/>Auto-sync on change"]
-        A2C["Agent → Canvas<br/>Push mutations live"]
+        A2C["Agent → Canvas<br/>Push mutations + node highlights"]
     end
 
-    subgraph Actions ["Quick Actions"]
-        Q["Queue Prompt"]
-        R["Repair Workflow"]
-        S["Save Workflow"]
-        W["Wire Model"]
-    end
+    Sidebar --> Bridge
 
-    Panel --> Bridge
-    APP --> Actions
-
-    style Panel fill:#1a1a2e,color:#F0F0F0,stroke:#0066FF
+    style Sidebar fill:#1a1a2e,color:#F0F0F0,stroke:#0066FF
     style Bridge fill:#1a1a2e,color:#F0F0F0,stroke:#8b5cf6
-    style Actions fill:#1a1a2e,color:#F0F0F0,stroke:#10b981
 ```
 
-- **APP Mode** -- Chat with the agent, quick actions (Repair, Save, Browse, Wiring), model browser overlay
-- **GRAPH Mode** -- Inspect delta layers, LIVRPS opinions per parameter, workflow health status bar
-- **Queue Prompt** -- One-click execution from the panel header
-- **Model Browser** -- Search CivitAI + HuggingFace + registry, one-click download and install
-- **Self-Healing** -- Missing node warnings with [Repair] buttons, deprecated node migration
-- **Bidirectional Canvas Bridge** -- Agent changes sync to the canvas live, with node highlighting; canvas also re-syncs automatically after each ComfyUI execution completes
+- **Native sidebar tab** -- Registers via `app.extensionManager.registerSidebarTab()`, appears alongside ComfyUI's built-in panels
+- **Design system** -- Inter + JetBrains Mono, ComfyUI native color variables, Pentagram-inspired restraint: hairline borders, generous whitespace, 2px radii, no ornamentation
+- **Chat** -- Auto-growing textarea, streaming responses with typing indicator, rich text (code blocks, bold, inline code), collapsible panels for tool results
+- **Node pills** -- Clickable inline references to workflow nodes, color-coded by slot type. Click to select + center on canvas. Hover to highlight.
+- **Agent dispatch cards** -- Visual MoE routing: shows which specialist agents are working, with live status
+- **Quick actions** -- Context-aware chips: Run, Validate, Repair, Optimize, Undo
+- **Readability controls** -- Font size (S/M/L), text alignment, comfort/compact mode
+- **Bidirectional canvas bridge** -- Agent changes sync to the canvas live with node highlighting; canvas re-syncs automatically after each ComfyUI execution
+- **Self-healing** -- Missing node warnings with one-click repair, deprecated node migration
 
 **49 panel routes** expose the full tool surface: discovery, provisioning, repair, sessions, execution, and more.
 
@@ -707,10 +701,13 @@ cognitive/            LIVRPS state engine — installed as top-level package (Ph
   transport/          SchemaCache, ExecutionEvent, interrupt, system_stats
   pipeline/           Autonomous end-to-end orchestration
   tools/              Phase 3 macro-tools (analyze, mutate, query, compose, ...)
+ui/
+  web/js/sidebar.js   Native left sidebar — chat, quick actions, progress
+  web/css/            Design system v3 — ComfyUI-native CSS variables
 panel/
   server/routes.py    49 REST routes — full tool surface
-  web/js/             Panel UI — chat, graph inspector, model browser
-tests/                3573 passing tests, all mocked, ~60s
+  web/js/             Canvas sync bridge (headless — no visible UI)
+tests/                3579 passing tests, all mocked, ~60s
 ```
 
 ### Production Hardening

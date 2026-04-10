@@ -262,8 +262,8 @@ function buildSidebar(el) {
 
   el.innerHTML = `
     <div class="sd-header">
-      <span class="sd-header__title">${SIDEBAR_TITLE}</span>
-      <span class="sd-header__status" id="sd-status"></span>
+      <span class="sd-header__title">Comfy Cozy</span>
+      <span class="sd-header__dot" id="sd-status-dot"></span>
     </div>
     <div class="sd-stage-bar" id="sd-stage" style="display:none">
       <span class="sd-stage__label" id="sd-stage-label"></span>
@@ -277,25 +277,35 @@ function buildSidebar(el) {
     <div class="sd-readbar" id="sd-readbar"></div>
     <div id="sd-quick-actions"></div>
     <div class="sd-input-bar">
-      <input
-        type="text"
+      <textarea
         id="sd-input"
         class="sd-input"
-        placeholder="Ask me anything about your workflow..."
+        placeholder="Ask about your workflow..."
+        rows="1"
         autocomplete="off"
-      />
-      <button id="sd-send" class="sd-send-btn" aria-label="Send message">Send</button>
+      ></textarea>
+      <button id="sd-send" class="sd-send-btn" aria-label="Send message">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+          <path d="M3 8h10M9 4l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </button>
     </div>
   `;
 
   const messagesEl = el.querySelector("#sd-messages");
   const inputEl = el.querySelector("#sd-input");
   const sendBtn = el.querySelector("#sd-send");
-  const statusEl = el.querySelector("#sd-status");
+  const statusDot = el.querySelector("#sd-status-dot");
   const stageBar = el.querySelector("#sd-stage");
   const stageLabel = el.querySelector("#sd-stage-label");
   const stageDetail = el.querySelector("#sd-stage-detail");
   const readbarEl = el.querySelector("#sd-readbar");
+
+  // Auto-resize textarea
+  inputEl.addEventListener("input", () => {
+    inputEl.style.height = "auto";
+    inputEl.style.height = Math.min(inputEl.scrollHeight, 120) + "px";
+  });
 
   // Build readability controls
   _buildReadbar(readbarEl, messagesEl);
@@ -375,7 +385,7 @@ function buildSidebar(el) {
     busy = state;
     sendBtn.disabled = state;
     inputEl.disabled = state;
-    sendBtn.textContent = state ? "..." : "Send";
+    sendBtn.style.opacity = state ? "0.3" : "1";
   }
 
   /* ── WebSocket message handler ────────────────────────────────── */
@@ -598,8 +608,8 @@ function buildSidebar(el) {
   }
 
   function handleStatus(status) {
-    statusEl.textContent = status === "connected" ? "" : status;
-    statusEl.className = `sd-header__status sd-header__status--${status}`;
+    statusDot.className = `sd-header__dot sd-header__dot--${status}`;
+    statusDot.title = status;
   }
 
   /* ── Connect ──────────────────────────────────────────────────── */
@@ -637,6 +647,7 @@ function buildSidebar(el) {
     // Show user message immediately
     messagesEl.appendChild(createMessageEl("user", text));
     inputEl.value = "";
+    inputEl.style.height = "auto";
 
     // Show thinking indicator right away
     _showThinking();
@@ -825,7 +836,7 @@ function buildSidebar(el) {
 
 app.extensionManager.registerSidebarTab({
   id: SIDEBAR_ID,
-  icon: "pi pi-bolt",
+  icon: "pi pi-comments",
   title: SIDEBAR_TITLE,
   tooltip: "Comfy Cozy AI Co-pilot",
   type: "custom",
