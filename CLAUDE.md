@@ -221,13 +221,21 @@ When a prompt explicitly grants session-level git authorization, the agent may r
 [TEST] Add fixture for SDXL + ControlNet + IP-Adapter workflow
 ```
 
-## Current TODO (Phase 5B)
+## Current TODO (Phase 6)
 
-1. Wire metadata auto-embed into verify_execution (post-execution)
-2. Wire metadata auto-read into session resume (pre-conversation)
-3. Demo scenarios run start-to-finish without errors
-4. Workflow pattern classification ("This is an img2img pipeline with ControlNet")
-5. Plain-English workflow summaries
+**Queued fixes (GRAPH×FORGE):**
+1. Fix `test_health.py` mock leak — 4 tests fail with `PromptServer not initialized` because mocks don't intercept the real ComfyUI check path (see `GRAPH_FORGE_health_mock_leak.md`)
+2. Fix Windows grep portability — `test_no_legacy_src_cognitive_imports_remain` shells out to `grep` which doesn't exist on Windows; replace with `pathlib.rglob` (see `GRAPH_FORGE_windows_grep_portability.md`)
+
+**Phase 6A — Wire the Pipe (design complete, implementation pending):**
+3. Default executor wire — EXECUTE stage calls `execute_workflow` when `config.executor` is None instead of silently skipping
+4. Template loading — COMPOSE stage passes non-empty `available_templates` list on cold start
+5. Default evaluator — EVALUATE stage applies rule-based `QualityScore` when `config.evaluator` is None
+6. `ExperienceChunk` parameter shape fix — `parameters=params` (flat) not `parameters={"composed": params}` (nested)
+7. Post-COMPOSE diagnostic — call `analyze_workflow` after COMPOSE; warn if workflow has zero nodes
+8. `create_default_pipeline()` bootstrap factory in `cognitive/pipeline/__init__.py`
+
+See `docs/PHASE_6A_WIRE_THE_PIPE_DESIGN.md` for the full blueprint.
 
 ## Non-Goals
 
