@@ -6,7 +6,9 @@ import sys
 from pathlib import Path
 from dotenv import load_dotenv
 
-load_dotenv()
+# Load .env from project root regardless of working directory (supports MCP server launch)
+_PROJECT_ROOT = Path(__file__).parent.parent
+load_dotenv(_PROJECT_ROOT / ".env")
 
 # LLM Provider selection — anthropic (default), openai, gemini, ollama
 LLM_PROVIDER = os.getenv("LLM_PROVIDER", "anthropic")

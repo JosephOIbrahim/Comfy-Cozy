@@ -2,7 +2,8 @@
   "mcpServers": {
     "comfyui-agent": {
       "command": "agent",
-      "args": ["mcp"]
+      "args": ["mcp"],
+      "cwd": "G:/Comfy-Cozy"
     }
   }
 }
