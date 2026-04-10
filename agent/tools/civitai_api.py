@@ -303,7 +303,11 @@ def _handle_search_civitai(tool_input: dict) -> str:
                 timeout=20.0,
             )
             resp.raise_for_status()
-            data = resp.json()
+            try:  # Cycle 66: server may return HTML on error (Cloudflare, etc.)
+                data = resp.json()
+            except ValueError:
+                breaker.record_failure()
+                return to_json({"error": "CivitAI API returned a non-JSON response (possible HTML error page)."})
         breaker.record_success()  # Cycle 64
     except httpx.ConnectError:
         breaker.record_failure()  # Cycle 64
@@ -360,7 +364,11 @@ def _handle_get_civitai_model(tool_input: dict) -> str:
                 timeout=20.0,
             )
             resp.raise_for_status()
-            data = resp.json()
+            try:  # Cycle 66: server may return HTML on error (Cloudflare, etc.)
+                data = resp.json()
+            except ValueError:
+                breaker.record_failure()
+                return to_json({"error": "CivitAI API returned a non-JSON response (possible HTML error page)."})
         breaker.record_success()  # Cycle 64
     except httpx.ConnectError:
         breaker.record_failure()  # Cycle 64
@@ -418,7 +426,11 @@ def _handle_get_trending_models(tool_input: dict) -> str:
                 timeout=20.0,
             )
             resp.raise_for_status()
-            data = resp.json()
+            try:  # Cycle 66: server may return HTML on error (Cloudflare, etc.)
+                data = resp.json()
+            except ValueError:
+                breaker.record_failure()
+                return to_json({"error": "CivitAI API returned a non-JSON response (possible HTML error page)."})
         breaker.record_success()  # Cycle 64
     except httpx.ConnectError:
         breaker.record_failure()  # Cycle 64

@@ -841,3 +841,39 @@ class TestSilentExceptionLogging:
         wf_with_nan = {"1": {"class_type": "KSampler", "inputs": {"cfg": float("nan")}}}
         with pytest.raises((ValueError, OverflowError)):
             _workflow_hash(wf_with_nan)
+
+
+# ---------------------------------------------------------------------------
+# Cycle 66: resp.json() JSONDecodeError guard in _verify_prompt
+# ---------------------------------------------------------------------------
+
+class TestVerifyPromptJsonDecodeGuard:
+    """Cycle 66: _verify_prompt must handle non-JSON ComfyUI history response gracefully."""
+
+    def _make_html_client(self):
+        """Mock httpx client whose resp.json() raises ValueError (HTML body)."""
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.raise_for_status = MagicMock()
+        resp.json.side_effect = ValueError("No JSON object could be decoded")
+        client = MagicMock()
+        client.__enter__ = MagicMock(return_value=client)
+        client.__exit__ = MagicMock(return_value=False)
+        client.get.return_value = resp
+        return client
+
+    @patch("agent.tools.verify_execution.httpx.Client")
+    def test_html_history_response_returns_error_dict(self, mock_client_cls):
+        """_verify_prompt: HTML body for /history → error dict with 'status': 'error'."""
+        mock_client_cls.return_value = self._make_html_client()
+        result = _verify_prompt("test-prompt-id")
+        assert result["status"] == "error"
+        assert "non-JSON" in result["message"] or "JSON" in result["message"]
+
+    @patch("agent.tools.verify_execution.httpx.Client")
+    def test_html_history_response_has_required_keys(self, mock_client_cls):
+        """_verify_prompt: HTML body → result dict has all expected keys."""
+        mock_client_cls.return_value = self._make_html_client()
+        result = _verify_prompt("test-prompt-id")
+        for key in ("prompt_id", "status", "message", "outputs", "output_count"):
+            assert key in result, f"Missing key: {key}"

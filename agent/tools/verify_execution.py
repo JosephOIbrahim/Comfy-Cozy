@@ -243,7 +243,19 @@ def _verify_prompt(
                 timeout=10.0,
             )
             resp.raise_for_status()
-            history = resp.json()
+            try:  # Cycle 66: ComfyUI may return HTML on startup error
+                history = resp.json()
+            except ValueError as e:
+                return {
+                    "prompt_id": prompt_id,
+                    "status": "error",
+                    "message": f"ComfyUI returned a non-JSON response for history: {e}",
+                    "outputs": [],
+                    "output_count": 0,
+                    "all_exist": False,
+                    "vision_analysis": None,
+                    "outcome_recorded": False,
+                }
     except httpx.ConnectError:
         return {
             "prompt_id": prompt_id,

@@ -86,6 +86,7 @@ class OrchestratorAgent(BrainAgent):
                     },
                     "tool_calls": {
                         "type": "array",
+                        "minItems": 1,  # Cycle 66: reject empty list at schema level
                         "items": {
                             "type": "object",
                             "properties": {
@@ -94,7 +95,7 @@ class OrchestratorAgent(BrainAgent):
                             },
                             "required": ["tool", "input"],
                         },
-                        "description": "List of tool calls to execute in sequence.",
+                        "description": "List of tool calls to execute in sequence. Must contain at least one call.",
                     },
                 },
                 "required": ["task_description", "profile", "tool_calls"],

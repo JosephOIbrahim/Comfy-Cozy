@@ -468,3 +468,39 @@ class TestGithubCircuitBreaker:
             github_releases._fetch_latest_release("owner/repo")
         assert cb._failure_count == 0
         assert cb.state == CLOSED
+
+
+# ---------------------------------------------------------------------------
+# Cycle 66: resp.json() JSONDecodeError guards
+# ---------------------------------------------------------------------------
+
+class TestGithubJsonDecodeGuard:
+    """Cycle 66: GitHub HTTP helpers must handle non-JSON responses gracefully."""
+
+    def _make_html_client(self, status_code=200):
+        """Mock client whose resp.json() raises ValueError (HTML body)."""
+        resp = MagicMock()
+        resp.status_code = status_code
+        resp.raise_for_status = MagicMock()
+        resp.json.side_effect = ValueError("No JSON object could be decoded")
+        client = MagicMock()
+        client.__enter__ = MagicMock(return_value=client)
+        client.__exit__ = MagicMock(return_value=False)
+        client.get.return_value = resp
+        return client
+
+    def teardown_method(self):
+        from agent.circuit_breaker import reset_all
+        reset_all()
+
+    def test_fetch_latest_release_html_returns_none(self):
+        """_fetch_latest_release: HTML body → None (no crash)."""
+        with patch("agent.tools.github_releases.httpx.Client", return_value=self._make_html_client()):
+            result = github_releases._fetch_latest_release("owner/repo")
+        assert result is None
+
+    def test_fetch_releases_html_returns_empty_list(self):
+        """_fetch_releases: HTML body → [] (no crash)."""
+        with patch("agent.tools.github_releases.httpx.Client", return_value=self._make_html_client()):
+            result = github_releases._fetch_releases("owner/repo")
+        assert result == []

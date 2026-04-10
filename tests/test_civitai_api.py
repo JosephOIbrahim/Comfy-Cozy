@@ -528,3 +528,54 @@ class TestCivitaiCircuitBreaker:
         civitai_api._handle_search_civitai({"query": "test"})
         # After success, circuit should be CLOSED
         assert cb.state == CLOSED
+
+
+# ---------------------------------------------------------------------------
+# Cycle 66: resp.json() JSONDecodeError guards
+# ---------------------------------------------------------------------------
+
+class TestCivitaiJsonDecodeGuard:
+    """Cycle 66: All CivitAI HTTP handlers must handle non-JSON responses gracefully."""
+
+    def _make_html_response(self):
+        """Mock response whose .json() raises ValueError (as httpx does for HTML bodies)."""
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.raise_for_status = MagicMock()
+        resp.json.side_effect = ValueError("No JSON object could be decoded")
+        return resp
+
+    def _make_client(self, response):
+        client = MagicMock()
+        client.__enter__ = MagicMock(return_value=client)
+        client.__exit__ = MagicMock(return_value=False)
+        client.get.return_value = response
+        return client
+
+    def teardown_method(self):
+        from agent.circuit_breaker import reset_all
+        reset_all()
+
+    @patch("agent.tools.civitai_api.httpx.Client")
+    def test_search_html_response_returns_error(self, mock_client_cls):
+        """_handle_search_civitai: HTML body (ValueError from resp.json()) → structured error."""
+        mock_client_cls.return_value = self._make_client(self._make_html_response())
+        result = json.loads(civitai_api._handle_search_civitai({"query": "sdxl"}))
+        assert "error" in result
+        assert "non-JSON" in result["error"] or "HTML" in result["error"]
+
+    @patch("agent.tools.civitai_api.httpx.Client")
+    def test_get_model_html_response_returns_error(self, mock_client_cls):
+        """_handle_get_civitai_model: HTML body → structured error."""
+        mock_client_cls.return_value = self._make_client(self._make_html_response())
+        result = json.loads(civitai_api._handle_get_civitai_model({"model_id": 99}))
+        assert "error" in result
+        assert "non-JSON" in result["error"] or "HTML" in result["error"]
+
+    @patch("agent.tools.civitai_api.httpx.Client")
+    def test_trending_html_response_returns_error(self, mock_client_cls):
+        """_handle_get_trending_models: HTML body → structured error."""
+        mock_client_cls.return_value = self._make_client(self._make_html_response())
+        result = json.loads(civitai_api._handle_get_trending_models({}))
+        assert "error" in result
+        assert "non-JSON" in result["error"] or "HTML" in result["error"]

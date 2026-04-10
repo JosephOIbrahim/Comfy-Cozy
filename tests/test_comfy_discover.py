@@ -1297,3 +1297,51 @@ class TestDiscoverMaxResultsTypeGuard:
         }))
         # Should not be a type error — may error on network/registry, but not type
         assert result.get("error", "") != "max_results must be an integer"
+
+
+# ---------------------------------------------------------------------------
+# Cycle 66: resp.json() JSONDecodeError guards
+# ---------------------------------------------------------------------------
+
+class TestDiscoverJsonDecodeGuard:
+    """Cycle 66: discover tool HTTP handlers must handle non-JSON responses gracefully."""
+
+    def _make_html_client(self):
+        """Mock httpx client whose resp.json() raises ValueError (HTML body)."""
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.raise_for_status = MagicMock()
+        resp.json.side_effect = ValueError("No JSON object could be decoded")
+        client = MagicMock()
+        client.__enter__ = MagicMock(return_value=client)
+        client.__exit__ = MagicMock(return_value=False)
+        client.get.return_value = resp
+        return client
+
+    @patch("agent.tools.comfy_discover.httpx.Client")
+    def test_hf_search_html_response_returns_error(self, mock_client_cls):
+        """HuggingFace search: HTML body → error entry in errors list, no crash.
+
+        The discover tool aggregates multiple sources; HuggingFace failure
+        surfaces in the 'errors' list rather than as a top-level 'error' key.
+        """
+        mock_client_cls.return_value = self._make_html_client()
+        with patch("agent.tools.comfy_discover.HUGGINGFACE_LIMITER") as mock_limiter:
+            mock_limiter.return_value.acquire.return_value = True
+            result = json.loads(comfy_discover.handle("discover", {
+                "query": "flux model",
+                "source": "huggingface",
+            }))
+        # Must not crash — discover aggregates sources so errors land in 'errors' list
+        errors = result.get("errors", [])
+        hf_errors = [e for e in errors if "huggingface" in e.get("source", "").lower()]
+        assert len(hf_errors) >= 1, f"Expected HuggingFace error in errors list, got: {errors}"
+
+    @patch("agent.tools.comfy_discover.httpx.Client")
+    def test_find_missing_nodes_html_response_returns_error(self, mock_client_cls):
+        """find_missing_nodes ComfyUI object_info: HTML body → structured error, no crash."""
+        mock_client_cls.return_value = self._make_html_client()
+        result = json.loads(comfy_discover.handle("find_missing_nodes", {
+            "workflow": {"1": {"class_type": "KSampler", "inputs": {}}},
+        }))
+        assert "error" in result

@@ -347,3 +347,21 @@ class TestRunSubtaskToolKeyGuard:
         assert results.get("status") == "completed"
         result_list = results.get("results", [])
         assert "error" in result_list[0]
+
+
+# ---------------------------------------------------------------------------
+# Cycle 66: spawn_subtask schema minItems: 1 on tool_calls
+# ---------------------------------------------------------------------------
+
+class TestSpawnSubtaskSchemaMinItems:
+    """Cycle 66: spawn_subtask tool_calls schema must declare minItems: 1."""
+
+    def test_schema_has_min_items_on_tool_calls(self):
+        """The tool_calls schema entry must have 'minItems': 1 to guide AI agents."""
+        from agent.brain.orchestrator import OrchestratorAgent
+        agent = OrchestratorAgent()
+        tool_schema = next(
+            t for t in agent.TOOLS if t["name"] == "spawn_subtask"
+        )
+        tool_calls_schema = tool_schema["input_schema"]["properties"]["tool_calls"]
+        assert tool_calls_schema.get("minItems") == 1

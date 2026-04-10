@@ -1122,7 +1122,10 @@ def _search_huggingface(query: str, model_type: str | None, max_results: int) ->
                 timeout=15.0,
             )
             resp.raise_for_status()
-            data = resp.json()
+            try:  # Cycle 66: HuggingFace may return HTML on error
+                data = resp.json()
+            except ValueError as e:
+                return to_json({"error": f"HuggingFace API returned a non-JSON response: {e}"})
     except httpx.ConnectError:
         return to_json({"error": "Could not reach HuggingFace API. Check your internet connection."})
     except httpx.HTTPStatusError as e:
@@ -1236,7 +1239,10 @@ def _handle_find_missing_nodes(tool_input: dict) -> str:
         with httpx.Client() as client:
             resp = client.get(f"{COMFYUI_URL}/object_info", timeout=15.0)
             resp.raise_for_status()
-            object_info = resp.json()
+            try:  # Cycle 66: ComfyUI may return HTML on startup error
+                object_info = resp.json()
+            except ValueError as e:
+                return to_json({"error": f"ComfyUI returned a non-JSON response: {e}"})
             available = set(object_info.keys())
     except httpx.ConnectError:
         return to_json({

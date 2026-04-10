@@ -147,7 +147,12 @@ def _fetch_latest_release(repo: str) -> dict | None:
                 breaker.record_success()  # Cycle 64: 404 is a valid response, not a failure
                 return None
             resp.raise_for_status()
-            data = resp.json()
+            try:  # Cycle 66: GitHub may return HTML on error (rate limit pages, etc.)
+                data = resp.json()
+            except ValueError:
+                breaker.record_failure()
+                log.debug("GitHub API returned non-JSON response for %s/releases/latest", repo)
+                return None
             # Guard: GitHub returns a dict for a single release.
             # If the API changes or returns an error body, fall back to None. (Cycle 30 fix)
             breaker.record_success()  # Cycle 64
@@ -180,7 +185,12 @@ def _fetch_releases(repo: str, limit: int = 5) -> list[dict]:
                 breaker.record_success()  # Cycle 64: 404 is a valid response, not a failure
                 return []
             resp.raise_for_status()
-            data = resp.json()
+            try:  # Cycle 66: GitHub may return HTML on error (rate limit pages, etc.)
+                data = resp.json()
+            except ValueError:
+                breaker.record_failure()
+                log.debug("GitHub API returned non-JSON response for %s/releases", repo)
+                return []
             # Guard: GitHub returns a list for /releases. Unexpected types → empty. (Cycle 30 fix)
             breaker.record_success()  # Cycle 64
             return data if isinstance(data, list) else []
