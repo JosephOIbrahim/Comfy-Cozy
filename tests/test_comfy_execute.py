@@ -372,6 +372,155 @@ class TestPathTraversal:
         assert "error" in result
 
 
+class TestEmptyRequiredInputValidation:
+    """Cycle 29: validate_before_execute must flag empty/None required inputs."""
+
+    def _make_object_info(self, required_fields: dict) -> dict:
+        """Build a minimal object_info response with the given required fields."""
+        return {
+            "CLIPTextEncode": {
+                "input": {
+                    "required": required_fields,
+                    "optional": {},
+                },
+                "output": ["CONDITIONING"],
+            }
+        }
+
+    def _setup_workflow_and_mock(self, text_value, tmp_path):
+        """Write a workflow with CLIPTextEncode.text set to text_value."""
+        import copy
+        data = {
+            "1": {
+                "class_type": "CLIPTextEncode",
+                "inputs": {"text": text_value, "clip": ["2", 1]},
+            },
+        }
+        path = tmp_path / "wf.json"
+        path.write_text(json.dumps(data), encoding="utf-8")
+        return path
+
+    def test_empty_string_required_input_fails(self, tmp_path):
+        """validate_before_execute must report error for empty-string required input."""
+        path = self._setup_workflow_and_mock("", tmp_path)
+        object_info = self._make_object_info({
+            "text": ["STRING", {}],
+            "clip": ["CLIP", {}],
+        })
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = object_info
+        mock_resp.raise_for_status = MagicMock()
+
+        with patch("httpx.Client") as mock_client:
+            mock_client.return_value.__enter__ = MagicMock(return_value=mock_client.return_value)
+            mock_client.return_value.__exit__ = MagicMock(return_value=False)
+            mock_client.return_value.get.return_value = mock_resp
+            result = json.loads(comfy_execute.handle("validate_before_execute", {
+                "path": str(path),
+            }))
+
+        assert result.get("valid") is False
+        errors = result.get("errors", [])
+        assert any("empty" in e.lower() or "none" in e.lower() for e in errors), (
+            f"Expected empty/None error in {errors}"
+        )
+
+    def test_none_required_input_fails(self, tmp_path):
+        """validate_before_execute must report error for None required input."""
+        # Write workflow with None explicitly (JSON null)
+        data = {
+            "1": {
+                "class_type": "CLIPTextEncode",
+                "inputs": {"text": None, "clip": ["2", 1]},
+            },
+        }
+        path = tmp_path / "wf_null.json"
+        path.write_text(json.dumps(data), encoding="utf-8")
+
+        object_info = self._make_object_info({
+            "text": ["STRING", {}],
+            "clip": ["CLIP", {}],
+        })
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = object_info
+        mock_resp.raise_for_status = MagicMock()
+
+        with patch("httpx.Client") as mock_client:
+            mock_client.return_value.__enter__ = MagicMock(return_value=mock_client.return_value)
+            mock_client.return_value.__exit__ = MagicMock(return_value=False)
+            mock_client.return_value.get.return_value = mock_resp
+            result = json.loads(comfy_execute.handle("validate_before_execute", {
+                "path": str(path),
+            }))
+
+        assert result.get("valid") is False
+        errors = result.get("errors", [])
+        assert any("empty" in e.lower() or "none" in e.lower() for e in errors), (
+            f"Expected empty/None error in {errors}"
+        )
+
+    def test_whitespace_only_required_input_fails(self, tmp_path):
+        """validate_before_execute must reject whitespace-only string required inputs."""
+        data = {
+            "1": {
+                "class_type": "CLIPTextEncode",
+                "inputs": {"text": "   ", "clip": ["2", 1]},
+            },
+        }
+        path = tmp_path / "wf_ws.json"
+        path.write_text(json.dumps(data), encoding="utf-8")
+
+        object_info = self._make_object_info({
+            "text": ["STRING", {}],
+            "clip": ["CLIP", {}],
+        })
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = object_info
+        mock_resp.raise_for_status = MagicMock()
+
+        with patch("httpx.Client") as mock_client:
+            mock_client.return_value.__enter__ = MagicMock(return_value=mock_client.return_value)
+            mock_client.return_value.__exit__ = MagicMock(return_value=False)
+            mock_client.return_value.get.return_value = mock_resp
+            result = json.loads(comfy_execute.handle("validate_before_execute", {
+                "path": str(path),
+            }))
+
+        assert result.get("valid") is False
+
+    def test_valid_text_passes(self, tmp_path):
+        """validate_before_execute must not flag non-empty required string inputs."""
+        data = {
+            "1": {
+                "class_type": "CLIPTextEncode",
+                "inputs": {"text": "a beautiful sunset", "clip": ["2", 1]},
+            },
+        }
+        path = tmp_path / "wf_ok.json"
+        path.write_text(json.dumps(data), encoding="utf-8")
+
+        object_info = self._make_object_info({
+            "text": ["STRING", {}],
+            "clip": ["CLIP", {}],
+        })
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = object_info
+        mock_resp.raise_for_status = MagicMock()
+
+        with patch("httpx.Client") as mock_client:
+            mock_client.return_value.__enter__ = MagicMock(return_value=mock_client.return_value)
+            mock_client.return_value.__exit__ = MagicMock(return_value=False)
+            mock_client.return_value.get.return_value = mock_resp
+            result = json.loads(comfy_execute.handle("validate_before_execute", {
+                "path": str(path),
+            }))
+
+        # "clip" is a link so it won't trigger the empty-input error.
+        # "text" is valid. No empty/None errors.
+        errors = result.get("errors", [])
+        assert not any("empty" in e.lower() or "none" in e.lower() for e in errors)
+
+
 class TestRegistration:
     def test_tools_registered(self):
         from agent.tools import ALL_TOOLS

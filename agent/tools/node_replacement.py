@@ -367,6 +367,12 @@ def _build_migration_patches(
         set_value = entry.get("set_value")
 
         if not new_id:
+            # Log skipped entries so migration failures are diagnosable.
+            # (Cycle 29 fix — previously silent)
+            log.debug(
+                "Skipping malformed input_mapping entry (missing new_id): %r",
+                entry,
+            )
             continue
 
         if set_value is not None:

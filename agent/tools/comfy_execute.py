@@ -627,6 +627,15 @@ def _handle_validate_before_execute(tool_input: dict) -> str:
 
             value = inputs[req_name]
 
+            # Reject None or empty-string required inputs — ComfyUI will fail
+            # at execution time; better to catch here. (Cycle 29 fix)
+            if value is None or (isinstance(value, str) and value.strip() == ""):
+                errors.append(
+                    f"Node [{nid}] {class_type}.{req_name}: "
+                    f"required input is empty or None."
+                )
+                continue
+
             # If it's a connection, skip value checks
             if isinstance(value, list) and len(value) == 2:
                 # Validate the source node exists

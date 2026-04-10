@@ -862,3 +862,39 @@ class TestAutogrowWorkflow:
         assert result["valid"] is True
         assert len(result["warnings"]) == 0
         assert len(result["errors"]) == 0
+
+
+# ---------------------------------------------------------------------------
+# Cycle 29: path traversal security tests
+# ---------------------------------------------------------------------------
+
+class TestPathTraversalSecurity:
+    """load_workflow and validate_workflow must reject path traversal attempts."""
+
+    def test_load_workflow_path_traversal_rejected(self):
+        """load_workflow with traversal path must return error, never read file."""
+        result = json.loads(workflow_parse.handle("load_workflow", {
+            "path": "../../../../etc/passwd",
+        }))
+        assert "error" in result
+
+    def test_load_workflow_windows_traversal_rejected(self):
+        """load_workflow with backslash traversal must return error."""
+        result = json.loads(workflow_parse.handle("load_workflow", {
+            "path": "..\\..\\..\\Windows\\system32\\config\\SAM",
+        }))
+        assert "error" in result
+
+    def test_validate_workflow_path_traversal_rejected(self):
+        """validate_workflow with traversal path must return error."""
+        result = json.loads(workflow_parse.handle("validate_workflow", {
+            "path": "../../etc/shadow",
+        }))
+        assert "error" in result
+
+    def test_load_workflow_unc_path_rejected(self):
+        """load_workflow with UNC path must return error."""
+        result = json.loads(workflow_parse.handle("load_workflow", {
+            "path": "\\\\attacker\\share\\evil.json",
+        }))
+        assert "error" in result

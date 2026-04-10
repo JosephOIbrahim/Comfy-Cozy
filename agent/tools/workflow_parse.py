@@ -14,7 +14,7 @@ from pathlib import Path
 
 import httpx
 
-from ._util import to_json
+from ._util import to_json, validate_path
 from ..config import COMFYUI_URL
 
 # Regex to detect UUID-style component type strings.
@@ -123,7 +123,14 @@ TOOLS: list[dict] = [
 
 
 def _load_json(path_str: str) -> tuple[dict, str | None]:
-    """Load JSON from file. Returns (data, error_or_none)."""
+    """Load JSON from file. Returns (data, error_or_none).
+
+    Path is sanitized through validate_path() before any file access.
+    (Cycle 29 fix — workflow_parse handlers previously lacked path validation)
+    """
+    path_err = validate_path(path_str)
+    if path_err:
+        return {}, path_err
     path = Path(path_str)
     if not path.exists():
         return {}, f"File not found: {path_str}"

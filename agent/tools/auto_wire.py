@@ -218,6 +218,15 @@ def _handle_wire_model(tool_input: dict) -> str:
     filename = tool_input["filename"]
     model_type = tool_input["model_type"]
 
+    # Validate filename is a simple name — no path separators, no traversal.
+    # filename should be a model filename like "flux-1-dev.safetensors",
+    # never a full path or relative traversal. (Cycle 29 fix)
+    if any(c in filename for c in ("/", "\\", "\x00")) or ".." in filename:
+        return to_json({
+            "error": f"Invalid filename '{filename}': must be a simple filename, not a path.",
+            "hint": "Provide just the filename (e.g. 'flux-1-dev.safetensors'), not a directory path.",
+        })
+
     # Validate model_type
     if model_type not in _LOADER_MAP:
         valid_types = sorted(_LOADER_MAP.keys())

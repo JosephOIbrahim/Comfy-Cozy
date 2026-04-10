@@ -53,7 +53,11 @@ class WorkflowGraph:
         nodes = {}
         for node_id, node_data in data.items():
             if isinstance(node_data, dict) and "class_type" in node_data:
-                nodes[node_id] = ComfyNode.from_api_dict(node_id, node_data)
+                # Normalize node IDs to strings — ComfyUI sometimes uses integer
+                # keys in JSON which Python parses as int. Mixed int/str keys
+                # cause sort() to fail with TypeError. (Cycle 29 fix)
+                node_id_str = str(node_id)
+                nodes[node_id_str] = ComfyNode.from_api_dict(node_id_str, node_data)
         return cls(nodes=nodes)
 
     def to_api_json(self) -> dict[str, Any]:

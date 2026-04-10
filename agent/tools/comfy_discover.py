@@ -1103,6 +1103,15 @@ def _search_huggingface(query: str, model_type: str | None, max_results: int) ->
     except Exception as e:
         return to_json({"error": f"HuggingFace search failed: {e}"})
 
+    # Guard against unexpected API shape — resp.json() returns Any.
+    # If the API returns a dict (e.g., {"results": [...]}) or a string,
+    # iterating directly would produce wrong data without error. (Cycle 29 fix)
+    if not isinstance(data, list):
+        return to_json({
+            "error": "Unexpected HuggingFace API response format (expected list).",
+            "hint": "The API may have changed. Try again or check the endpoint.",
+        })
+
     results = []
     for item in data:
         model_id = item.get("modelId", item.get("id", ""))

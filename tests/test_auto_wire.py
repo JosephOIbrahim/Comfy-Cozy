@@ -271,3 +271,44 @@ class TestSuggestWiring:
         ckpt_loaders = [ldr for ldr in result["loaders"] if ldr["model_type"] == "checkpoints"]
         assert len(ckpt_loaders) == 1
         assert ckpt_loaders[0]["current_value"] == "sdxl_base.safetensors"
+
+
+class TestFilenameValidation:
+    """Cycle 29 fix: wire_model must reject filenames with path separators."""
+
+    def test_path_traversal_rejected(self):
+        """filename containing path traversal must return an error."""
+        result = json.loads(auto_wire.handle("wire_model", {
+            "filename": "../../etc/passwd",
+            "model_type": "checkpoints",
+        }))
+        assert "error" in result
+        assert "path" in result["error"].lower() or "filename" in result["error"].lower()
+
+    def test_absolute_path_rejected(self):
+        """filename containing a path separator must be rejected."""
+        result = json.loads(auto_wire.handle("wire_model", {
+            "filename": "/etc/shadow",
+            "model_type": "checkpoints",
+        }))
+        assert "error" in result
+
+    def test_null_byte_rejected(self):
+        """filename with null byte must be rejected."""
+        result = json.loads(auto_wire.handle("wire_model", {
+            "filename": "model\x00.safetensors",
+            "model_type": "checkpoints",
+        }))
+        assert "error" in result
+
+    def test_simple_filename_accepted(self):
+        """A valid simple filename passes filename validation (may fail for other reasons)."""
+        # Load a workflow so we get past filename validation
+        _load_mock_workflow(_SIMPLE_CHECKPOINT_WORKFLOW)
+        result = json.loads(auto_wire.handle("wire_model", {
+            "filename": "flux-1-dev.safetensors",
+            "model_type": "checkpoints",
+        }))
+        # Error may occur (no matching loader or wrong family), but NOT about filename
+        if "error" in result:
+            assert "path" not in result["error"].lower() or "filename" not in result["error"]

@@ -585,6 +585,36 @@ class TestEdgeCases:
         assert "extra_data" not in graph.nodes
         assert "metadata" not in graph.nodes
 
+    def test_integer_node_ids_normalized_to_strings(self):
+        """from_api_json must normalize integer keys to strings.
+
+        ComfyUI sometimes emits JSON with integer keys (e.g. {1: {...}}).
+        Python's json.loads() parses these as int. Mixed int/str keys cause
+        sorted() to raise TypeError. All node IDs must be str. (Cycle 29 fix)
+        """
+        # Simulate what json.loads() produces for {1: ..., 2: ...}
+        data = {
+            1: {"class_type": "CheckpointLoaderSimple", "inputs": {"ckpt_name": "a.safetensors"}},
+            2: {"class_type": "KSampler", "inputs": {"model": [1, 0]}},
+        }
+        graph = WorkflowGraph.from_api_json(data)
+        # All keys must be strings
+        for node_id in graph.nodes:
+            assert isinstance(node_id, str), f"node_id {node_id!r} is not str"
+        assert "1" in graph.nodes
+        assert "2" in graph.nodes
+
+    def test_integer_node_ids_sortable_in_to_api_json(self):
+        """to_api_json must not raise TypeError when iterating normalized nodes."""
+        data = {
+            10: {"class_type": "VAELoader", "inputs": {"vae_name": "v.safetensors"}},
+            2: {"class_type": "CheckpointLoaderSimple", "inputs": {"ckpt_name": "c.safetensors"}},
+        }
+        graph = WorkflowGraph.from_api_json(data)
+        # Must not raise — mixed int/str would fail sorted() here
+        api_json = graph.to_api_json()
+        assert set(api_json.keys()) == {"2", "10"}
+
     def test_delta_layer_create_auto_id(self):
         """DeltaLayer.create generates unique layer_id."""
         d1 = DeltaLayer.create({"4": {"cfg": 5.0}})

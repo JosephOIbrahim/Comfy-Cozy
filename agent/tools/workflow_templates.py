@@ -217,7 +217,16 @@ def _handle_list_templates(tool_input: dict) -> str:
 
 
 def _resolve_template_path(template_name: str) -> Path | None:
-    """Resolve a template name to a file path, checking all sources."""
+    """Resolve a template name to a file path, checking all sources.
+
+    template_name must be a simple filename stem — no path separators, no
+    traversal sequences. Rejects anything that would escape the template dirs.
+    (Cycle 29 path-traversal fix)
+    """
+    # Reject names that contain path separators or traversal sequences
+    if any(c in template_name for c in ("/", "\\", "\x00")) or ".." in template_name:
+        return None  # Caller returns a "not found" error
+
     # 1. Built-in templates (exact match)
     builtin = _TEMPLATES_DIR / f"{template_name}.json"
     if builtin.exists():
