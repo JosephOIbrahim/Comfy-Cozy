@@ -866,7 +866,9 @@ def _handle_discover(tool_input: dict) -> str:
 # ---------------------------------------------------------------------------
 
 def _handle_search_custom_nodes(tool_input: dict) -> str:
-    query = tool_input["query"]
+    query = tool_input.get("query")  # Cycle 53: guard required field
+    if not query or not isinstance(query, str):
+        return to_json({"error": "query is required and must be a non-empty string."})
     by = tool_input.get("by", "name")
     max_results = tool_input.get("max_results", 10)
 
@@ -998,7 +1000,9 @@ def _search_by_name(query: str, max_results: int) -> str:
 
 
 def _handle_search_models(tool_input: dict) -> str:
-    query = tool_input["query"]
+    query = tool_input.get("query")  # Cycle 53: guard required field
+    if not query or not isinstance(query, str):
+        return to_json({"error": "query is required and must be a non-empty string."})
     model_type = tool_input.get("model_type")
     source = tool_input.get("source", "registry")
     max_results = tool_input.get("max_results", 10)

@@ -399,7 +399,6 @@ def _handle_apply_patch(tool_input: dict) -> str:
         return to_json({"error": "patches is required."})
     if not isinstance(patches, list):
         return to_json({"error": "patches must be a list."})
-    patches = tool_input["patches"]
 
     # Load workflow if path provided or not loaded yet
     if path_str:

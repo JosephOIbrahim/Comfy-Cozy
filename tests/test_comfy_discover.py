@@ -1216,3 +1216,49 @@ class TestDiscoverExceptionContext:
         assert "error" in result
         assert "tool" in result
         assert result["tool"] == "discover"
+
+
+# ---------------------------------------------------------------------------
+# Cycle 53 — required field guards for _handle_search_custom_nodes / _handle_search_models
+# ---------------------------------------------------------------------------
+
+class TestSearchCustomNodesRequiredField:
+    """_handle_search_custom_nodes must guard against missing/empty query."""
+
+    def test_missing_query_returns_error(self):
+        result = json.loads(comfy_discover._handle_search_custom_nodes({}))
+        assert "error" in result
+        assert "query" in result["error"].lower()
+
+    def test_empty_query_returns_error(self):
+        result = json.loads(comfy_discover._handle_search_custom_nodes({"query": ""}))
+        assert "error" in result
+
+    def test_none_query_returns_error(self):
+        result = json.loads(comfy_discover._handle_search_custom_nodes({"query": None}))
+        assert "error" in result
+
+    def test_valid_query_not_blocked(self, mock_registries):
+        result = json.loads(comfy_discover._handle_search_custom_nodes({"query": "IPAdapter"}))
+        assert "error" not in result
+
+
+class TestSearchModelsRequiredField:
+    """_handle_search_models must guard against missing/empty query."""
+
+    def test_missing_query_returns_error(self):
+        result = json.loads(comfy_discover._handle_search_models({}))
+        assert "error" in result
+        assert "query" in result["error"].lower()
+
+    def test_empty_query_returns_error(self):
+        result = json.loads(comfy_discover._handle_search_models({"query": ""}))
+        assert "error" in result
+
+    def test_none_query_returns_error(self):
+        result = json.loads(comfy_discover._handle_search_models({"query": None}))
+        assert "error" in result
+
+    def test_valid_query_not_blocked(self, mock_registries):
+        result = json.loads(comfy_discover._handle_search_models({"query": "FLUX"}))
+        assert "error" not in result

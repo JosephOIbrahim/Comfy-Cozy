@@ -25,6 +25,7 @@ _registration_lock = threading.Lock()
 def _default_to_json(obj: Any, **kwargs) -> str:
     """Deterministic JSON serialization (He2025 pattern)."""
     kwargs.setdefault("sort_keys", True)
+    kwargs.setdefault("allow_nan", False)  # Cycle 53: NaN/Infinity raises ValueError
     return _json.dumps(obj, **kwargs)
 
 

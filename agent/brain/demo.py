@@ -370,8 +370,8 @@ class DemoAgent(BrainAgent):
 
     def _handle_demo_checkpoint(self, tool_input: dict) -> str:
         step_completed = tool_input.get("step_completed")  # Cycle 46: guard required field
-        if step_completed is None:
-            return self.to_json({"error": "step_completed is required."})
+        if step_completed is None or not isinstance(step_completed, str):  # Cycle 53: type guard
+            return self.to_json({"error": "step_completed is required and must be a string."})
         notes = tool_input.get("notes", "")
 
         if not self._demo_state["active"]:

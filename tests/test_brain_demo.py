@@ -160,3 +160,30 @@ class TestDemoCheckpointRequiredField:
         result = json.loads(handle("demo_checkpoint", {}))
         assert "error" in result
         assert "step_completed" in result["error"].lower()
+
+
+# ---------------------------------------------------------------------------
+# Cycle 53 — step_completed type guard
+# ---------------------------------------------------------------------------
+
+class TestDemoCheckpointTypeGuard:
+    """demo_checkpoint must reject non-string step_completed values."""
+
+    def test_integer_step_completed_returns_error(self):
+        result = json.loads(handle("demo_checkpoint", {"step_completed": 42}))
+        assert "error" in result
+        assert "step_completed" in result["error"].lower()
+
+    def test_none_step_completed_returns_error(self):
+        result = json.loads(handle("demo_checkpoint", {"step_completed": None}))
+        assert "error" in result
+
+    def test_list_step_completed_returns_error(self):
+        result = json.loads(handle("demo_checkpoint", {"step_completed": ["analyze"]}))
+        assert "error" in result
+
+    def test_string_step_completed_not_blocked(self):
+        """A string value must pass the type guard (behavior tested elsewhere)."""
+        result = json.loads(handle("demo_checkpoint", {"step_completed": "some_step"}))
+        # No active demo so we get a different error, but NOT a type guard error
+        assert "step_completed" not in result.get("error", "").lower()

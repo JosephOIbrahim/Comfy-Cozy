@@ -173,6 +173,8 @@ class VisionAgent(BrainAgent):
         # Guard against OOM on very large images before base64 encoding. (Cycle 33 fix)
         _MAX_IMAGE_BYTES = 50 * 1024 * 1024  # 50 MB
         file_size = p.stat().st_size
+        if file_size == 0:  # Cycle 53: empty file sends blank base64 to Vision API
+            raise ValueError(f"Image file is empty (0 bytes): {path}")
         if file_size > _MAX_IMAGE_BYTES:
             raise ValueError(
                 f"Image too large for Vision API: {file_size / (1024 * 1024):.1f} MB "

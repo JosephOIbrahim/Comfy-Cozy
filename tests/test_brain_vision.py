@@ -546,3 +546,36 @@ class TestVisionFileNotFoundContext:
         assert "error" in result
         assert "image_path" in result
         assert "hint" in result
+
+
+# ---------------------------------------------------------------------------
+# Cycle 53 — empty file (0-byte) guard in _read_image_as_base64
+# ---------------------------------------------------------------------------
+
+class TestVisionEmptyFileGuard:
+    """_read_image_as_base64 must reject 0-byte files before calling Vision API."""
+
+    def test_empty_file_returns_error(self, tmp_path):
+        empty = tmp_path / "empty.png"
+        empty.write_bytes(b"")
+        from agent.brain import vision
+        v = vision.VisionAgent()
+        result = json.loads(v.handle("analyze_image", {"image_path": str(empty)}))
+        assert "error" in result
+
+    def test_empty_file_error_mentions_empty(self, tmp_path):
+        empty = tmp_path / "zero.png"
+        empty.write_bytes(b"")
+        from agent.brain import vision
+        v = vision.VisionAgent()
+        result = json.loads(v.handle("analyze_image", {"image_path": str(empty)}))
+        assert "empty" in result["error"].lower() or "0" in result["error"]
+
+    def test_nonempty_file_not_blocked(self, fake_image):
+        """A valid image file must not be rejected by the 0-byte guard."""
+        from agent.brain import vision
+        import unittest.mock as mock
+        v = vision.VisionAgent()
+        with mock.patch.object(v, "_call_vision", return_value='{"quality_score": 0.9}'):
+            result = json.loads(v.handle("analyze_image", {"image_path": fake_image}))
+        assert "error" not in result or "empty" not in result.get("error", "")

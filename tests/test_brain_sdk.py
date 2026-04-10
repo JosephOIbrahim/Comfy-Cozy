@@ -397,3 +397,30 @@ class TestDispatchExceptionIsolation:
 
         parsed = json.loads(result)
         assert "error" in parsed
+
+
+# ---------------------------------------------------------------------------
+# Cycle 53 — _default_to_json must reject NaN/Infinity
+# ---------------------------------------------------------------------------
+
+class TestDefaultToJsonNanGuard:
+    """_default_to_json must raise on NaN/Infinity (allow_nan=False)."""
+
+    def test_nan_raises(self):
+        import math
+        with pytest.raises(ValueError):
+            _default_to_json({"val": math.nan})
+
+    def test_infinity_raises(self):
+        import math
+        with pytest.raises(ValueError):
+            _default_to_json({"val": math.inf})
+
+    def test_negative_infinity_raises(self):
+        import math
+        with pytest.raises(ValueError):
+            _default_to_json({"val": -math.inf})
+
+    def test_normal_float_passes(self):
+        result = _default_to_json({"val": 3.14})
+        assert json.loads(result)["val"] == pytest.approx(3.14)
