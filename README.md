@@ -398,6 +398,8 @@ graph LR
 3. **PILOT** -- Makes changes through safe, reversible delta layers (never edits your original)
 4. **VERIFY** -- Runs the workflow, checks the output, records what worked
 
+When validation finds errors, the agent **auto-repairs**: missing nodes → `repair_workflow` installs them → missing inputs → `set_input` fills them → re-validate → execute. One continuous flow.
+
 Every change is undoable. Every generation teaches the agent something. The agent is a doer, not a describer -- say "wire the model" and it wires the model. Say "repair this" and it finds the missing nodes, installs them, and validates. Say "run it" and it validates then executes. No confirmation dialogs, no "would you like me to..." -- it acts, then tells you what it did.
 
 ---
