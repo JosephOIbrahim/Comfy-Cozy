@@ -251,6 +251,12 @@ def _handle_get_models_summary() -> str:
 def _handle_read_node_source(tool_input: dict) -> str:
     node_pack = tool_input["node_pack"]
     max_lines = tool_input.get("max_lines", 200)
+    try:
+        max_lines = int(max_lines)
+    except (TypeError, ValueError):
+        max_lines = 200
+    if max_lines < 0:
+        return to_json({"error": f"max_lines must be a non-negative integer, got {max_lines!r}"})
 
     pack_dir = CUSTOM_NODES_DIR / node_pack
     # Prevent path traversal (e.g., "../../etc/passwd")

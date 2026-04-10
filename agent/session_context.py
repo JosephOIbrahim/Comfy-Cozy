@@ -43,6 +43,7 @@ class SessionContext:
         self._workflow_signature = None  # Optional WorkflowSignature
         self._dag_state = None  # Optional DAG engine state (lazy)
         self._degradation = None  # Optional DegradationManager (lazy)
+        self._init_lock = threading.Lock()  # Guards all lazy-init ensure_*() methods
         try:
             import logging as _logging
             from .circuit_breaker import CircuitBreaker
@@ -96,12 +97,14 @@ class SessionContext:
         Returns None if usd-core is not installed.
         """
         if self._stage is None:
-            try:
-                from .stage import CognitiveWorkflowStage, HAS_USD
-                if HAS_USD:
-                    self._stage = CognitiveWorkflowStage()
-            except ImportError:
-                pass
+            with self._init_lock:
+                if self._stage is None:
+                    try:
+                        from .stage import CognitiveWorkflowStage, HAS_USD
+                        if HAS_USD:
+                            self._stage = CognitiveWorkflowStage()
+                    except ImportError:
+                        pass
         return self._stage
 
     @property
@@ -121,22 +124,24 @@ class SessionContext:
             **kwargs: Forwarded to Ratchet constructor (weights, threshold).
         """
         if self._ratchet is None:
-            stage = self.ensure_stage()
-            if stage is not None:
-                try:
-                    from .stage.ratchet import Ratchet
-                    # Wire FORESIGHT if available (degradation cascade)
-                    cwm = self.ensure_cwm()
-                    arbiter = self.ensure_arbiter()
-                    self._ratchet = Ratchet(
-                        cws=stage,
-                        cwm=cwm,
-                        arbiter=arbiter,
-                        workflow_signature=self._workflow_signature,
-                        **kwargs,
-                    )
-                except ImportError:
-                    pass
+            with self._init_lock:
+                if self._ratchet is None:
+                    stage = self.ensure_stage()
+                    if stage is not None:
+                        try:
+                            from .stage.ratchet import Ratchet
+                            # Wire FORESIGHT if available (degradation cascade)
+                            cwm = self.ensure_cwm()
+                            arbiter = self.ensure_arbiter()
+                            self._ratchet = Ratchet(
+                                cws=stage,
+                                cwm=cwm,
+                                arbiter=arbiter,
+                                workflow_signature=self._workflow_signature,
+                                **kwargs,
+                            )
+                        except ImportError:
+                            pass
         return self._ratchet
 
     @property
@@ -151,11 +156,13 @@ class SessionContext:
         Returns None if the module is not available.
         """
         if self._cwm is None:
-            try:
-                from .stage.cwm import predict
-                self._cwm = predict
-            except ImportError:
-                pass
+            with self._init_lock:
+                if self._cwm is None:
+                    try:
+                        from .stage.cwm import predict
+                        self._cwm = predict
+                    except ImportError:
+                        pass
         return self._cwm
 
     @property
@@ -169,11 +176,13 @@ class SessionContext:
         Lazy-initialized on first request. Returns None if not available.
         """
         if self._arbiter is None:
-            try:
-                from .stage.arbiter import Arbiter
-                self._arbiter = Arbiter()
-            except ImportError:
-                pass
+            with self._init_lock:
+                if self._arbiter is None:
+                    try:
+                        from .stage.arbiter import Arbiter
+                        self._arbiter = Arbiter()
+                    except ImportError:
+                        pass
         return self._arbiter
 
     @property
@@ -192,14 +201,16 @@ class SessionContext:
         Lazy-initialized. Returns None if networkx unavailable or DAG_ENABLED=False.
         """
         if self._dag_state is None:
-            try:
-                from .config import DAG_ENABLED
-                if not DAG_ENABLED:
-                    return None
-                from .stage.dag import build_dag
-                self._dag_state = {"dag": build_dag()}
-            except ImportError:
-                pass
+            with self._init_lock:
+                if self._dag_state is None:
+                    try:
+                        from .config import DAG_ENABLED
+                        if not DAG_ENABLED:
+                            return None
+                        from .stage.dag import build_dag
+                        self._dag_state = {"dag": build_dag()}
+                    except ImportError:
+                        pass
         return self._dag_state
 
     @property

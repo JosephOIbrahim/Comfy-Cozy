@@ -15,9 +15,12 @@ overridden via the optional `base_url` parameter.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import time
 import uuid
+
+log = logging.getLogger(__name__)
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Callable
@@ -172,7 +175,8 @@ def _fetch_outputs(prompt_id: str, base_url: str, result: ExecutionResult) -> No
             )
             resp.raise_for_status()
             history = resp.json()
-    except Exception:
+    except Exception as e:
+        log.warning("Output fetch failed for prompt %s: %s", prompt_id, e)
         return
 
     if prompt_id not in history:
@@ -329,8 +333,8 @@ def _finalize(result: ExecutionResult, on_complete: Callable | None) -> Executio
     if on_complete is not None:
         try:
             on_complete(result)
-        except Exception:
-            pass
+        except Exception as e:
+            log.debug("on_complete callback raised (ignored): %s", e)
     return result
 
 

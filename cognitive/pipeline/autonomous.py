@@ -352,6 +352,9 @@ class AutonomousPipeline:
             result.log(f"Quality: {result.quality.overall:.1%}")
         except Exception as e:
             result.log(f"Evaluation failed: {e}")
+            result.error = f"Evaluation failed: {e}"
+            result.stage = PipelineStage.FAILED
+            return result
 
         # Stage 7: LEARN
         result.stage = PipelineStage.LEARN

@@ -676,6 +676,14 @@ def _handle_connect_nodes(tool_input: dict) -> str:
     to_node = tool_input["to_node"]
     to_input = tool_input["to_input"]
 
+    # Validate from_output is a non-negative integer (ComfyUI output slot index)
+    try:
+        from_output = int(from_output)
+        if from_output < 0:
+            raise ValueError(f"from_output must be >= 0, got {from_output}")
+    except (TypeError, ValueError) as e:
+        return to_json({"error": f"Invalid from_output: {e}"})
+
     workflow = _get_state()["current_workflow"]
 
     # Validate nodes exist

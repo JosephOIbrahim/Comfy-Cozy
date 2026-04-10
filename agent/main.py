@@ -204,7 +204,8 @@ def run_agent_turn(
                     # Tool raised — return error string as the tool result so the
                     # agent turn continues rather than crashing the entire turn.
                     log.error("Tool %s raised during parallel execution: %s", tc_for_future.name, e, exc_info=True)
-                    tool_id, result = tc_for_future.id, f"Tool error: {e}"
+                    import json as _json
+                    tool_id, result = tc_for_future.id, _json.dumps({"error": str(e)})
                 results_map[tool_id] = result
 
         # Preserve original order, notify on results
