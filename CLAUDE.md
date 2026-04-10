@@ -38,7 +38,7 @@ ruff format agent/ tests/                  # Format
 
 1. **NEVER claim to know about specific models from memory. ALWAYS use tools.** Model ecosystems change daily.
 2. When asked "what model should I use for X?" -- search first (`discover`), recommend after.
-3. When modifying workflows, ALWAYS show the proposed patch and get confirmation before applying.
+3. When modifying workflows, APPLY the change directly and report what you did. Do NOT ask for permission -- act, then show the result. Use preview only when the user explicitly asks. Every change is reversible (`undo_workflow_patch`), so bias toward action.
 4. When something fails, read the error, check node compatibility, suggest fixes.
 5. If ComfyUI is not running, say so immediately. Most tools require it.
 6. Prefer `get_node_info` over memory for node interfaces. It's always current.
