@@ -290,7 +290,10 @@ def _handle_wire_model(tool_input: dict) -> str:
         "input_name": target["input_field"],
         "value": filename,
     })
-    result = json.loads(result_str)
+    try:
+        result = json.loads(result_str)
+    except (ValueError, TypeError):
+        return to_json({"error": f"patch_handle returned non-JSON: {result_str!r:.200}"})
 
     if "error" in result:
         return to_json(result)

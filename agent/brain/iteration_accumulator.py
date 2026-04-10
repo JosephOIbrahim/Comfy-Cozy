@@ -148,6 +148,9 @@ class IterationAccumulatorAgent(BrainAgent):
         observation: str = "",
     ) -> dict:
         """Record a single iteration step."""
+        with self._lock:
+            if self._started_at is None:
+                return {"error": "Call start_iteration_tracking before record_iteration_step."}
         step = {
             "iteration": iteration,
             "type": step_type,
@@ -176,6 +179,10 @@ class IterationAccumulatorAgent(BrainAgent):
     def finalize(self, accepted_iteration: int) -> dict:
         """Mark the accepted iteration and return full history."""
         with self._lock:
+            if self._started_at is None:
+                return {"error": "Call start_iteration_tracking before finalize_iterations."}
+            if not self._steps:
+                return {"error": "No iteration steps recorded. Call record_iteration_step first."}
             self._accepted = accepted_iteration
             history = {
                 "intent_summary": self._intent_summary,

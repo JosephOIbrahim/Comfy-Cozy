@@ -377,3 +377,54 @@ class TestTOCTOUFileDisappears:
         with patch.object(Path, "read_bytes", side_effect=OSError("disk error")):
             with pytest.raises(FileNotFoundError, match="unavailable"):
                 agent._read_image_as_base64(str(img))
+
+
+# ---------------------------------------------------------------------------
+# Cycle 41: hash compute exception → JSON error not crash
+# ---------------------------------------------------------------------------
+
+class TestHashComputeException:
+    """Cycle 41: exceptions in hash/pixel computation must return JSON, not crash."""
+
+    @pytest.mark.skipif(
+        not __import__("agent.brain.vision", fromlist=["_HAS_PIL"])._HAS_PIL,
+        reason="Pillow not installed"
+    )
+    def test_compute_hash_exception_returns_json_error(self, tmp_path):
+        """If _compute_average_hash raises, handle() must return error JSON."""
+        from PIL import Image as PILImage
+        from unittest.mock import patch
+        from agent.brain import vision as _vis_mod
+
+        img = PILImage.new("RGB", (64, 64), (100, 150, 200))
+        path = tmp_path / "test.png"
+        img.save(path)
+
+        with patch.object(_vis_mod, "_compute_average_hash", side_effect=RuntimeError("hash failed")):
+            result = json.loads(handle("hash_compare_images", {
+                "image_a": str(path),
+                "image_b": str(path),
+            }))
+        assert "error" in result
+        assert "hash" in result["error"].lower() or "failed" in result["error"].lower()
+
+    @pytest.mark.skipif(
+        not __import__("agent.brain.vision", fromlist=["_HAS_PIL"])._HAS_PIL,
+        reason="Pillow not installed"
+    )
+    def test_pixel_diff_exception_returns_json_error(self, tmp_path):
+        """If _pixel_diff raises, handle() must return error JSON, not crash."""
+        from PIL import Image as PILImage
+        from unittest.mock import patch
+        from agent.brain import vision as _vis_mod
+
+        img = PILImage.new("RGB", (64, 64), (100, 150, 200))
+        path = tmp_path / "test2.png"
+        img.save(path)
+
+        with patch.object(_vis_mod, "_pixel_diff", side_effect=ValueError("diff failed")):
+            result = json.loads(handle("hash_compare_images", {
+                "image_a": str(path),
+                "image_b": str(path),
+            }))
+        assert "error" in result

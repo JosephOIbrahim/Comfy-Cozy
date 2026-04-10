@@ -317,3 +317,52 @@ class TestCreateDefaultPipeline:
         p = create_default_pipeline()
         result = p.run(PipelineConfig(intent="test intent"))
         assert result.stage == PipelineStage.COMPLETE
+
+
+# ---------------------------------------------------------------------------
+# Cycle 41: result.error populated on CWM failure
+# ---------------------------------------------------------------------------
+
+class TestCWMFailureErrorField:
+    """Cycle 41: result.error must be set when CWM predict() raises."""
+
+    def test_cwm_failure_sets_error_field(self):
+        """When CWM.predict() raises, result.error must be non-empty."""
+        from unittest.mock import MagicMock, patch
+        from cognitive.experience.accumulator import ExperienceAccumulator
+        from cognitive.prediction.arbiter import SimulationArbiter
+        from cognitive.prediction.counterfactual import CounterfactualGenerator
+
+        broken_cwm = MagicMock()
+        broken_cwm.predict.side_effect = RuntimeError("CWM exploded")
+
+        p = AutonomousPipeline(
+            accumulator=ExperienceAccumulator(),
+            cwm=broken_cwm,
+            arbiter=SimulationArbiter(),
+            counterfactual_gen=CounterfactualGenerator(),
+        )
+        result = p.run(PipelineConfig(intent="test intent"))
+        assert result.stage == PipelineStage.FAILED
+        assert result.error, "result.error must be non-empty when CWM fails"
+        assert "CWM" in result.error or "predict" in result.error.lower()
+
+    def test_cwm_failure_error_not_empty_string(self):
+        """result.error must not be an empty string when stage==FAILED from CWM."""
+        from unittest.mock import MagicMock
+        from cognitive.experience.accumulator import ExperienceAccumulator
+        from cognitive.prediction.arbiter import SimulationArbiter
+        from cognitive.prediction.counterfactual import CounterfactualGenerator
+
+        broken_cwm = MagicMock()
+        broken_cwm.predict.side_effect = ValueError("bad params")
+
+        p = AutonomousPipeline(
+            accumulator=ExperienceAccumulator(),
+            cwm=broken_cwm,
+            arbiter=SimulationArbiter(),
+            counterfactual_gen=CounterfactualGenerator(),
+        )
+        result = p.run(PipelineConfig(intent="test intent"))
+        assert result.stage == PipelineStage.FAILED
+        assert result.error != ""

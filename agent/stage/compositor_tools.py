@@ -11,6 +11,8 @@ Tool pattern: TOOLS list[dict] + handle(name, tool_input) -> str.
 
 from __future__ import annotations
 
+import threading
+
 from ..tools._util import to_json
 
 # ---------------------------------------------------------------------------
@@ -120,17 +122,20 @@ TOOLS: list[dict] = [
 # ---------------------------------------------------------------------------
 
 _current_scene = None  # Module-level for now; will be session-scoped later
+_scene_lock = threading.Lock()  # Guards _current_scene mutations (Cycle 41)
 
 
 def _get_scene():
     """Return the current composed scene, or None."""
-    return _current_scene
+    with _scene_lock:
+        return _current_scene
 
 
 def _set_scene(scene):
     """Set the current composed scene."""
     global _current_scene
-    _current_scene = scene
+    with _scene_lock:
+        _current_scene = scene
 
 
 _NO_USD = to_json({

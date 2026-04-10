@@ -214,3 +214,68 @@ class TestModuleDispatch:
             "intent_summary": "module-level test",
         }))
         assert result["status"] == "tracking"
+
+
+# ---------------------------------------------------------------------------
+# Cycle 41: guards for record_step and finalize before start
+# ---------------------------------------------------------------------------
+
+class TestPreStartGuards:
+    """Cycle 41: record_step and finalize must fail gracefully before start."""
+
+    def test_record_step_before_start_returns_error(self):
+        """record_iteration_step before start_iteration_tracking must return error JSON."""
+        from agent.brain.iteration_accumulator import IterationAccumulatorAgent, BrainConfig
+        agent = IterationAccumulatorAgent(BrainConfig())
+        result = json.loads(agent.handle("record_iteration_step", {
+            "iteration": 1,
+            "type": "parameter_change",
+            "trigger": "user",
+        }))
+        assert "error" in result
+        assert "start" in result["error"].lower()
+
+    def test_finalize_before_start_returns_error(self):
+        """finalize_iterations before start_iteration_tracking must return error JSON."""
+        from agent.brain.iteration_accumulator import IterationAccumulatorAgent, BrainConfig
+        agent = IterationAccumulatorAgent(BrainConfig())
+        result = json.loads(agent.handle("finalize_iterations", {
+            "accepted_iteration": 1,
+        }))
+        assert "error" in result
+        assert "start" in result["error"].lower()
+
+    def test_finalize_with_no_steps_returns_error(self):
+        """finalize_iterations with zero recorded steps must return error JSON."""
+        from agent.brain.iteration_accumulator import IterationAccumulatorAgent, BrainConfig
+        agent = IterationAccumulatorAgent(BrainConfig())
+        agent.start(intent_summary="empty run")
+        result = json.loads(agent.handle("finalize_iterations", {
+            "accepted_iteration": 1,
+        }))
+        assert "error" in result
+        assert "step" in result["error"].lower() or "record" in result["error"].lower()
+
+    def test_normal_flow_still_works(self):
+        """Start → record → finalize must still succeed after adding guards."""
+        from agent.brain.iteration_accumulator import IterationAccumulatorAgent, BrainConfig
+        agent = IterationAccumulatorAgent(BrainConfig())
+        agent.start(intent_summary="normal run")
+        rec = json.loads(agent.handle("record_iteration_step", {
+            "iteration": 1,
+            "type": "parameter_change",
+            "trigger": "user",
+        }))
+        assert rec.get("status") == "recorded"
+        fin = json.loads(agent.handle("finalize_iterations", {
+            "accepted_iteration": 1,
+        }))
+        assert "error" not in fin
+        assert fin["total_steps"] == 1
+
+    def test_compositor_scene_lock_exists(self):
+        """compositor_tools must have a _scene_lock threading.Lock."""
+        import threading
+        from agent.stage import compositor_tools
+        assert hasattr(compositor_tools, "_scene_lock")
+        assert isinstance(compositor_tools._scene_lock, type(threading.Lock()))

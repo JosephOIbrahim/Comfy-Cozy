@@ -311,7 +311,8 @@ class AutonomousPipeline:
         except Exception as e:
             log.error("CWM predict failed: %s", e)
             result.stage = PipelineStage.FAILED
-            result.log(f"CWM prediction failed: {e}")
+            result.error = f"CWM prediction failed: {e}"
+            result.log(result.error)
             return result
         result.prediction = prediction
         result.log(

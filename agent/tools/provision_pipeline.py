@@ -154,7 +154,10 @@ def _handle_provision_model(tool_input: dict) -> str:
     if model_type:
         discover_input["model_type"] = model_type
 
-    discover_result = json.loads(discover_handle("discover", discover_input))
+    try:
+        discover_result = json.loads(discover_handle("discover", discover_input))
+    except (ValueError, TypeError) as _e:
+        return to_json({"error": f"discover returned non-JSON: {_e}", "step": "discover"})
     results = discover_result.get("results", [])
     if not results:
         return to_json({"error": f"No models found for '{query}'", "step": "discover"})
@@ -165,10 +168,13 @@ def _handle_provision_model(tool_input: dict) -> str:
         response: dict = {"step": "already_installed", "model": best}
         if auto_wire and best.get("filename"):
             detected_type = model_type or best.get("model_type", "checkpoints")
-            wire_result = json.loads(auto_wire_handle("wire_model", {
-                "filename": best["filename"],
-                "model_type": detected_type,
-            }))
+            try:
+                wire_result = json.loads(auto_wire_handle("wire_model", {
+                    "filename": best["filename"],
+                    "model_type": detected_type,
+                }))
+            except (ValueError, TypeError):
+                wire_result = {"error": "auto_wire returned non-JSON"}
             response["wired"] = wire_result
         return to_json(response)
 
@@ -192,11 +198,14 @@ def _handle_provision_model(tool_input: dict) -> str:
     detected_type = model_type or best.get("model_type", "checkpoints")
     filename = best.get("filename") or _filename_from_url(url)
 
-    download_result = json.loads(provision_handle("download_model", {
-        "url": url,
-        "model_type": detected_type,
-        "filename": filename,
-    }))
+    try:
+        download_result = json.loads(provision_handle("download_model", {
+            "url": url,
+            "model_type": detected_type,
+            "filename": filename,
+        }))
+    except (ValueError, TypeError) as _e:
+        return to_json({"error": f"download_model returned non-JSON: {_e}", "step": "download"})
 
     if "error" in download_result:
         return to_json({

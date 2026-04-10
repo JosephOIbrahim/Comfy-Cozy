@@ -312,3 +312,42 @@ class TestFilenameValidation:
         # Error may occur (no matching loader or wrong family), but NOT about filename
         if "error" in result:
             assert "path" not in result["error"].lower() or "filename" not in result["error"]
+
+
+# ---------------------------------------------------------------------------
+# Cycle 41: json.loads guard on patch_handle result
+# ---------------------------------------------------------------------------
+
+class TestPatchHandleNonJsonGuard:
+    """Cycle 41: auto_wire must handle non-JSON from patch_handle gracefully."""
+
+    def test_non_json_from_set_input_returns_error(self):
+        """If set_input returns a non-JSON string, wire_model must return error JSON."""
+        from unittest.mock import patch
+        from agent.tools.workflow_patch import handle as patch_handle_orig
+
+        _load_mock_workflow(_SIMPLE_CHECKPOINT_WORKFLOW)
+
+        with patch("agent.tools.auto_wire.json") as mock_json:
+            # Allow loads to work for everything except the patch_handle result
+            import json as _real_json
+            call_count = [0]
+
+            def selective_loads(s):
+                call_count[0] += 1
+                if call_count[0] == 1:
+                    raise ValueError("non-JSON from patch_handle")
+                return _real_json.loads(s)
+
+            mock_json.loads = selective_loads
+            mock_json.dumps = _real_json.dumps
+            mock_json.JSONDecodeError = _real_json.JSONDecodeError
+
+        # Simpler approach: patch set_input to return garbage
+        with patch("agent.tools.workflow_patch.handle", return_value="NOT JSON AT ALL"):
+            result = json.loads(auto_wire.handle("wire_model", {
+                "filename": "sd15_base.safetensors",
+                "model_type": "checkpoints",
+            }))
+        # Should return a JSON error, not raise
+        assert "error" in result

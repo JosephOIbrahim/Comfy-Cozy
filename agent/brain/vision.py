@@ -442,6 +442,8 @@ class VisionAgent(BrainAgent):
 
             res_a = f"{img_a.width}x{img_a.height}"
             res_b = f"{img_b.width}x{img_b.height}"
+        except Exception as e:
+            return self.to_json({"error": f"Hash computation failed: {e}"})
         finally:
             img_a.close()
             img_b.close()

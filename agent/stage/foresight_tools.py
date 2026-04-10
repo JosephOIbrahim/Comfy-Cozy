@@ -13,7 +13,11 @@ Registered in agent/tools/__init__.py via the stage module import.
 
 from __future__ import annotations
 
+import logging
+
 from ..tools._util import to_json
+
+log = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Tool schemas
@@ -196,8 +200,8 @@ def _handle_predict_experiment(tool_input: dict) -> str:
                 )
                 result["arbiter_mode"] = ad.mode
                 result["arbiter_reasoning"] = ad.reasoning
-            except Exception:
-                pass
+            except Exception as _arb_exc:  # noqa: BLE001
+                log.warning("Arbiter prioritize_experiment failed: %s", _arb_exc)
 
         return to_json(result)
     except Exception as exc:  # noqa: BLE001

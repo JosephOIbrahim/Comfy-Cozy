@@ -529,3 +529,65 @@ class TestProvisionFamilyAndWireResilience:
         assert "wired" in result
         assert "error" in result["wired"]
         assert result["step"] == "complete"
+
+
+# ---------------------------------------------------------------------------
+# Cycle 41: json.loads guards on discover, wire, download
+# ---------------------------------------------------------------------------
+
+class TestProvisionJsonDecodeGuards:
+    """Cycle 41: provision_pipeline must handle non-JSON from sub-handlers."""
+
+    def test_discover_non_json_returns_error(self):
+        """If discover returns non-JSON, provision_model must return error JSON."""
+        from unittest.mock import patch
+
+        # discover_handle is imported locally inside _handle_provision_model;
+        # patch at the source module to intercept the local binding.
+        with patch("agent.tools.comfy_discover.handle", return_value="NOT JSON"):
+            result = json.loads(provision_pipeline.handle("provision_model", {
+                "query": "sdxl base",
+                "model_type": "checkpoints",
+            }))
+        assert "error" in result
+        assert result.get("step") == "discover"
+
+    def test_download_non_json_returns_error(self):
+        """If download_model returns non-JSON, provision_model must return error JSON."""
+        from unittest.mock import patch
+
+        good_discover = json.dumps({
+            "results": [{"filename": "model.safetensors", "url": "http://example.com/m.safetensors",
+                         "installed": False, "model_type": "checkpoints"}]
+        })
+
+        with patch("agent.tools.comfy_discover.handle", return_value=good_discover), \
+             patch("agent.tools.comfy_provision.handle", return_value="GARBAGE"):
+            result = json.loads(provision_pipeline.handle("provision_model", {
+                "query": "sdxl base",
+                "model_type": "checkpoints",
+                "auto_download": True,
+            }))
+        assert "error" in result
+        assert result.get("step") == "download"
+
+    def test_wire_non_json_falls_back_gracefully(self):
+        """If auto_wire returns non-JSON for already-installed model, response still succeeds."""
+        from unittest.mock import patch
+
+        good_discover = json.dumps({
+            "results": [{"filename": "model.safetensors", "installed": True, "model_type": "checkpoints"}]
+        })
+
+        with patch("agent.tools.comfy_discover.handle", return_value=good_discover), \
+             patch("agent.tools.auto_wire.handle", return_value="BAD JSON"):
+            result = json.loads(provision_pipeline.handle("provision_model", {
+                "query": "sdxl base",
+                "model_type": "checkpoints",
+                "auto_wire": True,
+            }))
+        # The provision itself succeeds (model already installed)
+        # wired field should be a dict, not a crash
+        assert "error" not in result or result.get("step") == "already_installed"
+        if "wired" in result:
+            assert isinstance(result["wired"], dict)
