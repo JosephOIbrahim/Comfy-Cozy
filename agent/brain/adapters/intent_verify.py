@@ -104,12 +104,20 @@ def verify_against_intent(verify_result: dict, criteria: dict) -> dict:
         }
     """
     scores = verify_result.get("scores", {})
+    if not isinstance(scores, dict):  # Cycle 71: guard non-dict (.values() crashes)
+        scores = {}
     analysis = verify_result.get("analysis", "")
+    if not isinstance(analysis, str):  # Cycle 71: guard non-string (.lower() crashes)
+        analysis = ""
     suggestions = verify_result.get("suggestions", [])
+    if not isinstance(suggestions, list):  # Cycle 71: guard non-list (iteration crashes)
+        suggestions = []
 
     threshold = criteria.get("quality_threshold", 0.6)
     style_match = criteria.get("style_match", "unspecified")
     expected_attrs = criteria.get("expected_attributes", [])
+    if not isinstance(expected_attrs, list):  # Cycle 71: guard non-list (attr.startswith() crashes)
+        expected_attrs = []
 
     # Compute average quality score
     numeric_scores = [
@@ -141,12 +149,16 @@ def verify_against_intent(verify_result: dict, criteria: dict) -> dict:
 
     # Check expected attributes against suggestions (deviations)
     for attr in expected_attrs:
+        if not isinstance(attr, str):  # Cycle 71: guard non-string list element
+            continue
         if attr.startswith("style:"):
             continue  # already handled above
         # If the attribute explicitly expects good detail but suggestions
         # mention detail issues, flag it
         attr_lower = attr.lower()
         for suggestion in suggestions:
+            if not isinstance(suggestion, str):  # Cycle 71: guard non-string suggestion
+                continue
             suggestion_lower = suggestion.lower()
             if (
                 "detail" in attr_lower

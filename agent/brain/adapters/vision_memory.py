@@ -27,8 +27,14 @@ def vision_to_outcome(vision_analysis: dict) -> dict:
         }
     """
     analysis_text = vision_analysis.get("analysis", "")
+    if not isinstance(analysis_text, str):  # Cycle 71: guard non-string from cross-agent data
+        analysis_text = ""
     scores = vision_analysis.get("scores", {})
+    if not isinstance(scores, dict):  # Cycle 71: guard non-dict (.values() would crash)
+        scores = {}
     suggestions = vision_analysis.get("suggestions", [])
+    if not isinstance(suggestions, list):  # Cycle 71: guard non-list (slicing/len crash)
+        suggestions = []
 
     # Derive a result category from scores (if present)
     avg_score = 0.0

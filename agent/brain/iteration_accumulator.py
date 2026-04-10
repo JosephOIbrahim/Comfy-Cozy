@@ -275,16 +275,26 @@ class IterationAccumulatorAgent(BrainAgent):
             trigger = tool_input.get("trigger")
             if iteration is None:
                 return self.to_json({"error": "iteration is required."})
+            try:  # Cycle 71: coerce string "5" to int before storing
+                iteration = int(iteration)
+            except (TypeError, ValueError):
+                return self.to_json({"error": "iteration must be an integer."})
             if not step_type or not isinstance(step_type, str):
                 return self.to_json({"error": "type is required and must be a non-empty string."})
             if not trigger or not isinstance(trigger, str):
                 return self.to_json({"error": "trigger is required and must be a non-empty string."})
+            patches_raw = tool_input.get("patches", [])
+            if not isinstance(patches_raw, list):  # Cycle 71: guard non-list patches
+                return self.to_json({"error": "patches must be an array."})
+            params_raw = tool_input.get("params", {})
+            if not isinstance(params_raw, dict):  # Cycle 71: guard non-dict params
+                return self.to_json({"error": "params must be an object."})
             result = self.record_step(
                 iteration=iteration,
                 step_type=step_type,
                 trigger=trigger,
-                patches=tool_input.get("patches", []),
-                params=tool_input.get("params", {}),
+                patches=patches_raw,
+                params=params_raw,
                 feedback=tool_input.get("feedback", ""),
                 observation=tool_input.get("observation", ""),
                 session=session,

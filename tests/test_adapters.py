@@ -7,6 +7,7 @@ adapter registry routing, purity, and the verify↔intent round-trip.
 from __future__ import annotations
 
 import copy
+import json
 
 import pytest
 
@@ -479,3 +480,183 @@ class TestAdapterPurity:
         r1 = intent_to_criteria(intent)
         r2 = intent_to_criteria(intent_copy)
         assert r1 == r2
+
+
+# ---------------------------------------------------------------------------
+# Cycle 71: adapter type-safety guards (non-dict scores, non-list suggestions, etc.)
+# ---------------------------------------------------------------------------
+
+class TestVisionMemoryTypeGuardsCycle71:
+    """Cycle 71: vision_to_outcome must not crash on malformed cross-agent data."""
+
+    def test_non_dict_scores_does_not_crash(self):
+        """scores='high' (string) must not crash with AttributeError on .values()."""
+        result = vision_to_outcome({
+            "analysis": "looks good",
+            "scores": "high",  # string instead of dict — Cycle 71 guard
+            "suggestions": [],
+        })
+        assert isinstance(result, dict)
+        assert result["details"]["scores"] == {}  # degraded safely
+
+    def test_non_list_suggestions_does_not_crash(self):
+        """suggestions='add more detail' (string) must not crash on slicing."""
+        result = vision_to_outcome({
+            "analysis": "looks good",
+            "scores": {},
+            "suggestions": "add more detail",  # string instead of list — Cycle 71 guard
+        })
+        assert isinstance(result, dict)
+        assert result["details"]["suggestion_count"] == 0  # degraded safely
+
+    def test_non_string_analysis_does_not_crash(self):
+        """analysis=42 (int) must not crash with AttributeError on slicing."""
+        result = vision_to_outcome({
+            "analysis": 42,  # int instead of string — Cycle 71 guard
+            "scores": {"quality": 0.7},
+            "suggestions": [],
+        })
+        assert isinstance(result, dict)
+        assert result["details"]["analysis_summary"] == ""  # degraded safely
+
+    def test_valid_data_still_works(self):
+        """Well-formed input must produce correct output (regression check)."""
+        result = vision_to_outcome({
+            "analysis": "Excellent composition with strong use of light.",
+            "scores": {"quality": 0.9, "composition": 0.85},
+            "suggestions": ["consider more contrast"],
+        })
+        assert result["result"] == "success"
+        assert result["details"]["suggestion_count"] == 1
+        assert result["details"]["average_score"] > 0.8
+
+
+class TestIntentVerifyTypeGuardsCycle71:
+    """Cycle 71: verify_against_intent must not crash on malformed cross-agent data."""
+
+    from agent.brain.adapters.intent_verify import verify_against_intent, intent_to_criteria
+
+    def test_non_dict_scores_does_not_crash(self):
+        """verify_against_intent with scores='high' (string) must not crash."""
+        from agent.brain.adapters.intent_verify import verify_against_intent, intent_to_criteria
+        criteria = intent_to_criteria({"description": "cinematic", "parameters": {}, "style": ""})
+        result = verify_against_intent(
+            verify_result={
+                "analysis": "looks great",
+                "scores": "high",  # string instead of dict — Cycle 71 guard
+                "suggestions": [],
+            },
+            criteria=criteria,
+        )
+        assert isinstance(result, dict)
+        assert "intent_preserved" in result
+
+    def test_non_string_analysis_does_not_crash(self):
+        """verify_against_intent with analysis=None must not crash on .lower()."""
+        from agent.brain.adapters.intent_verify import verify_against_intent, intent_to_criteria
+        criteria = intent_to_criteria({"description": "test", "parameters": {}, "style": "dark"})
+        result = verify_against_intent(
+            verify_result={
+                "analysis": None,  # None instead of string — Cycle 71 guard
+                "scores": {"quality": 0.7},
+                "suggestions": [],
+            },
+            criteria=criteria,
+        )
+        assert isinstance(result, dict)
+        assert "deviations" in result
+
+    def test_non_list_suggestions_does_not_crash(self):
+        """verify_against_intent with suggestions='try this' must not crash on iteration."""
+        from agent.brain.adapters.intent_verify import verify_against_intent, intent_to_criteria
+        criteria = intent_to_criteria({"description": "high detail", "parameters": {"steps": 30}, "style": ""})
+        result = verify_against_intent(
+            verify_result={
+                "analysis": "looks good",
+                "scores": {"quality": 0.8},
+                "suggestions": "add more detail",  # string instead of list — Cycle 71 guard
+            },
+            criteria=criteria,
+        )
+        assert isinstance(result, dict)
+
+    def test_non_list_expected_attrs_in_criteria_does_not_crash(self):
+        """verify_against_intent with expected_attributes='x' must not crash."""
+        from agent.brain.adapters.intent_verify import verify_against_intent
+        result = verify_against_intent(
+            verify_result={"analysis": "ok", "scores": {}, "suggestions": []},
+            criteria={
+                "expected_attributes": "sharp_details",  # string instead of list — Cycle 71 guard
+                "quality_threshold": 0.6,
+                "style_match": "unspecified",
+            },
+        )
+        assert isinstance(result, dict)
+
+    def test_non_string_attr_in_list_does_not_crash(self):
+        """expected_attributes=[42, 'real'] must not crash on attr.startswith()."""
+        from agent.brain.adapters.intent_verify import verify_against_intent
+        result = verify_against_intent(
+            verify_result={"analysis": "ok", "scores": {}, "suggestions": []},
+            criteria={
+                "expected_attributes": [42, "real"],  # non-string element — Cycle 71 guard
+                "quality_threshold": 0.6,
+                "style_match": "unspecified",
+            },
+        )
+        assert isinstance(result, dict)
+
+
+class TestIterationAccumulatorTypeGuardsCycle71:
+    """Cycle 71: record_iteration_step must validate iteration/patches/params types."""
+
+    def test_string_iteration_coerced_to_int(self):
+        """iteration='3' (string) must be coerced to int, not stored as string."""
+        from agent.brain import handle
+        # Start tracking first
+        handle("start_iteration_tracking", {"intent_summary": "test"})
+        result = json.loads(handle("record_iteration_step", {
+            "iteration": "3",  # string instead of int — Cycle 71 guard
+            "type": "parameter_change",
+            "trigger": "user_request",
+        }))
+        assert "error" not in result, f"Should coerce '3' to int, got error: {result.get('error')}"
+        assert result.get("iteration") == 3  # stored as int, not string
+
+    def test_non_numeric_iteration_returns_error(self):
+        """iteration='abc' must return structured error, not TypeError."""
+        from agent.brain import handle
+        handle("start_iteration_tracking", {"intent_summary": "test2"})
+        result = json.loads(handle("record_iteration_step", {
+            "iteration": "abc",  # non-numeric — Cycle 71 guard
+            "type": "parameter_change",
+            "trigger": "user_request",
+        }))
+        assert "error" in result
+        assert "iteration" in result["error"].lower()
+
+    def test_non_list_patches_returns_error(self):
+        """patches='some_patch' (string) must return structured error."""
+        from agent.brain import handle
+        handle("start_iteration_tracking", {"intent_summary": "test3"})
+        result = json.loads(handle("record_iteration_step", {
+            "iteration": 1,
+            "type": "parameter_change",
+            "trigger": "user_request",
+            "patches": "not_a_list",  # string instead of list — Cycle 71 guard
+        }))
+        assert "error" in result
+        assert "patches" in result["error"].lower()
+
+    def test_non_dict_params_returns_error(self):
+        """params=[1, 2] (list) must return structured error."""
+        from agent.brain import handle
+        handle("start_iteration_tracking", {"intent_summary": "test4"})
+        result = json.loads(handle("record_iteration_step", {
+            "iteration": 1,
+            "type": "parameter_change",
+            "trigger": "user_request",
+            "params": [1, 2, 3],  # list instead of dict — Cycle 71 guard
+        }))
+        assert "error" in result
+        assert "params" in result["error"].lower()
