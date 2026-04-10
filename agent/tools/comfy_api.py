@@ -11,7 +11,7 @@ import httpx
 
 from ..circuit_breaker import COMFYUI_BREAKER
 from ..config import COMFYUI_URL
-from ._util import to_json
+from ._util import to_json, validate_path
 
 # ---------------------------------------------------------------------------
 # Shared HTTP client (connection pool)
@@ -269,7 +269,9 @@ def _handle_get_all_nodes(tool_input: dict) -> str:
 
 
 def _handle_get_node_info(tool_input: dict) -> str:
-    node_type = tool_input["node_type"]
+    node_type = tool_input.get("node_type")  # Cycle 46: guard required field
+    if not node_type or not isinstance(node_type, str):
+        return to_json({"error": "node_type is required and must be a non-empty string."})
     all_info = _get(f"/object_info/{node_type}", timeout=10.0)
 
     info = all_info.get(node_type)

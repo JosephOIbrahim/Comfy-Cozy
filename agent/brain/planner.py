@@ -21,12 +21,21 @@ log = logging.getLogger(__name__)
 # Per-session locks — prevents lost-update race on load-modify-save. (Cycle 34 fix)
 _plan_locks: dict[str, threading.Lock] = {}
 _plan_locks_mutex = threading.Lock()
+_MAX_PLAN_LOCKS = 100  # Cycle 46: FIFO cap prevents unbounded growth in long sessions
 
 
 def _get_plan_lock(session: str) -> threading.Lock:
-    """Return (creating if needed) a per-session lock for plan mutations."""
+    """Return (creating if needed) a per-session lock for plan mutations.
+
+    Evicts the oldest entry when the dict exceeds _MAX_PLAN_LOCKS (FIFO).
+    Safe: if the evicted session comes back, a new lock is created for it.
+    """
     with _plan_locks_mutex:
         if session not in _plan_locks:
+            if len(_plan_locks) >= _MAX_PLAN_LOCKS:
+                # Evict oldest entry (insertion-order guaranteed by dict in Python 3.7+)
+                oldest = next(iter(_plan_locks))
+                del _plan_locks[oldest]
             _plan_locks[session] = threading.Lock()
         return _plan_locks[session]
 

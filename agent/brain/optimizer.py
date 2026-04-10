@@ -561,7 +561,9 @@ class OptimizerAgent(BrainAgent):
         })
 
     def _handle_apply_optimization(self, tool_input: dict) -> str:
-        opt_id = tool_input["optimization_id"]
+        opt_id = tool_input.get("optimization_id")  # Cycle 46: guard required field
+        if not opt_id or not isinstance(opt_id, str):
+            return self.to_json({"error": "optimization_id is required and must be a non-empty string."})
         params = tool_input.get("params", {})
 
         wf = self._resolve_workflow(tool_input)

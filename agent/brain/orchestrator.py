@@ -189,9 +189,15 @@ class OrchestratorAgent(BrainAgent):
             return self.to_json({"error": f"Unknown orchestrator tool: {name}"})
 
     def _handle_spawn_subtask(self, tool_input: dict) -> str:
-        task_description = tool_input["task_description"]
-        profile = tool_input["profile"]
-        tool_calls = tool_input["tool_calls"]
+        task_description = tool_input.get("task_description")  # Cycle 46: guard required fields
+        profile = tool_input.get("profile")
+        tool_calls = tool_input.get("tool_calls")
+        if not task_description or not isinstance(task_description, str):
+            return self.to_json({"error": "task_description is required and must be a non-empty string."})
+        if not profile or not isinstance(profile, str):
+            return self.to_json({"error": "profile is required and must be a non-empty string."})
+        if not isinstance(tool_calls, list):
+            return self.to_json({"error": "tool_calls is required and must be a list."})
 
         with self._tasks_lock:
             self._evict_stale_tasks()

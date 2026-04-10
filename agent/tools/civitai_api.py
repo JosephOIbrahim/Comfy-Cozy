@@ -14,7 +14,7 @@ import httpx
 
 from ..config import CIVITAI_API_KEY, MODELS_DIR
 from ..rate_limiter import CIVITAI_LIMITER
-from ._util import to_json
+from ._util import to_json, validate_path
 
 log = logging.getLogger(__name__)
 
@@ -256,7 +256,9 @@ def _parse_model_detail(model: dict) -> dict:
 # ---------------------------------------------------------------------------
 
 def _handle_search_civitai(tool_input: dict) -> str:
-    query = tool_input["query"]
+    query = tool_input.get("query")  # Cycle 46: guard required field
+    if not query or not isinstance(query, str):
+        return to_json({"error": "query is required and must be a non-empty string."})
     model_type = tool_input.get("model_type")
     base_model = tool_input.get("base_model")
     sort = tool_input.get("sort", "most_downloaded")
@@ -326,7 +328,7 @@ def _handle_search_civitai(tool_input: dict) -> str:
 
 
 def _handle_get_civitai_model(tool_input: dict) -> str:
-    model_id = tool_input["model_id"]
+    model_id = tool_input.get("model_id")  # Cycle 46: guard required field (was direct access)
 
     if not isinstance(model_id, int) or model_id < 1:  # Cycle 42: runtime guard
         return to_json({"error": f"model_id must be a positive integer, got {model_id!r}."})

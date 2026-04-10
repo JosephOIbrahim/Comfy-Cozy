@@ -183,3 +183,62 @@ class TestSubtaskDaemonThread:
         assert len(captured_threads) >= 1, "No subtask thread was recorded"
         for t in captured_threads:
             assert t.daemon is True, f"Thread {t.name!r} is not a daemon thread"
+
+
+# ---------------------------------------------------------------------------
+# Cycle 46 — spawn_subtask required field guards
+# ---------------------------------------------------------------------------
+
+class TestSpawnSubtaskRequiredFields:
+    """spawn_subtask must return structured errors when required fields are missing."""
+
+    def test_missing_task_description_returns_error(self):
+        result = json.loads(handle("spawn_subtask", {
+            "profile": "researcher",
+            "tool_calls": [],
+        }))
+        assert "error" in result
+        assert "task_description" in result["error"].lower()
+
+    def test_missing_profile_returns_error(self):
+        result = json.loads(handle("spawn_subtask", {
+            "task_description": "do something",
+            "tool_calls": [],
+        }))
+        assert "error" in result
+        assert "profile" in result["error"].lower()
+
+    def test_missing_tool_calls_returns_error(self):
+        result = json.loads(handle("spawn_subtask", {
+            "task_description": "do something",
+            "profile": "researcher",
+        }))
+        assert "error" in result
+        assert "tool_calls" in result["error"].lower()
+
+    def test_none_task_description_returns_error(self):
+        result = json.loads(handle("spawn_subtask", {
+            "task_description": None,
+            "profile": "researcher",
+            "tool_calls": [],
+        }))
+        assert "error" in result
+
+    def test_non_list_tool_calls_returns_error(self):
+        result = json.loads(handle("spawn_subtask", {
+            "task_description": "do something",
+            "profile": "researcher",
+            "tool_calls": "not_a_list",
+        }))
+        assert "error" in result
+        assert "tool_calls" in result["error"].lower()
+
+    def test_empty_tool_calls_list_passes_guard(self):
+        """Empty list is a valid tool_calls value — guard must not reject it."""
+        result = json.loads(handle("spawn_subtask", {
+            "task_description": "analyze models",
+            "profile": "researcher",
+            "tool_calls": [],
+        }))
+        # Guard passed — may fail for other reasons (profile validation, etc.) but not field guard
+        assert "tool_calls" not in result.get("error", "").lower()

@@ -428,3 +428,89 @@ class TestHashComputeException:
                 "image_b": str(path),
             }))
         assert "error" in result
+
+
+# ---------------------------------------------------------------------------
+# Cycle 46 — Vision handler required field guards
+# ---------------------------------------------------------------------------
+
+class TestAnalyzeImageRequiredField:
+    """analyze_image must return structured error when image_path is missing or invalid."""
+
+    def test_missing_image_path_returns_error(self):
+        result = json.loads(handle("analyze_image", {}))
+        assert "error" in result
+        assert "image_path" in result["error"].lower()
+
+    def test_empty_image_path_returns_error(self):
+        result = json.loads(handle("analyze_image", {"image_path": ""}))
+        assert "error" in result
+
+    def test_none_image_path_returns_error(self):
+        result = json.loads(handle("analyze_image", {"image_path": None}))
+        assert "error" in result
+
+    def test_integer_image_path_returns_error(self):
+        result = json.loads(handle("analyze_image", {"image_path": 42}))
+        assert "error" in result
+
+
+class TestCompareOutputsRequiredFields:
+    """compare_outputs must return structured error when image_a or image_b is missing."""
+
+    def test_missing_image_a_returns_error(self):
+        result = json.loads(handle("compare_outputs", {"image_b": "/some/b.png"}))
+        assert "error" in result
+        assert "image_a" in result["error"].lower()
+
+    def test_missing_image_b_returns_error(self):
+        result = json.loads(handle("compare_outputs", {"image_a": "/some/a.png"}))
+        assert "error" in result
+        assert "image_b" in result["error"].lower()
+
+    def test_none_image_a_returns_error(self):
+        result = json.loads(handle("compare_outputs", {"image_a": None, "image_b": "/b.png"}))
+        assert "error" in result
+
+    def test_none_image_b_returns_error(self):
+        result = json.loads(handle("compare_outputs", {"image_a": "/a.png", "image_b": None}))
+        assert "error" in result
+
+
+class TestSuggestImprovementsRequiredFields:
+    """suggest_improvements must return structured error when required fields are missing."""
+
+    def test_missing_image_path_returns_error(self):
+        result = json.loads(handle("suggest_improvements", {
+            "workflow_summary": "txt2img pipeline",
+        }))
+        assert "error" in result
+        assert "image_path" in result["error"].lower()
+
+    def test_missing_workflow_summary_returns_error(self):
+        result = json.loads(handle("suggest_improvements", {
+            "image_path": "/some/image.png",
+        }))
+        assert "error" in result
+        assert "workflow_summary" in result["error"].lower()
+
+    def test_none_workflow_summary_returns_error(self):
+        result = json.loads(handle("suggest_improvements", {
+            "image_path": "/some/image.png",
+            "workflow_summary": None,
+        }))
+        assert "error" in result
+
+
+class TestHashCompareRequiredFields:
+    """hash_compare_images must return structured error when image_a or image_b is missing."""
+
+    def test_missing_image_a_returns_error(self):
+        result = json.loads(handle("hash_compare_images", {"image_b": "/b.png"}))
+        assert "error" in result
+        assert "image_a" in result["error"].lower()
+
+    def test_missing_image_b_returns_error(self):
+        result = json.loads(handle("hash_compare_images", {"image_a": "/a.png"}))
+        assert "error" in result
+        assert "image_b" in result["error"].lower()

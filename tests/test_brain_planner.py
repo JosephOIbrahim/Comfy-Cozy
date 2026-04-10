@@ -523,3 +523,64 @@ class TestPlanGoalLockConsistency:
         assert not errors, f"Concurrent get_plan raised: {errors}"
         assert len(get_results) == 5
         assert all("error" not in r for r in get_results)
+
+
+# ---------------------------------------------------------------------------
+# Cycle 46 — _plan_locks FIFO eviction cap
+# ---------------------------------------------------------------------------
+
+class TestPlanLocksFifoCap:
+    """_plan_locks dict must not grow beyond _MAX_PLAN_LOCKS entries."""
+
+    def test_plan_locks_capped_at_max(self):
+        """After _MAX_PLAN_LOCKS+10 unique sessions, dict stays at or below the cap."""
+        from agent.brain import planner as planner_mod
+
+        with planner_mod._plan_locks_mutex:
+            planner_mod._plan_locks.clear()
+
+        overflow = planner_mod._MAX_PLAN_LOCKS + 10
+        for i in range(overflow):
+            planner_mod._get_plan_lock(f"session_cap_{i}")
+
+        with planner_mod._plan_locks_mutex:
+            actual = len(planner_mod._plan_locks)
+
+        assert actual <= planner_mod._MAX_PLAN_LOCKS, (
+            f"_plan_locks grew to {actual}, must stay ≤ {planner_mod._MAX_PLAN_LOCKS}"
+        )
+
+    def test_max_plan_locks_constant_defined(self):
+        """_MAX_PLAN_LOCKS must exist and be a positive integer."""
+        from agent.brain import planner as planner_mod
+        assert isinstance(planner_mod._MAX_PLAN_LOCKS, int)
+        assert planner_mod._MAX_PLAN_LOCKS > 0
+
+    def test_existing_session_returns_same_lock(self):
+        """Calling _get_plan_lock twice for same session returns the same Lock object."""
+        from agent.brain import planner as planner_mod
+
+        with planner_mod._plan_locks_mutex:
+            planner_mod._plan_locks.clear()
+
+        lock_a = planner_mod._get_plan_lock("same_session")
+        lock_b = planner_mod._get_plan_lock("same_session")
+        assert lock_a is lock_b
+
+    def test_evicted_session_gets_new_lock(self):
+        """A session evicted by the cap gets a fresh lock on re-entry (not an error)."""
+        from agent.brain import planner as planner_mod
+
+        with planner_mod._plan_locks_mutex:
+            planner_mod._plan_locks.clear()
+
+        # Fill to cap with other sessions
+        for i in range(planner_mod._MAX_PLAN_LOCKS):
+            planner_mod._get_plan_lock(f"filler_{i}")
+
+        # Request a new session (will evict the oldest filler and add this one)
+        new_lock = planner_mod._get_plan_lock("new_session_after_eviction")
+        assert new_lock is not None
+
+        with planner_mod._plan_locks_mutex:
+            assert "new_session_after_eviction" in planner_mod._plan_locks

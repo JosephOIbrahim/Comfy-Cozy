@@ -376,3 +376,36 @@ class TestOptimizerPatchResultValidation:
         }))
         assert "error" not in result
         assert result.get("nodes_updated") == []
+
+
+# ---------------------------------------------------------------------------
+# Cycle 46 — apply_optimization required field guard
+# ---------------------------------------------------------------------------
+
+class TestApplyOptimizationRequiredField:
+    """apply_optimization must return structured error when optimization_id is missing."""
+
+    def test_missing_optimization_id_returns_error(self):
+        result = json.loads(handle("apply_optimization", {}))
+        assert "error" in result
+        assert "optimization_id" in result["error"].lower()
+
+    def test_empty_optimization_id_returns_error(self):
+        result = json.loads(handle("apply_optimization", {"optimization_id": ""}))
+        assert "error" in result
+
+    def test_none_optimization_id_returns_error(self):
+        result = json.loads(handle("apply_optimization", {"optimization_id": None}))
+        assert "error" in result
+
+    def test_integer_optimization_id_returns_error(self):
+        result = json.loads(handle("apply_optimization", {"optimization_id": 99}))
+        assert "error" in result
+
+    def test_valid_optimization_id_passes_guard(self):
+        """A valid string optimization_id must not be blocked by the guard."""
+        result = json.loads(handle("apply_optimization", {
+            "optimization_id": "nonexistent_opt_id_xyz",
+        }))
+        # Must not be the required-field error
+        assert "optimization_id" not in result.get("error", "").lower() or "required" not in result.get("error", "").lower()

@@ -1093,3 +1093,77 @@ class TestSearchUnifiedJsonGuard:
         assert error is None
         assert len(results) == 1
         assert results[0]["name"] == "TestModel"
+
+
+# ---------------------------------------------------------------------------
+# Cycle 46 — path traversal guard + discover required field guard
+# ---------------------------------------------------------------------------
+
+class TestFindMissingNodesPathTraversal:
+    """_handle_find_missing_nodes must reject path traversal before reading."""
+
+    def test_path_traversal_dotdot_rejected(self):
+        """Paths containing '..' must be blocked, not followed."""
+        from agent.tools import comfy_discover
+        result = json.loads(comfy_discover.handle("find_missing_nodes", {
+            "path": "../../etc/passwd",
+        }))
+        assert "error" in result
+        # Must be an access/traversal error, not a file-not-found error
+        error_lower = result["error"].lower()
+        assert any(word in error_lower for word in ("access", "denied", "allowed", "unsafe")), (
+            f"Expected access-denied error, got: {result['error']!r}"
+        )
+
+    def test_path_guard_does_not_block_valid_call(self):
+        """validate_path returning None must not generate an error."""
+        from unittest.mock import patch
+        from agent.tools import comfy_discover
+        # Returning None from validate_path = path is safe. No workflow loaded → different error.
+        with patch("agent.tools.comfy_discover.validate_path", return_value=None), \
+             patch("pathlib.Path.exists", return_value=False):
+            result = json.loads(comfy_discover.handle("find_missing_nodes", {
+                "path": "/some/safe/workflow.json",
+            }))
+        # Must not be a traversal error
+        if "error" in result:
+            error_lower = result["error"].lower()
+            assert "access" not in error_lower and "denied" not in error_lower
+
+
+class TestDiscoverRequiredField:
+    """discover tool must return structured error when query is missing or invalid."""
+
+    def test_missing_query_returns_error(self):
+        from agent.tools import comfy_discover
+        result = json.loads(comfy_discover.handle("discover", {}))
+        assert "error" in result
+        assert "query" in result["error"].lower()
+
+    def test_empty_string_query_returns_error(self):
+        from agent.tools import comfy_discover
+        result = json.loads(comfy_discover.handle("discover", {"query": ""}))
+        assert "error" in result
+
+    def test_none_query_returns_error(self):
+        from agent.tools import comfy_discover
+        result = json.loads(comfy_discover.handle("discover", {"query": None}))
+        assert "error" in result
+
+    def test_integer_query_returns_error(self):
+        from agent.tools import comfy_discover
+        result = json.loads(comfy_discover.handle("discover", {"query": 42}))
+        assert "error" in result
+
+    def test_valid_query_passes_guard(self):
+        """A non-empty string query must pass the guard (may fail for other reasons)."""
+        from unittest.mock import patch
+        from agent.tools import comfy_discover
+        with patch.object(comfy_discover, "_search_nodes_unified", return_value=[]), \
+             patch.object(comfy_discover, "_search_models_unified", return_value=[]), \
+             patch.object(comfy_discover, "_search_civitai_unified", return_value=([], None)), \
+             patch.object(comfy_discover, "_search_hf_unified", return_value=([], None)), \
+             patch.object(comfy_discover, "_search_catalog_unified", return_value=[]):
+            result = json.loads(comfy_discover.handle("discover", {"query": "flux model"}))
+        # Must not be a required-field error
+        assert "query" not in result.get("error", "").lower()

@@ -125,3 +125,38 @@ class TestDemoScenarios:
     def test_scenario_durations_present(self):
         for name, scenario in DEMO_SCENARIOS.items():
             assert "duration_estimate" in scenario, f"{name} missing duration_estimate"
+
+
+# ---------------------------------------------------------------------------
+# Cycle 46 — Demo handler required field guards
+# ---------------------------------------------------------------------------
+
+class TestStartDemoRequiredField:
+    """start_demo must return structured error when scenario is missing or invalid."""
+
+    def test_missing_scenario_returns_error(self):
+        result = json.loads(handle("start_demo", {}))
+        assert "error" in result
+        assert "scenario" in result["error"].lower()
+
+    def test_empty_scenario_returns_error(self):
+        result = json.loads(handle("start_demo", {"scenario": ""}))
+        assert "error" in result
+
+    def test_none_scenario_returns_error(self):
+        result = json.loads(handle("start_demo", {"scenario": None}))
+        assert "error" in result
+
+    def test_valid_scenario_not_blocked(self):
+        """The guard must not block the 'list' scenario value."""
+        result = json.loads(handle("start_demo", {"scenario": "list"}))
+        assert "error" not in result or "scenario" not in result.get("error", "").lower()
+
+
+class TestDemoCheckpointRequiredField:
+    """demo_checkpoint must return structured error when step_completed is missing."""
+
+    def test_missing_step_completed_returns_error(self):
+        result = json.loads(handle("demo_checkpoint", {}))
+        assert "error" in result
+        assert "step_completed" in result["error"].lower()

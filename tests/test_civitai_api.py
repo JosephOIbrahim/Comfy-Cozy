@@ -380,3 +380,34 @@ class TestGetCivitaiModelIdValidation:
             result = json.loads(civitai_api.handle("get_civitai_model", {"model_id": 1}))
         # Should not have a validation error
         assert result.get("error") != "model_id must be a positive integer, got 1."
+
+
+# ---------------------------------------------------------------------------
+# Cycle 46 — required field guards for get_civitai_trending and get_civitai_model
+# ---------------------------------------------------------------------------
+
+class TestGetCivitaiModelRequiredField:
+    """get_civitai_model must return structured error when model_id is missing."""
+
+    def test_missing_model_id_returns_error(self):
+        """Missing model_id must return structured error, not KeyError."""
+        from agent.tools import civitai_api
+        result = json.loads(civitai_api.handle("get_civitai_model", {}))
+        assert "error" in result
+        # Must be the type-validation error, not a Python KeyError
+        assert "model_id" in result["error"].lower() or "integer" in result["error"].lower()
+
+    def test_none_model_id_returns_error(self):
+        from agent.tools import civitai_api
+        result = json.loads(civitai_api.handle("get_civitai_model", {"model_id": None}))
+        assert "error" in result
+
+    def test_string_model_id_returns_error(self):
+        from agent.tools import civitai_api
+        result = json.loads(civitai_api.handle("get_civitai_model", {"model_id": "123"}))
+        assert "error" in result
+
+    def test_zero_model_id_returns_error(self):
+        from agent.tools import civitai_api
+        result = json.loads(civitai_api.handle("get_civitai_model", {"model_id": 0}))
+        assert "error" in result

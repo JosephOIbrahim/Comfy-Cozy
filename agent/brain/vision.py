@@ -227,7 +227,9 @@ class VisionAgent(BrainAgent):
             return self.to_json({"error": f"Unknown vision tool: {name}"})
 
     def _handle_analyze_image(self, tool_input: dict) -> str:
-        image_path = tool_input["image_path"]
+        image_path = tool_input.get("image_path")  # Cycle 46: guard required field
+        if not image_path or not isinstance(image_path, str):
+            return self.to_json({"error": "image_path is required and must be a non-empty string."})
         prompt_used = tool_input.get("prompt_used", "")
         workflow_context = tool_input.get("workflow_context", "")
 
@@ -290,8 +292,12 @@ class VisionAgent(BrainAgent):
         return self.to_json(result)
 
     def _handle_compare_outputs(self, tool_input: dict) -> str:
-        image_a = tool_input["image_a"]
-        image_b = tool_input["image_b"]
+        image_a = tool_input.get("image_a")  # Cycle 46: guard required fields
+        image_b = tool_input.get("image_b")
+        if not image_a or not isinstance(image_a, str):
+            return self.to_json({"error": "image_a is required and must be a non-empty string."})
+        if not image_b or not isinstance(image_b, str):
+            return self.to_json({"error": "image_b is required and must be a non-empty string."})
         change_desc = tool_input.get("change_description", "")
 
         try:
@@ -352,8 +358,12 @@ class VisionAgent(BrainAgent):
         return self.to_json(result)
 
     def _handle_suggest_improvements(self, tool_input: dict) -> str:
-        image_path = tool_input["image_path"]
-        workflow_summary = tool_input["workflow_summary"]
+        image_path = tool_input.get("image_path")  # Cycle 46: guard required fields
+        workflow_summary = tool_input.get("workflow_summary")
+        if not image_path or not isinstance(image_path, str):
+            return self.to_json({"error": "image_path is required and must be a non-empty string."})
+        if not workflow_summary or not isinstance(workflow_summary, str):
+            return self.to_json({"error": "workflow_summary is required and must be a non-empty string."})
         goal = tool_input.get("goal", "")
 
         try:
@@ -401,8 +411,12 @@ class VisionAgent(BrainAgent):
         return self.to_json(result)
 
     def _handle_hash_compare(self, tool_input: dict) -> str:
-        image_a = tool_input["image_a"]
-        image_b = tool_input["image_b"]
+        image_a = tool_input.get("image_a")  # Cycle 46: guard required fields
+        image_b = tool_input.get("image_b")
+        if not image_a or not isinstance(image_a, str):
+            return self.to_json({"error": "image_a is required and must be a non-empty string."})
+        if not image_b or not isinstance(image_b, str):
+            return self.to_json({"error": "image_b is required and must be a non-empty string."})
 
         if not _HAS_PIL:
             return self.to_json({

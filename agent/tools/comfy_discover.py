@@ -20,7 +20,7 @@ import httpx
 
 from ..config import COMFYUI_URL, CUSTOM_NODES_DIR, MODELS_DIR, MODEL_CATALOG_PATH
 from ..rate_limiter import HUGGINGFACE_LIMITER
-from ._util import to_json
+from ._util import to_json, validate_path
 
 log = logging.getLogger(__name__)
 
@@ -777,7 +777,9 @@ def _annotate_provision_hints(results: list[dict]) -> None:
 
 def _handle_discover(tool_input: dict) -> str:
     """Unified discovery across registry, CivitAI, and HuggingFace."""
-    query = tool_input["query"]
+    query = tool_input.get("query")  # Cycle 46: guard required field
+    if not query or not isinstance(query, str):
+        return to_json({"error": "query is required and must be a non-empty string."})
     category = tool_input.get("category", "all")
     sources = tool_input.get("sources")
     model_type = tool_input.get("model_type")
@@ -1157,6 +1159,9 @@ def _handle_find_missing_nodes(tool_input: dict) -> str:
 
     # Get workflow
     if path_str:
+        path_err = validate_path(path_str, must_exist=True)  # Cycle 46: path traversal guard
+        if path_err:
+            return to_json({"error": path_err})
         path = Path(path_str)
         if not path.exists():
             return to_json({"error": f"File not found: {path_str}"})

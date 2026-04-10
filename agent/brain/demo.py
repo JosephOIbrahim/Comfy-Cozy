@@ -313,7 +313,9 @@ class DemoAgent(BrainAgent):
                 return self.to_json({"error": f"Unknown demo tool: {name}"})
 
     def _handle_start_demo(self, tool_input: dict) -> str:
-        scenario_name = tool_input["scenario"]
+        scenario_name = tool_input.get("scenario")  # Cycle 46: guard required field
+        if not scenario_name or not isinstance(scenario_name, str):
+            return self.to_json({"error": "scenario is required and must be a non-empty string."})
 
         if scenario_name == "list":
             scenarios = []
@@ -367,7 +369,9 @@ class DemoAgent(BrainAgent):
         })
 
     def _handle_demo_checkpoint(self, tool_input: dict) -> str:
-        step_completed = tool_input["step_completed"]
+        step_completed = tool_input.get("step_completed")  # Cycle 46: guard required field
+        if step_completed is None:
+            return self.to_json({"error": "step_completed is required."})
         notes = tool_input.get("notes", "")
 
         if not self._demo_state["active"]:

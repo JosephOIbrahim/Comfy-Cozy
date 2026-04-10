@@ -351,3 +351,42 @@ class TestGetJsonDecodeGuard:
             from agent.tools.comfy_api import _get
             result = _get("/valid_path")
         assert result == {"status": "ok", "nodes": 42}
+
+
+# ---------------------------------------------------------------------------
+# Cycle 46 — get_node_info required field guard
+# ---------------------------------------------------------------------------
+
+class TestGetNodeInfoRequiredField:
+    """get_node_info must return a structured error when node_type is missing or invalid."""
+
+    def test_missing_node_type_returns_error(self):
+        from agent.tools import comfy_api
+        result = json.loads(comfy_api.handle("get_node_info", {}))
+        assert "error" in result
+        assert "node_type" in result["error"].lower()
+
+    def test_empty_node_type_returns_error(self):
+        from agent.tools import comfy_api
+        result = json.loads(comfy_api.handle("get_node_info", {"node_type": ""}))
+        assert "error" in result
+
+    def test_none_node_type_returns_error(self):
+        from agent.tools import comfy_api
+        result = json.loads(comfy_api.handle("get_node_info", {"node_type": None}))
+        assert "error" in result
+
+    def test_integer_node_type_returns_error(self):
+        from agent.tools import comfy_api
+        result = json.loads(comfy_api.handle("get_node_info", {"node_type": 42}))
+        assert "error" in result
+
+    def test_valid_node_type_not_blocked(self):
+        """Guard must not block valid string node_type values (ComfyUI offline → HTTP error)."""
+        from unittest.mock import patch
+        from agent.tools import comfy_api
+        import httpx
+        # Simulate ComfyUI being offline — the guard should be passed (error from HTTP, not guard)
+        with patch("agent.tools.comfy_api._get", side_effect=httpx.ConnectError("offline")):
+            result = json.loads(comfy_api.handle("get_node_info", {"node_type": "KSampler"}))
+        assert "node_type" not in result.get("error", "").lower()
