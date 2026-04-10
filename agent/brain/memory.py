@@ -325,6 +325,17 @@ class MemoryAgent(BrainAgent):
     def _handle_record_outcome(self, tool_input: dict) -> str:
         session = tool_input.get("session", "default")
 
+        quality_score = tool_input.get("quality_score")
+        if quality_score is not None:
+            try:
+                quality_score = float(quality_score)
+            except (TypeError, ValueError):
+                return self.to_json({"error": "quality_score must be a number in [0, 1]."})
+            if not (0.0 <= quality_score <= 1.0):
+                return self.to_json({
+                    "error": f"quality_score must be in [0, 1], got {quality_score}."
+                })
+
         outcome = {
             "schema_version": OUTCOME_SCHEMA_VERSION,
             "timestamp": time.time(),
@@ -334,7 +345,7 @@ class MemoryAgent(BrainAgent):
             "key_params": tool_input.get("key_params", {}),
             "model_combo": tool_input.get("model_combo", []),
             "render_time_s": tool_input.get("render_time_s"),
-            "quality_score": tool_input.get("quality_score"),
+            "quality_score": quality_score,
             "vision_notes": tool_input.get("vision_notes", []),
             "user_feedback": tool_input.get("user_feedback", "neutral"),
             "goal_id": tool_input.get("goal_id"),
@@ -353,6 +364,11 @@ class MemoryAgent(BrainAgent):
     def _handle_get_learned_patterns(self, tool_input: dict) -> str:
         session = tool_input.get("session", "default")
         query = tool_input.get("query", "all")
+        _VALID_QUERIES = {"best_models", "optimal_params", "quality_trends", "speed_analysis", "all"}
+        if query not in _VALID_QUERIES:
+            return self.to_json({
+                "error": f"Invalid query '{query}'. Valid values: {sorted(_VALID_QUERIES)}."
+            })
         model_filter = tool_input.get("model_filter")
         scope = tool_input.get("scope", "session")
 

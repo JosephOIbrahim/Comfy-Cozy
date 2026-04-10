@@ -362,3 +362,95 @@ class TestArbiterHistoryCap:
         from agent.stage.arbiter import _MAX_DECISIONS, _MAX_FEEDBACK
         assert _MAX_DECISIONS >= 1_000
         assert _MAX_FEEDBACK >= 1_000
+
+
+# ---------------------------------------------------------------------------
+# Cycle 40: Arbiter thread-safety
+# ---------------------------------------------------------------------------
+
+class TestArbiterThreadSafety:
+    """Cycle 40: Arbiter must be thread-safe for concurrent access."""
+
+    def test_lock_exists(self):
+        """Arbiter must have a _lock attribute."""
+        import threading
+        a = Arbiter()
+        assert hasattr(a, "_lock")
+        assert isinstance(a._lock, type(threading.Lock()))
+
+    def test_concurrent_prioritize_no_corruption(self):
+        """Multiple threads calling prioritize_experiment() must not corrupt _decisions."""
+        import threading
+        a = Arbiter()
+        errors = []
+        n = 40
+
+        def _prioritize(i):
+            try:
+                pred = _make_prediction(confidence=0.5 + (i % 5) * 0.05, aesthetic=0.55)
+                a.prioritize_experiment(pred, current_composite=0.5)
+            except Exception as exc:
+                errors.append(str(exc))
+
+        threads = [threading.Thread(target=_prioritize, args=(i,)) for i in range(n)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert not errors, f"Concurrent prioritize raised: {errors}"
+        assert len(a.decisions) == n
+
+    def test_concurrent_summary_and_prioritize_no_crash(self):
+        """summary() called concurrently with prioritize_experiment() must not crash."""
+        import threading
+        a = Arbiter()
+        errors = []
+
+        def _prioritize():
+            pred = _make_prediction(confidence=0.6, aesthetic=0.55)
+            for _ in range(30):
+                try:
+                    a.prioritize_experiment(pred, current_composite=0.5)
+                except Exception as exc:
+                    errors.append(f"prioritize: {exc}")
+
+        def _summarize():
+            for _ in range(20):
+                try:
+                    s = a.summary()
+                    assert isinstance(s, dict)
+                    assert "total_decisions" in s
+                except Exception as exc:
+                    errors.append(f"summary: {exc}")
+
+        t1 = threading.Thread(target=_prioritize)
+        t2 = threading.Thread(target=_summarize)
+        t1.start()
+        t2.start()
+        t1.join()
+        t2.join()
+
+        assert not errors, f"Concurrent summary/prioritize raised: {errors}"
+
+    def test_concurrent_record_feedback_no_corruption(self):
+        """Multiple threads calling record_feedback() must not corrupt _feedback."""
+        import threading
+        a = Arbiter()
+        errors = []
+        n = 30
+
+        def _feedback(i):
+            try:
+                a.record_feedback(CalibrationFeedback("soft_surface", i % 2 == 0))
+            except Exception as exc:
+                errors.append(str(exc))
+
+        threads = [threading.Thread(target=_feedback, args=(i,)) for i in range(n)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert not errors, f"Concurrent record_feedback raised: {errors}"
+        assert len(a.feedback_history) == n

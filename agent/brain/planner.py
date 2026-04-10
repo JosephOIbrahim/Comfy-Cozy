@@ -577,6 +577,10 @@ class PlannerAgent(BrainAgent):
         if not reason or not isinstance(reason, str) or not reason.strip():
             return self.to_json({"error": "reason is required and must be a non-empty string."})
         new_steps_raw = tool_input.get("new_remaining_steps", [])
+        if new_steps_raw is not None and not isinstance(new_steps_raw, list):
+            return self.to_json({
+                "error": "new_remaining_steps must be a list of step dicts (or omitted)."
+            })
         session = tool_input.get("session", "default")
 
         with _get_plan_lock(session):  # Cycle 34: serialize load-modify-save

@@ -793,3 +793,104 @@ class TestRatchetHistoryCap:
         """_MAX_RATCHET_HISTORY module constant must exist and be reasonable."""
         from agent.stage.ratchet import _MAX_RATCHET_HISTORY
         assert _MAX_RATCHET_HISTORY >= 1_000
+
+
+# ---------------------------------------------------------------------------
+# Cycle 40: _history thread-safety
+# ---------------------------------------------------------------------------
+
+class TestRatchetHistoryThreadSafety:
+    """Cycle 40: _history mutations must be thread-safe via _history_lock."""
+
+    def test_history_lock_exists(self):
+        """Ratchet must expose a _history_lock threading.Lock."""
+        import threading
+        r = Ratchet()
+        assert hasattr(r, "_history_lock")
+        assert isinstance(r._history_lock, type(threading.Lock()))
+
+    def test_concurrent_decide_no_corruption(self):
+        """Multiple threads calling decide() simultaneously must not corrupt history."""
+        import threading
+        r = Ratchet()
+        errors = []
+        n = 50
+
+        def make_decision(i):
+            try:
+                r.decide(f"delta_{i}", {"aesthetic": 0.5 + (i % 10) * 0.04})
+            except Exception as exc:
+                errors.append(str(exc))
+
+        threads = [threading.Thread(target=make_decision, args=(i,)) for i in range(n)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert not errors, f"Concurrent decide() raised: {errors}"
+        assert len(r.history) == n
+
+    def test_concurrent_decide_keep_discard_no_crash(self):
+        """Concurrent decide(), keep(), and discard() must not raise or corrupt."""
+        import threading
+        r = Ratchet()
+        errors = []
+
+        def _decide():
+            for i in range(30):
+                try:
+                    r.decide(f"d_{i}", {"aesthetic": 0.4 + i * 0.01})
+                except Exception as exc:
+                    errors.append(f"decide: {exc}")
+
+        def _explicit():
+            for i in range(20):
+                try:
+                    r.keep(f"k_{i}", {"aesthetic": 0.7})
+                    r.discard(f"disc_{i}", {"aesthetic": 0.3})
+                except Exception as exc:
+                    errors.append(f"keep/discard: {exc}")
+
+        t1 = threading.Thread(target=_decide)
+        t2 = threading.Thread(target=_explicit)
+        t1.start()
+        t2.start()
+        t1.join()
+        t2.join()
+
+        assert not errors, f"Concurrent operations raised: {errors}"
+        # History must be a consistent list
+        h = r.history
+        assert isinstance(h, list)
+
+    def test_concurrent_summary_and_decide_no_crash(self):
+        """summary() reading concurrent with decide() mutations must not crash."""
+        import threading
+        r = Ratchet()
+        errors = []
+
+        def _decide():
+            for i in range(40):
+                try:
+                    r.decide(f"s_{i}", {"aesthetic": 0.5})
+                except Exception as exc:
+                    errors.append(f"decide: {exc}")
+
+        def _summarize():
+            for _ in range(20):
+                try:
+                    s = r.summary()
+                    assert isinstance(s, dict)
+                    assert "total" in s
+                except Exception as exc:
+                    errors.append(f"summary: {exc}")
+
+        t1 = threading.Thread(target=_decide)
+        t2 = threading.Thread(target=_summarize)
+        t1.start()
+        t2.start()
+        t1.join()
+        t2.join()
+
+        assert not errors, f"Concurrent summary/decide raised: {errors}"

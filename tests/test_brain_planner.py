@@ -296,3 +296,66 @@ class TestPlannerRequiredFields:
         handle("plan_goal", {"goal": "Build something", "session": "test_c34_rp"})
         result = json.loads(handle("replan", {"session": "test_c34_rp"}))
         assert "error" in result
+
+
+# ---------------------------------------------------------------------------
+# Cycle 40: replan new_remaining_steps type validation
+# ---------------------------------------------------------------------------
+
+class TestReplanStepsValidation:
+    """Cycle 40: replan must validate new_remaining_steps type."""
+
+    def test_replan_steps_as_string_returns_error(self):
+        """new_remaining_steps must be a list — passing a string must return error."""
+        handle("plan_goal", {"goal": "Plan for validation", "session": "test_c40_rsv"})
+        result = json.loads(handle("replan", {
+            "reason": "Changing approach",
+            "new_remaining_steps": "not a list",
+            "session": "test_c40_rsv",
+        }))
+        assert "error" in result
+        assert "list" in result["error"].lower()
+
+    def test_replan_steps_as_int_returns_error(self):
+        """new_remaining_steps as integer must return error."""
+        handle("plan_goal", {"goal": "Plan for validation", "session": "test_c40_rsv2"})
+        result = json.loads(handle("replan", {
+            "reason": "Changing approach",
+            "new_remaining_steps": 42,
+            "session": "test_c40_rsv2",
+        }))
+        assert "error" in result
+
+    def test_replan_steps_as_dict_returns_error(self):
+        """new_remaining_steps as a dict (not list) must return error."""
+        handle("plan_goal", {"goal": "Plan for validation", "session": "test_c40_rsv3"})
+        result = json.loads(handle("replan", {
+            "reason": "Changing approach",
+            "new_remaining_steps": {"id": "step1", "action": "Do thing"},
+            "session": "test_c40_rsv3",
+        }))
+        assert "error" in result
+
+    def test_replan_omitting_steps_succeeds(self):
+        """Omitting new_remaining_steps (defaults to []) should still work."""
+        handle("plan_goal", {"goal": "Plan for validation", "session": "test_c40_rsv4"})
+        result = json.loads(handle("replan", {
+            "reason": "Starting fresh",
+            "session": "test_c40_rsv4",
+        }))
+        assert "error" not in result
+        assert result.get("replanned") is True
+
+    def test_replan_valid_list_succeeds(self):
+        """new_remaining_steps as a proper list must succeed."""
+        handle("plan_goal", {"goal": "Plan for validation", "session": "test_c40_rsv5"})
+        result = json.loads(handle("replan", {
+            "reason": "New direction",
+            "new_remaining_steps": [
+                {"id": "step_a", "action": "Do step A"},
+                {"id": "step_b", "action": "Do step B"},
+            ],
+            "session": "test_c40_rsv5",
+        }))
+        assert "error" not in result
+        assert result.get("replanned") is True

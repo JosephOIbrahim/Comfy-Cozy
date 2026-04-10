@@ -757,3 +757,94 @@ class TestLoadAllOutcomesLocking:
 
         # Either 0 outcomes (file skipped) or 1 (if patching didn't intercept) — no crash
         assert isinstance(outcomes, list)
+
+
+# ---------------------------------------------------------------------------
+# Cycle 40: quality_score validation and query validation
+# ---------------------------------------------------------------------------
+
+class TestQualityScoreValidation:
+    """Cycle 40: record_outcome must reject quality_score outside [0, 1]."""
+
+    def test_quality_score_below_zero_returns_error(self):
+        result = json.loads(handle("record_outcome", {
+            "session": "qs-test",
+            "workflow_summary": "test",
+            "quality_score": -0.1,
+        }))
+        assert "error" in result
+        assert "quality_score" in result["error"]
+
+    def test_quality_score_above_one_returns_error(self):
+        result = json.loads(handle("record_outcome", {
+            "session": "qs-test",
+            "workflow_summary": "test",
+            "quality_score": 1.5,
+        }))
+        assert "error" in result
+        assert "quality_score" in result["error"]
+
+    def test_quality_score_string_non_numeric_returns_error(self):
+        result = json.loads(handle("record_outcome", {
+            "session": "qs-test",
+            "workflow_summary": "test",
+            "quality_score": "high",
+        }))
+        assert "error" in result
+
+    def test_quality_score_zero_is_valid(self):
+        result = json.loads(handle("record_outcome", {
+            "session": "qs-test",
+            "workflow_summary": "test",
+            "quality_score": 0.0,
+        }))
+        assert result.get("recorded") is True
+
+    def test_quality_score_one_is_valid(self):
+        result = json.loads(handle("record_outcome", {
+            "session": "qs-test",
+            "workflow_summary": "test",
+            "quality_score": 1.0,
+        }))
+        assert result.get("recorded") is True
+
+    def test_quality_score_none_is_valid(self):
+        """Omitting quality_score (None) should be accepted."""
+        result = json.loads(handle("record_outcome", {
+            "session": "qs-test",
+            "workflow_summary": "test",
+        }))
+        assert result.get("recorded") is True
+
+
+class TestGetLearnedPatternsQueryValidation:
+    """Cycle 40: get_learned_patterns must reject unknown query values."""
+
+    def test_invalid_query_returns_error(self):
+        result = json.loads(handle("get_learned_patterns", {
+            "session": "qv-test",
+            "query": "nonexistent_query",
+        }))
+        assert "error" in result
+        assert "query" in result["error"].lower() or "Invalid" in result["error"]
+
+    def test_valid_query_all_succeeds(self):
+        result = json.loads(handle("get_learned_patterns", {
+            "session": "qv-test",
+            "query": "all",
+        }))
+        assert "error" not in result
+
+    def test_valid_query_best_models_succeeds(self):
+        result = json.loads(handle("get_learned_patterns", {
+            "session": "qv-test",
+            "query": "best_models",
+        }))
+        assert "error" not in result
+
+    def test_valid_query_speed_analysis_succeeds(self):
+        result = json.loads(handle("get_learned_patterns", {
+            "session": "qv-test",
+            "query": "speed_analysis",
+        }))
+        assert "error" not in result

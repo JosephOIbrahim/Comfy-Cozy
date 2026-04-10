@@ -534,3 +534,37 @@ class TestRegistration:
         assert "get_workflow_diff" in names
         assert "save_workflow" in names
         assert "reset_workflow" in names
+
+
+# ---------------------------------------------------------------------------
+# Cycle 40: validate_before_execute rejects empty workflow
+# ---------------------------------------------------------------------------
+
+class TestValidateEmptyWorkflow:
+    """Cycle 40: validate_before_execute must reject empty workflows."""
+
+    def test_empty_workflow_from_patch_state_returns_error(self):
+        """If current workflow is empty dict, validate_before_execute must error."""
+        from agent.tools.workflow_patch import _get_state
+        state = _get_state()
+        old_wf = state.get("current_workflow")
+        try:
+            # Inject empty workflow into patch state
+            state["current_workflow"] = {}
+            state["loaded_path"] = "test.json"
+            result = json.loads(comfy_execute.handle("validate_before_execute", {}))
+            assert "error" in result
+            assert "empty" in result["error"].lower()
+        finally:
+            state["current_workflow"] = old_wf
+
+    def test_empty_workflow_from_file_returns_error(self, tmp_path):
+        """A workflow file with zero nodes must cause validate_before_execute to error."""
+        wf_path = tmp_path / "empty.json"
+        wf_path.write_text("{}", encoding="utf-8")
+        result = json.loads(comfy_execute.handle("validate_before_execute", {
+            "path": str(wf_path),
+        }))
+        assert "error" in result
+        msg = result["error"].lower()
+        assert "empty" in msg or "no nodes" in msg or "workflow" in msg

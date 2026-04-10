@@ -18,6 +18,7 @@ and adjusts thresholds accordingly.
 
 from __future__ import annotations
 
+import threading
 import time
 from dataclasses import dataclass, field
 from typing import Any
@@ -96,6 +97,7 @@ class Arbiter:
         self._feedback: list[CalibrationFeedback] = []
         self._max_decisions = _MAX_DECISIONS
         self._max_feedback = _MAX_FEEDBACK
+        self._lock = threading.Lock()  # Guards _decisions, _feedback, _explicit_count (Cycle 40)
 
     # ------------------------------------------------------------------
     # Properties
@@ -121,12 +123,14 @@ class Arbiter:
     @property
     def decisions(self) -> list[ArbiterDecision]:
         """All decisions made, oldest first (copy)."""
-        return list(self._decisions)
+        with self._lock:
+            return list(self._decisions)
 
     @property
     def feedback_history(self) -> list[CalibrationFeedback]:
         """All feedback received (copy)."""
-        return list(self._feedback)
+        with self._lock:
+            return list(self._feedback)
 
     # ------------------------------------------------------------------
     # Core decision
@@ -157,30 +161,31 @@ class Arbiter:
             f"Improvement: {improvement:+.3f}",
         ]
 
-        if mode == "explicit":
-            if self._explicit_count >= MAX_EXPLICIT_PER_SESSION:
-                mode = "soft_surface"
-                reasoning_parts.append(
-                    f"Downgraded from explicit (limit {MAX_EXPLICIT_PER_SESSION}/session)"
-                )
-            else:
-                self._explicit_count += 1
-                reasoning_parts.append("Explicit suggestion (low confidence, high potential)")
+        with self._lock:  # Cycle 40: guard _explicit_count check+increment and _decisions append
+            if mode == "explicit":
+                if self._explicit_count >= MAX_EXPLICIT_PER_SESSION:
+                    mode = "soft_surface"
+                    reasoning_parts.append(
+                        f"Downgraded from explicit (limit {MAX_EXPLICIT_PER_SESSION}/session)"
+                    )
+                else:
+                    self._explicit_count += 1
+                    reasoning_parts.append("Explicit suggestion (low confidence, high potential)")
 
-        if mode == "silent":
-            reasoning_parts.append("Silent: not worth surfacing")
-        elif mode == "soft_surface":
-            reasoning_parts.append("Soft surface: worth mentioning")
+            if mode == "silent":
+                reasoning_parts.append("Silent: not worth surfacing")
+            elif mode == "soft_surface":
+                reasoning_parts.append("Soft surface: worth mentioning")
 
-        decision = ArbiterDecision(
-            mode=mode,
-            prediction=prediction,
-            improvement_estimate=improvement,
-            reasoning=". ".join(reasoning_parts),
-        )
-        self._decisions.append(decision)
-        if len(self._decisions) > self._max_decisions:  # Cycle 39: FIFO eviction
-            self._decisions.pop(0)
+            decision = ArbiterDecision(
+                mode=mode,
+                prediction=prediction,
+                improvement_estimate=improvement,
+                reasoning=". ".join(reasoning_parts),
+            )
+            self._decisions.append(decision)
+            if len(self._decisions) > self._max_decisions:
+                self._decisions.pop(0)
         return decision
 
     def _decide_mode(self, confidence: float, improvement: float) -> str:
@@ -212,9 +217,10 @@ class Arbiter:
         improvement_large threshold (be more conservative).
         If user accepts, lower it (be more aggressive).
         """
-        self._feedback.append(feedback)
-        if len(self._feedback) > self._max_feedback:  # Cycle 39: FIFO eviction
-            self._feedback.pop(0)
+        with self._lock:  # Cycle 40: thread-safe
+            self._feedback.append(feedback)
+            if len(self._feedback) > self._max_feedback:
+                self._feedback.pop(0)
         self._calibrate(feedback)
 
     def _calibrate(self, fb: CalibrationFeedback) -> None:
@@ -256,18 +262,22 @@ class Arbiter:
 
     def summary(self) -> dict[str, Any]:
         """Return a summary of arbiter state."""
-        total = len(self._decisions)
+        with self._lock:
+            decisions_snapshot = list(self._decisions)
+            feedback_snapshot = list(self._feedback)
+            explicit_count = self._explicit_count
+        total = len(decisions_snapshot)
         modes = {"silent": 0, "soft_surface": 0, "explicit": 0}
-        for d in self._decisions:
+        for d in decisions_snapshot:
             modes[d.mode] = modes.get(d.mode, 0) + 1
 
-        fb_total = len(self._feedback)
-        fb_accepted = sum(1 for f in self._feedback if f.accepted)
+        fb_total = len(feedback_snapshot)
+        fb_accepted = sum(1 for f in feedback_snapshot if f.accepted)
 
         return {
             "total_decisions": total,
             "mode_counts": modes,
-            "explicit_this_session": self._explicit_count,
+            "explicit_this_session": explicit_count,
             "feedback_total": fb_total,
             "feedback_accepted": fb_accepted,
             "feedback_acceptance_rate": (

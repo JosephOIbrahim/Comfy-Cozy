@@ -24,6 +24,7 @@ FORESIGHT integration (optional — ratchet works standalone without it):
 from __future__ import annotations
 
 import logging
+import threading
 import time
 from dataclasses import dataclass, field
 from typing import Any
@@ -105,6 +106,7 @@ class Ratchet:
         self._threshold = threshold
         self._history: list[RatchetDecision] = []
         self._max_history = _MAX_RATCHET_HISTORY
+        self._history_lock = threading.Lock()  # Guards all _history mutations (Cycle 40)
         # FORESIGHT integration (all optional — degradation cascade)
         self._cws = cws                          # CognitiveWorkflowStage
         self._cwm = cwm                          # CWM predict() callable
@@ -128,7 +130,8 @@ class Ratchet:
     @property
     def history(self) -> list[RatchetDecision]:
         """All decisions recorded so far, oldest first (copy)."""
-        return list(self._history)
+        with self._history_lock:
+            return list(self._history)
 
     @property
     def has_foresight(self) -> bool:
@@ -212,9 +215,10 @@ class Ratchet:
             prediction_accuracy=accuracy,
             arbiter_mode=mode,
         )
-        self._history.append(decision)
-        if len(self._history) > self._max_history:  # Cycle 39: FIFO eviction
-            self._history.pop(0)
+        with self._history_lock:  # Cycle 40: thread-safe
+            self._history.append(decision)
+            if len(self._history) > self._max_history:
+                self._history.pop(0)
         self._foresight_record(decision, change_context)
         return kept
 
@@ -253,9 +257,10 @@ class Ratchet:
             prediction_accuracy=accuracy,
             arbiter_mode=mode,
         )
-        self._history.append(decision)
-        if len(self._history) > self._max_history:  # Cycle 39: FIFO eviction
-            self._history.pop(0)
+        with self._history_lock:  # Cycle 40: thread-safe
+            self._history.append(decision)
+            if len(self._history) > self._max_history:
+                self._history.pop(0)
         self._foresight_record(decision, change_context)
         return decision
 
@@ -294,9 +299,10 @@ class Ratchet:
             prediction_accuracy=accuracy,
             arbiter_mode=mode,
         )
-        self._history.append(decision)
-        if len(self._history) > self._max_history:  # Cycle 39: FIFO eviction
-            self._history.pop(0)
+        with self._history_lock:  # Cycle 40: thread-safe
+            self._history.append(decision)
+            if len(self._history) > self._max_history:
+                self._history.pop(0)
         self._foresight_record(decision, change_context)
         return decision
 
@@ -306,39 +312,45 @@ class Ratchet:
 
     def kept_ids(self) -> list[str]:
         """Return delta_ids of all kept decisions, in order."""
-        return [d.delta_id for d in self._history if d.kept]
+        with self._history_lock:
+            return [d.delta_id for d in self._history if d.kept]
 
     def discarded_ids(self) -> list[str]:
         """Return delta_ids of all discarded decisions, in order."""
-        return [d.delta_id for d in self._history if not d.kept]
+        with self._history_lock:
+            return [d.delta_id for d in self._history if not d.kept]
 
     def best(self) -> RatchetDecision | None:
         """Return the decision with the highest composite score, or None."""
-        return max(self._history, key=lambda d: d.composite) if self._history else None
+        with self._history_lock:
+            return max(self._history, key=lambda d: d.composite) if self._history else None
 
     def worst(self) -> RatchetDecision | None:
         """Return the decision with the lowest composite score, or None."""
-        return min(self._history, key=lambda d: d.composite) if self._history else None
+        with self._history_lock:
+            return min(self._history, key=lambda d: d.composite) if self._history else None
 
     def summary(self) -> dict[str, Any]:
         """Return a summary dict of all decisions."""
-        total = len(self._history)
-        kept = sum(1 for d in self._history if d.kept)
+        with self._history_lock:
+            snapshot = list(self._history)
+        total = len(snapshot)
+        kept = sum(1 for d in snapshot if d.kept)
         # FORESIGHT: prediction accuracy stats
-        predicted = [
-            d for d in self._history if d.prediction_accuracy is not None
-        ]
+        predicted = [d for d in snapshot if d.prediction_accuracy is not None]
         avg_accuracy = (
             sum(d.prediction_accuracy for d in predicted) / len(predicted)
             if predicted else None
         )
+        best_d = max(snapshot, key=lambda d: d.composite) if snapshot else None
+        worst_d = min(snapshot, key=lambda d: d.composite) if snapshot else None
         return {
             "total": total,
             "kept": kept,
             "discarded": total - kept,
             "threshold": self._threshold,
-            "best_composite": self.best().composite if self._history else None,
-            "worst_composite": self.worst().composite if self._history else None,
+            "best_composite": best_d.composite if best_d else None,
+            "worst_composite": worst_d.composite if worst_d else None,
             "foresight_enabled": self.has_foresight,
             "predictions_made": len(predicted),
             "avg_prediction_accuracy": avg_accuracy,

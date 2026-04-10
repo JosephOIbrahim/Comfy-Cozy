@@ -586,6 +586,9 @@ def _handle_validate_before_execute(tool_input: dict) -> str:
                 "error": "No workflow loaded. Provide a 'path' or load one first.",
             })
 
+    if not workflow:
+        return to_json({"error": "Workflow is empty (no nodes). Load or build a workflow first."})
+
     errors = []
     warnings = []
 
