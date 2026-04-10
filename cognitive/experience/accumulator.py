@@ -46,6 +46,9 @@ class ExperienceAccumulator:
 
     Stores ExperienceChunks, retrieves by similarity, and manages
     the transition through learning phases.
+
+    Thread-safety: all mutations and reads of _chunks are protected by
+    _chunks_lock (threading.Lock). _save_lock remains for atomic writes.
     """
 
     # Phase thresholds
@@ -55,10 +58,12 @@ class ExperienceAccumulator:
     def __init__(self, max_chunks: int = 10000):
         self._chunks: list[ExperienceChunk] = []
         self._max_chunks = max_chunks
+        self._chunks_lock = threading.Lock()
 
     @property
     def generation_count(self) -> int:
-        return len(self._chunks)
+        with self._chunks_lock:
+            return len(self._chunks)
 
     @property
     def learning_phase(self) -> LearningPhase:
@@ -92,14 +97,15 @@ class ExperienceAccumulator:
 
         Enforces max_chunks by removing oldest low-quality entries.
         """
-        self._chunks.append(chunk)
+        with self._chunks_lock:
+            self._chunks.append(chunk)
 
-        if len(self._chunks) > self._max_chunks:
-            # Remove oldest lowest-quality chunk
-            self._chunks.sort(
-                key=lambda c: (c.quality.overall, c.timestamp),
-            )
-            self._chunks.pop(0)
+            if len(self._chunks) > self._max_chunks:
+                # Remove oldest lowest-quality chunk
+                self._chunks.sort(
+                    key=lambda c: (c.quality.overall, c.timestamp),
+                )
+                self._chunks.pop(0)
 
     def retrieve(
         self,
@@ -113,8 +119,11 @@ class ExperienceAccumulator:
         """
         result = RetrievalResult(query_signature=signature)
 
+        with self._chunks_lock:
+            snapshot = list(self._chunks)
+
         scored = []
-        for chunk in self._chunks:
+        for chunk in snapshot:
             chunk_sig = GenerationContextSignature.from_workflow(
                 _chunk_to_workflow_proxy(chunk)
             )
@@ -139,23 +148,27 @@ class ExperienceAccumulator:
 
     def get_successful_chunks(self, min_quality: float = 0.5) -> list[ExperienceChunk]:
         """Get all chunks above a quality threshold."""
-        return [
-            c for c in self._chunks
-            if c.quality.overall >= min_quality and c.succeeded
-        ]
+        with self._chunks_lock:
+            return [
+                c for c in self._chunks
+                if c.quality.overall >= min_quality and c.succeeded
+            ]
 
     def get_stats(self) -> dict[str, Any]:
         """Get statistics about accumulated experience."""
-        total = self.generation_count
-        succeeded = sum(1 for c in self._chunks if c.succeeded)
-        scored = [c.quality.overall for c in self._chunks if c.quality.is_scored]
+        with self._chunks_lock:
+            total = len(self._chunks)
+            succeeded = sum(1 for c in self._chunks if c.succeeded)
+            scored = [c.quality.overall for c in self._chunks if c.quality.is_scored]
 
+        phase = self.learning_phase
+        weight = self.experience_weight
         return {
             "total_generations": total,
             "successful": succeeded,
             "failed": total - succeeded,
-            "learning_phase": self.learning_phase.value,
-            "experience_weight": round(self.experience_weight, 3),
+            "learning_phase": phase.value,
+            "experience_weight": round(weight, 3),
             "avg_quality": round(sum(scored) / len(scored), 3) if scored else 0.0,
             "best_quality": round(max(scored), 3) if scored else 0.0,
         }
@@ -174,12 +187,14 @@ class ExperienceAccumulator:
         p = Path(path)
         p.parent.mkdir(parents=True, exist_ok=True)
         tmp_path = Path(str(p) + ".tmp")
+        with self._chunks_lock:
+            snapshot = list(self._chunks)
         with _save_lock:
             with open(tmp_path, "w", encoding="utf-8") as f:
-                for chunk in self._chunks:
+                for chunk in snapshot:
                     f.write(json.dumps(chunk.to_dict(), sort_keys=True) + "\n")
             os.replace(tmp_path, p)
-        return len(self._chunks)
+        return len(snapshot)
 
     @classmethod
     def load(cls, path: str, max_chunks: int = 10000) -> ExperienceAccumulator:
@@ -201,7 +216,8 @@ class ExperienceAccumulator:
                     acc._chunks.append(chunk)
                 except (json.JSONDecodeError, Exception):
                     continue
-        # Enforce max_chunks
+        # Enforce max_chunks (load() is called at init time; no lock needed here
+        # since no other thread has a reference to acc yet)
         if len(acc._chunks) > max_chunks:
             acc._chunks.sort(key=lambda c: (c.quality.overall, c.timestamp))
             acc._chunks = acc._chunks[-max_chunks:]

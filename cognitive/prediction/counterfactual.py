@@ -7,6 +7,7 @@ future actual data to update prediction confidence.
 
 from __future__ import annotations
 
+import threading
 import uuid
 from dataclasses import dataclass, field
 from typing import Any
@@ -57,19 +58,24 @@ class CounterfactualGenerator:
             "steps": (10, 50),
             "denoise": (0.3, 1.0),
         }
+        self._lock = threading.Lock()
 
     @property
     def total_generated(self) -> int:
-        return len(self._counterfactuals)
+        with self._lock:
+            return len(self._counterfactuals)
 
     @property
     def total_validated(self) -> int:
-        return sum(1 for cf in self._counterfactuals if cf.validated)
+        with self._lock:
+            return sum(1 for cf in self._counterfactuals if cf.validated)
 
     @property
     def accuracy(self) -> float:
         """Fraction of validated counterfactuals where direction was correct."""
-        validated = [cf for cf in self._counterfactuals if cf.validated]
+        with self._lock:
+            snapshot = list(self._counterfactuals)
+        validated = [cf for cf in snapshot if cf.validated]
         if not validated:
             return 0.0
         correct = sum(1 for cf in validated if cf.was_correct)
@@ -126,7 +132,8 @@ class CounterfactualGenerator:
                 alternative_value=round(alt_val, 2),
                 predicted_quality_delta=round(quality_delta, 3),
             )
-            self._counterfactuals.append(cf)
+            with self._lock:
+                self._counterfactuals.append(cf)
             return cf
 
         return None
@@ -141,11 +148,12 @@ class CounterfactualGenerator:
         Returns:
             True if found and validated, False if not found.
         """
-        for cf in self._counterfactuals:
-            if cf.cf_id == cf_id:
-                cf.actual_quality_delta = actual_quality_delta
-                cf.validated = True
-                return True
+        with self._lock:
+            for cf in self._counterfactuals:
+                if cf.cf_id == cf_id:
+                    cf.actual_quality_delta = actual_quality_delta
+                    cf.validated = True
+                    return True
         return False
 
     def get_adjustment(self) -> float:
@@ -154,7 +162,9 @@ class CounterfactualGenerator:
         Returns a correction factor to apply to future predictions.
         Positive = predictions are too low, negative = too high.
         """
-        validated = [cf for cf in self._counterfactuals if cf.validated]
+        with self._lock:
+            snapshot = list(self._counterfactuals)
+        validated = [cf for cf in snapshot if cf.validated]
         if len(validated) < 5:
             return 0.0
 

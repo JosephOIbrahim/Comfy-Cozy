@@ -17,6 +17,7 @@ pipeline. When agent/stage/cwm is available, prefer it for production use.
 
 from __future__ import annotations
 
+import threading
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -62,6 +63,7 @@ class CognitiveWorldModel:
         self._prior_rules: dict[str, dict[str, Any]] = {}
         self._confidence_history: list[tuple[float, float]] = []
         # List of (predicted, actual) pairs for calibration
+        self._lock = threading.Lock()
 
     def add_prior_rule(
         self,
@@ -79,10 +81,11 @@ class CognitiveWorldModel:
             optimal: The optimal value within the range
         """
         key = f"{model_family}:{parameter}"
-        self._prior_rules[key] = {
-            "range": good_range,
-            "optimal": optimal,
-        }
+        with self._lock:
+            self._prior_rules[key] = {
+                "range": good_range,
+                "optimal": optimal,
+            }
 
     def predict(
         self,
@@ -169,17 +172,20 @@ class CognitiveWorldModel:
             predicted: The predicted quality (0.0-1.0).
             actual: The actual quality (0.0-1.0).
         """
-        self._confidence_history.append((predicted, actual))
+        with self._lock:
+            self._confidence_history.append((predicted, actual))
 
     def get_calibration(self) -> dict[str, float]:
         """Get prediction calibration statistics."""
-        if not self._confidence_history:
+        with self._lock:
+            history = list(self._confidence_history)
+        if not history:
             return {"samples": 0, "mean_error": 0.0, "bias": 0.0}
 
-        errors = [abs(p - a) for p, a in self._confidence_history]
-        biases = [p - a for p, a in self._confidence_history]
+        errors = [abs(p - a) for p, a in history]
+        biases = [p - a for p, a in history]
         return {
-            "samples": len(self._confidence_history),
+            "samples": len(history),
             "mean_error": round(sum(errors) / len(errors), 3),
             "bias": round(sum(biases) / len(biases), 3),
         }
@@ -190,7 +196,9 @@ class CognitiveWorldModel:
         parameters: dict[str, Any],
     ) -> tuple[float, list[str]]:
         """Score parameters against prior rules. Returns (score, risks)."""
-        if not self._prior_rules:
+        with self._lock:
+            prior_rules = dict(self._prior_rules)
+        if not prior_rules:
             return (0.5, [])  # No priors = uncertain
 
         scores = []
@@ -198,7 +206,7 @@ class CognitiveWorldModel:
 
         for param_name, param_value in parameters.items():
             key = f"{model_family}:{param_name}"
-            rule = self._prior_rules.get(key)
+            rule = prior_rules.get(key)
             if rule is None:
                 continue
 
@@ -283,14 +291,17 @@ class CognitiveWorldModel:
         if has_experience:
             base += experience_weight * 0.5
 
-        if self._prior_rules:
+        with self._lock:
+            has_priors = bool(self._prior_rules)
+            history_len = len(self._confidence_history)
+        if has_priors:
             base += 0.1
 
         # Risks reduce confidence
         base -= risk_count * 0.1
 
         # Calibration data increases confidence
-        if len(self._confidence_history) > 10:
+        if history_len > 10:
             base += 0.1
 
         return round(max(0.0, min(1.0, base)), 3)

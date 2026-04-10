@@ -6,6 +6,7 @@ and provides mutation validation BEFORE patches reach the graph engine.
 
 from __future__ import annotations
 
+import threading
 import time
 from dataclasses import dataclass, field
 from typing import Any
@@ -104,21 +105,25 @@ class SchemaCache:
         self._schemas: dict[str, NodeSchema] = {}
         self._last_refresh: float = 0.0
         self._raw_data: dict[str, Any] = {}
+        self._lock = threading.Lock()
 
     @property
     def is_populated(self) -> bool:
         """True if the cache has been populated at least once."""
-        return len(self._schemas) > 0
+        with self._lock:
+            return len(self._schemas) > 0
 
     @property
     def node_count(self) -> int:
         """Number of node schemas in the cache."""
-        return len(self._schemas)
+        with self._lock:
+            return len(self._schemas)
 
     @property
     def last_refresh(self) -> float:
         """Timestamp of last refresh."""
-        return self._last_refresh
+        with self._lock:
+            return self._last_refresh
 
     def refresh(self, object_info: dict[str, Any]) -> int:
         """Parse /object_info response into typed schemas.
@@ -133,9 +138,10 @@ class SchemaCache:
         for class_type, info in object_info.items():
             if isinstance(info, dict):
                 schemas[class_type] = NodeSchema.from_object_info(class_type, info)
-        self._schemas = schemas
-        self._raw_data = object_info
-        self._last_refresh = time.time()
+        with self._lock:
+            self._schemas = schemas
+            self._raw_data = object_info
+            self._last_refresh = time.time()
         return len(schemas)
 
     async def async_refresh(self, api_client) -> int:
@@ -153,7 +159,8 @@ class SchemaCache:
 
     def get_schema(self, class_type: str) -> NodeSchema | None:
         """Get schema for a node class, or None if not cached."""
-        return self._schemas.get(class_type)
+        with self._lock:
+            return self._schemas.get(class_type)
 
     def validate_mutation(
         self,
@@ -166,7 +173,8 @@ class SchemaCache:
         Returns:
             (is_valid, reason) — reason is empty string when valid.
         """
-        schema = self._schemas.get(class_type)
+        with self._lock:
+            schema = self._schemas.get(class_type)
         if schema is None:
             return (False, f"Unknown node type: {class_type!r}")
 
@@ -199,13 +207,14 @@ class SchemaCache:
 
     def get_valid_values(self, class_type: str, param_name: str) -> list[str] | None:
         """Get valid values for a combo/enum parameter, or None."""
-        schema = self._schemas.get(class_type)
-        if schema is None:
-            return None
-        spec = schema.inputs.get(param_name)
-        if spec is None or spec.valid_values is None:
-            return None
-        return list(spec.valid_values)
+        with self._lock:
+            schema = self._schemas.get(class_type)
+            if schema is None:
+                return None
+            spec = schema.inputs.get(param_name)
+            if spec is None or spec.valid_values is None:
+                return None
+            return list(spec.valid_values)
 
     def get_connectable_nodes(
         self,
@@ -216,23 +225,25 @@ class SchemaCache:
 
         Returns class_types that have an output matching the input's type.
         """
-        schema = self._schemas.get(target_class_type)
-        if schema is None:
-            return []
-        spec = schema.inputs.get(target_input)
-        if spec is None:
-            return []
+        with self._lock:
+            schema = self._schemas.get(target_class_type)
+            if schema is None:
+                return []
+            spec = schema.inputs.get(target_input)
+            if spec is None:
+                return []
 
-        required_type = spec.input_type
-        if required_type in ("COMBO", "UNKNOWN", "INT", "FLOAT", "STRING", "BOOLEAN"):
-            return []  # Literal types, not connectable
+            required_type = spec.input_type
+            if required_type in ("COMBO", "UNKNOWN", "INT", "FLOAT", "STRING", "BOOLEAN"):
+                return []  # Literal types, not connectable
 
-        result = []
-        for ct, s in sorted(self._schemas.items()):
-            if required_type in s.output_types:
-                result.append(ct)
+            result = []
+            for ct, s in sorted(self._schemas.items()):
+                if required_type in s.output_types:
+                    result.append(ct)
         return result
 
     def list_node_types(self) -> list[str]:
         """List all cached node class_types."""
-        return sorted(self._schemas.keys())
+        with self._lock:
+            return sorted(self._schemas.keys())
