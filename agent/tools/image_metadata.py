@@ -215,11 +215,21 @@ def _write_png_metadata(image_path: str, metadata: dict) -> None:
 
         # Atomic write: save to a temp file then rename so a process crash
         # during write doesn't corrupt the original PNG. (Cycle 33 fix)
+        # fsync the temp file before rename so that on power failure the
+        # renamed file is complete on disk, not just in OS buffers. (Cycle 38 fix)
         parent_dir = _Path(image_path).parent
         tmp_fd, tmp_path = tempfile.mkstemp(suffix=".png", dir=parent_dir)
         try:
             os.close(tmp_fd)
             img.save(tmp_path, pnginfo=png_info)
+            # Open for read (not write) just to obtain an fd for fsync.
+            # This flushes OS write buffers before the atomic rename so a
+            # crash after os.replace still leaves a complete PNG on disk.
+            try:
+                with open(tmp_path, "rb") as _sync_fd:
+                    os.fsync(_sync_fd.fileno())
+            except OSError:
+                pass  # fsync failure is non-fatal — proceed with rename
             os.replace(tmp_path, image_path)
         except Exception:
             # Clean up temp file on any error, then re-raise.

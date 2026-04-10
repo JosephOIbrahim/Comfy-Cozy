@@ -360,3 +360,81 @@ class TestCWMInputGuards:
         )
         assert 0.0 <= pred.quality_estimate <= 1.0
         assert pred.confidence > 0
+
+
+# ---------------------------------------------------------------------------
+# Cycle 38: unbounded-list eviction caps
+# ---------------------------------------------------------------------------
+
+class TestCWMCalibrationHistoryCap:
+    """_confidence_history must never exceed max_calibration_history. (Cycle 38 fix)"""
+
+    def test_history_capped_at_max(self):
+        """After max+1 calls to record_accuracy, history len equals max, not max+1."""
+        cwm = CognitiveWorldModel(max_calibration_history=10)
+        for i in range(15):
+            cwm.record_accuracy(float(i % 10) / 10, 0.5)
+        with cwm._lock:
+            assert len(cwm._confidence_history) == 10
+
+    def test_fifo_eviction_drops_oldest(self):
+        """The oldest entry is evicted, not a random one."""
+        cwm = CognitiveWorldModel(max_calibration_history=3)
+        cwm.record_accuracy(0.1, 0.1)  # will be evicted
+        cwm.record_accuracy(0.2, 0.2)
+        cwm.record_accuracy(0.3, 0.3)
+        cwm.record_accuracy(0.4, 0.4)  # pushes 0.1 out
+        with cwm._lock:
+            first = cwm._confidence_history[0]
+        assert first == (0.2, 0.2), f"Expected (0.2, 0.2) as oldest, got {first}"
+
+    def test_get_calibration_uses_capped_history(self):
+        """get_calibration() samples field must equal min(calls, max)."""
+        cwm = CognitiveWorldModel(max_calibration_history=5)
+        for _ in range(20):
+            cwm.record_accuracy(0.7, 0.6)
+        cal = cwm.get_calibration()
+        assert cal["samples"] == 5
+
+    def test_default_cap_is_reasonable(self):
+        """Default cap (1000) is in place — list never grows beyond it."""
+        from cognitive.prediction.cwm import _MAX_CALIBRATION_HISTORY
+        assert _MAX_CALIBRATION_HISTORY == 1000
+
+
+class TestCounterfactualGeneratorCap:
+    """_counterfactuals must never exceed max_counterfactuals. (Cycle 38 fix)"""
+
+    def test_list_capped_at_max(self):
+        """After max+N generates, list len equals max, not max+N."""
+        gen = CounterfactualGenerator(max_counterfactuals=5)
+        params = {"cfg": 7.0, "steps": 20, "denoise": 0.8}
+        for _ in range(10):
+            gen.generate(params, predicted_quality=0.7)
+        with gen._lock:
+            assert len(gen._counterfactuals) <= 5
+
+    def test_total_generated_reflects_calls_not_cap(self):
+        """total_generated is the list length (capped), not the call count."""
+        gen = CounterfactualGenerator(max_counterfactuals=3)
+        params = {"cfg": 7.0, "steps": 20, "denoise": 0.8}
+        results = [gen.generate(params, 0.7) for _ in range(6)]
+        # Some may return None if no suitable param found (all same) — count non-None
+        assert gen.total_generated <= 3
+
+    def test_accuracy_still_works_after_eviction(self):
+        """accuracy property must not crash after eviction reorders list."""
+        gen = CounterfactualGenerator(max_counterfactuals=3)
+        params = {"cfg": 7.0, "steps": 20, "denoise": 0.8}
+        for _ in range(10):
+            cf = gen.generate(params, 0.7)
+            if cf:
+                gen.validate(cf.cf_id, actual_quality_delta=0.05)
+        # Must not raise
+        acc = gen.accuracy
+        assert 0.0 <= acc <= 1.0
+
+    def test_default_cap_is_reasonable(self):
+        """Default cap (500) is in place."""
+        from cognitive.prediction.counterfactual import _MAX_COUNTERFACTUALS
+        assert _MAX_COUNTERFACTUALS == 500

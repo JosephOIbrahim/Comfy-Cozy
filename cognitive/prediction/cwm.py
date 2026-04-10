@@ -50,6 +50,9 @@ class Prediction:
         return self.is_good or not self.is_confident
 
 
+_MAX_CALIBRATION_HISTORY = 1000  # FIFO eviction cap (Cycle 38)
+
+
 class CognitiveWorldModel:
     """Prediction engine using LIVRPS composition.
 
@@ -59,10 +62,11 @@ class CognitiveWorldModel:
     Safety > Experience > Prior.
     """
 
-    def __init__(self):
+    def __init__(self, max_calibration_history: int = _MAX_CALIBRATION_HISTORY):
         self._prior_rules: dict[str, dict[str, Any]] = {}
         self._confidence_history: list[tuple[float, float]] = []
-        # List of (predicted, actual) pairs for calibration
+        # List of (predicted, actual) pairs for calibration; capped at max size
+        self._max_calibration_history = max_calibration_history
         self._lock = threading.Lock()
 
     def add_prior_rule(
@@ -187,6 +191,10 @@ class CognitiveWorldModel:
         actual = max(0.0, min(1.0, float(actual)))
         with self._lock:
             self._confidence_history.append((predicted, actual))
+            # Cycle 38: evict oldest entry to prevent unbounded growth on
+            # long-running servers (called every pipeline execution).
+            if len(self._confidence_history) > self._max_calibration_history:
+                self._confidence_history.pop(0)
 
     def get_calibration(self) -> dict[str, float]:
         """Get prediction calibration statistics."""

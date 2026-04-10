@@ -44,6 +44,9 @@ class Counterfactual:
         return (self.predicted_quality_delta > 0) == (self.actual_quality_delta > 0)
 
 
+_MAX_COUNTERFACTUALS = 500  # FIFO eviction cap (Cycle 38)
+
+
 class CounterfactualGenerator:
     """Generates and tracks counterfactual experiments.
 
@@ -51,13 +54,14 @@ class CounterfactualGenerator:
     parameter change, and tracks whether the prediction was correct.
     """
 
-    def __init__(self):
+    def __init__(self, max_counterfactuals: int = _MAX_COUNTERFACTUALS):
         self._counterfactuals: list[Counterfactual] = []
         self._parameter_ranges: dict[str, tuple[float, float]] = {
             "cfg": (1.0, 15.0),
             "steps": (10, 50),
             "denoise": (0.3, 1.0),
         }
+        self._max_counterfactuals = max_counterfactuals
         self._lock = threading.Lock()
         self._param_cursor: int = 0  # Round-robin cursor — prevents cfg-only bias
 
@@ -147,6 +151,10 @@ class CounterfactualGenerator:
             )
             with self._lock:
                 self._counterfactuals.append(cf)
+                # Cycle 38: evict oldest to prevent unbounded growth on
+                # long-running servers (called every pipeline execution).
+                if len(self._counterfactuals) > self._max_counterfactuals:
+                    self._counterfactuals.pop(0)
                 self._param_cursor = (idx + 1) % n  # Advance past the chosen param
             return cf
 

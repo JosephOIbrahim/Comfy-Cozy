@@ -395,3 +395,76 @@ class TestAtomicWrite:
         # Must be a valid PNG (PIL can open it)
         reopened = Image.open(str(img_path))
         reopened.close()
+
+
+# ---------------------------------------------------------------------------
+# Cycle 38: fsync before atomic rename — durability guard
+# ---------------------------------------------------------------------------
+
+class TestImageMetadataFsync:
+    """_write_png_metadata must fsync the temp file before os.replace.
+
+    We can't test actual durability against power failure, but we CAN verify:
+    1. os.fsync is called on the temp file's fd during a successful write.
+    2. An OSError from fsync is swallowed (non-fatal) and the write still completes.
+    3. The output file is a valid PNG regardless.
+    """
+
+    def _make_png(self, path):
+        from PIL import Image as _Image
+        img = _Image.new("RGB", (4, 4), color=(10, 20, 30))
+        img.save(str(path))
+        img.close()
+
+    def test_fsync_called_on_temp_file(self, tmp_path):
+        """os.fsync must be invoked once during _write_png_metadata."""
+        pytest.importorskip("PIL")
+        import os as _os
+        from unittest.mock import patch
+        from agent.tools.image_metadata import _write_png_metadata
+
+        img_path = tmp_path / "test_fsync.png"
+        self._make_png(img_path)
+
+        fsync_calls = []
+        original_fsync = _os.fsync
+
+        def _recording_fsync(fd):
+            fsync_calls.append(fd)
+            return original_fsync(fd)
+
+        with patch("os.fsync", side_effect=_recording_fsync):
+            _write_png_metadata(str(img_path), {"schema_version": 1, "timestamp": 1.0})
+
+        assert len(fsync_calls) >= 1, "os.fsync was not called during metadata write"
+
+    def test_fsync_oserror_does_not_abort_write(self, tmp_path):
+        """If os.fsync raises OSError, the write must still complete successfully."""
+        pytest.importorskip("PIL")
+        from unittest.mock import patch
+        from agent.tools.image_metadata import _write_png_metadata
+
+        img_path = tmp_path / "test_fsync_fail.png"
+        self._make_png(img_path)
+
+        with patch("os.fsync", side_effect=OSError("fsync not supported")):
+            # Must NOT raise — fsync failure is non-fatal
+            _write_png_metadata(str(img_path), {"schema_version": 1, "timestamp": 2.0})
+
+        # Output must still be a valid PNG
+        from PIL import Image as _Image
+        reopened = _Image.open(str(img_path))
+        reopened.close()
+
+    def test_output_is_valid_png_after_write(self, tmp_path):
+        """After _write_png_metadata the file at the original path is a valid PNG."""
+        pytest.importorskip("PIL")
+        from agent.tools.image_metadata import _write_png_metadata
+
+        img_path = tmp_path / "test_valid.png"
+        self._make_png(img_path)
+        _write_png_metadata(str(img_path), {"schema_version": 1, "timestamp": 3.0})
+
+        from PIL import Image as _Image
+        with _Image.open(str(img_path)) as img:
+            assert img.format == "PNG"
