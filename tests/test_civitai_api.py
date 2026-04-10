@@ -335,3 +335,48 @@ class TestItemsListGuard:
         if "results" in result:
             assert isinstance(result["results"], list)
             assert len(result["results"]) == 0  # items was None, guarded to []
+
+
+# ---------------------------------------------------------------------------
+# Cycle 42 — model_id validation
+# ---------------------------------------------------------------------------
+
+class TestGetCivitaiModelIdValidation:
+    """Adversarial tests for model_id > 0 guard in _handle_get_civitai_model."""
+
+    def test_model_id_zero_returns_error(self):
+        """model_id=0 must return an error, not call the API."""
+        import json
+        result = json.loads(civitai_api.handle("get_civitai_model", {"model_id": 0}))
+        assert "error" in result
+        assert "positive" in result["error"].lower() or "model_id" in result["error"].lower()
+
+    def test_model_id_negative_returns_error(self):
+        """model_id=-1 must return an error."""
+        import json
+        result = json.loads(civitai_api.handle("get_civitai_model", {"model_id": -1}))
+        assert "error" in result
+
+    def test_model_id_string_returns_error(self):
+        """model_id as a string (e.g. 'abc') must return error."""
+        import json
+        result = json.loads(civitai_api.handle("get_civitai_model", {"model_id": "abc"}))
+        assert "error" in result
+
+    def test_model_id_valid_positive_proceeds(self):
+        """model_id=1 must pass validation (may fail at network, but not at guard)."""
+        from unittest.mock import patch, MagicMock
+        import json
+        with patch("agent.tools.civitai_api.CIVITAI_LIMITER") as mock_limiter, \
+             patch("httpx.Client") as mock_client:
+            mock_limiter.return_value.return_value.acquire.return_value = True
+            resp = MagicMock()
+            resp.status_code = 200
+            resp.json.return_value = {"id": 1, "name": "Test Model", "type": "Checkpoint"}
+            resp.raise_for_status.return_value = None
+            mock_client.return_value.__enter__ = MagicMock(return_value=mock_client.return_value)
+            mock_client.return_value.__exit__ = MagicMock(return_value=False)
+            mock_client.return_value.get.return_value = resp
+            result = json.loads(civitai_api.handle("get_civitai_model", {"model_id": 1}))
+        # Should not have a validation error
+        assert result.get("error") != "model_id must be a positive integer, got 1."

@@ -839,7 +839,10 @@ def _handle_repair_workflow(tool_input: dict) -> str:
     if auto_install and packs_to_install:
         for url, pack_info in packs_to_install.items():
             install_json = _handle_install_node_pack({"url": url, "name": pack_info["name"]})
-            install_result = json.loads(install_json)
+            try:
+                install_result = json.loads(install_json)
+            except (ValueError, TypeError):
+                install_result = {"error": "Installer returned non-JSON response"}
             install_results.append({
                 "pack": pack_info["name"],
                 "url": url,

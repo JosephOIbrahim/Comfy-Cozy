@@ -97,6 +97,10 @@ class ExperienceAccumulator:
 
         Enforces max_chunks by removing oldest low-quality entries.
         """
+        if chunk is None:  # Cycle 42: guard None/invalid input
+            raise ValueError("chunk must not be None")
+        if not isinstance(chunk, ExperienceChunk):
+            raise TypeError(f"chunk must be an ExperienceChunk, got {type(chunk).__name__}")
         with self._chunks_lock:
             self._chunks.append(chunk)
 

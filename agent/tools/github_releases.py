@@ -182,7 +182,10 @@ def _handle_check_node_updates(tool_input: dict) -> str:
     """Check installed custom node packs for updates."""
     from . import comfy_inspect
 
-    packs_result = json.loads(comfy_inspect.handle("list_custom_nodes", {}))
+    try:
+        packs_result = json.loads(comfy_inspect.handle("list_custom_nodes", {}))
+    except (ValueError, TypeError) as _e:
+        return to_json({"error": f"Could not parse custom nodes list: {_e}"})
     if "error" in packs_result:
         return to_json({"error": f"Could not list custom nodes: {packs_result['error']}"})
 

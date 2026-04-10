@@ -90,6 +90,7 @@ TOOLS: list[dict] = [
             "properties": {
                 "model_id": {
                     "type": "integer",
+                    "minimum": 1,
                     "description": "CivitAI model ID (from search results).",
                 },
             },
@@ -326,6 +327,9 @@ def _handle_search_civitai(tool_input: dict) -> str:
 
 def _handle_get_civitai_model(tool_input: dict) -> str:
     model_id = tool_input["model_id"]
+
+    if not isinstance(model_id, int) or model_id < 1:  # Cycle 42: runtime guard
+        return to_json({"error": f"model_id must be a positive integer, got {model_id!r}."})
 
     if not CIVITAI_LIMITER().acquire(timeout=5.0):
         return to_json({"error": "Rate limited — too many CivitAI requests. Try again shortly."})

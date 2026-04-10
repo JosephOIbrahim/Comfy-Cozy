@@ -591,3 +591,44 @@ class TestProvisionJsonDecodeGuards:
         assert "error" not in result or result.get("step") == "already_installed"
         if "wired" in result:
             assert isinstance(result["wired"], dict)
+
+
+# ---------------------------------------------------------------------------
+# Cycle 42 — comfy_provision install loop non-JSON guard
+# ---------------------------------------------------------------------------
+
+class TestInstallLoopNonJsonGuard:
+    """Guard against non-JSON returned by _handle_install_node_pack in repair loop."""
+
+    def test_install_non_json_does_not_crash(self):
+        """If _handle_install_node_pack returns non-JSON, the loop continues, not crashes."""
+        from unittest.mock import patch
+        import json
+
+        from agent.tools import comfy_provision
+
+        # repair_workflow calls comfy_discover.handle("find_missing_nodes") then
+        # _handle_install_node_pack for each pack. We simulate a missing node that
+        # has a known pack, then make the installer return garbage.
+        missing_nodes_response = json.dumps({
+            "missing": [
+                {
+                    "class_type": "TestNode",
+                    "pack_url": "https://github.com/owner/test-pack",
+                    "pack_name": "TestPack",
+                }
+            ]
+        })
+
+        with patch("agent.tools.comfy_discover.handle", return_value=missing_nodes_response), \
+             patch(
+                 "agent.tools.comfy_provision._handle_install_node_pack",
+                 return_value="DEFINITELY NOT JSON",
+             ):
+            # repair_workflow should survive the non-JSON from the installer
+            try:
+                result = json.loads(comfy_provision.handle("repair_workflow", {}))
+                # Must not crash — whatever the result, it must be JSON-parseable
+                assert isinstance(result, dict)
+            except Exception as e:
+                pytest.fail(f"repair_workflow crashed on non-JSON installer output: {e}")

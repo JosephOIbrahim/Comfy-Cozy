@@ -526,10 +526,19 @@ class PlannerAgent(BrainAgent):
             if plan is None:
                 return self.to_json({"error": "No active plan."})
 
+            if not isinstance(plan.get("steps"), list):  # Cycle 42: guard corrupt plan
+                return self.to_json({"error": "Plan is corrupt: 'steps' is not a list."})
+
             # Find and complete the step
             step = next((s for s in plan["steps"] if s["id"] == step_id), None)
             if step is None:
                 return self.to_json({"error": f"Step '{step_id}' not found in plan."})
+
+            if step.get("status") == "done":  # Cycle 42: guard re-completion
+                return self.to_json({
+                    "error": f"Step '{step_id}' is already completed.",
+                    "step_id": step_id,
+                })
 
             step["status"] = "done"
             step["result"] = result
@@ -545,7 +554,10 @@ class PlannerAgent(BrainAgent):
                 plan["status"] = "completed"
 
             plan["updated_at"] = time.time()
-            self._save_plan(session, plan)
+            try:
+                self._save_plan(session, plan)
+            except Exception as _save_exc:  # Cycle 42: surface save failures
+                return self.to_json({"error": f"Failed to save plan: {_save_exc}"})
 
         # Record completion outside lock — this calls out to memory, which has its own locks
         if all_done:

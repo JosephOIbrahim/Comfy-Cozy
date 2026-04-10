@@ -219,6 +219,8 @@ def _handle_get_all_nodes(tool_input: dict) -> str:
     filtered_names = []
     for name in sorted(all_info.keys()):
         info = all_info[name]
+        if not isinstance(info, dict):  # Cycle 42: guard malformed node entries
+            continue
         cat = (info.get("category") or "").lower()
         if cat_filter and cat_filter not in cat:
             continue

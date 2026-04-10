@@ -255,3 +255,49 @@ class TestAutogrowNodeInfo:
                 "node_type": "KSampler",
             }))
         assert "autogrow_inputs" not in result
+
+
+# ---------------------------------------------------------------------------
+# Cycle 42 — malformed node entry guard
+# ---------------------------------------------------------------------------
+
+class TestGetAllNodesMalformedEntry:
+    """Guard against non-dict entries in /object_info response."""
+
+    def test_non_dict_node_entry_is_skipped(self):
+        """If a node entry is a string (not dict), it must be skipped, not crash."""
+        import json
+        mock_data = {
+            "GoodNode": {
+                "input": {"required": {}, "optional": {}},
+                "output": [], "output_name": [], "output_is_list": [],
+                "name": "GoodNode", "display_name": "Good Node",
+                "description": "", "category": "sampling",
+                "output_node": False,
+            },
+            "BadNode": "this should be a dict but is a string",
+        }
+        with patch("agent.tools.comfy_api._get", return_value=mock_data):
+            result = json.loads(comfy_api.handle("get_all_nodes", {"format": "names_only"}))
+        assert "error" not in result
+        assert "GoodNode" in result["nodes"]
+        assert "BadNode" not in result["nodes"]
+
+    def test_none_node_entry_is_skipped(self):
+        """If a node entry is None, it must be skipped."""
+        import json
+        mock_data = {
+            "ValidNode": {
+                "input": {"required": {}, "optional": {}},
+                "output": [], "output_name": [], "output_is_list": [],
+                "name": "ValidNode", "display_name": "Valid Node",
+                "description": "", "category": "latent",
+                "output_node": False,
+            },
+            "NullNode": None,
+        }
+        with patch("agent.tools.comfy_api._get", return_value=mock_data):
+            result = json.loads(comfy_api.handle("get_all_nodes", {"format": "names_only"}))
+        assert "error" not in result
+        assert "ValidNode" in result["nodes"]
+        assert "NullNode" not in result["nodes"]

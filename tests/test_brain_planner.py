@@ -1,6 +1,7 @@
 """Tests for brain/planner.py — goal decomposition and progress tracking."""
 
 import json
+import unittest.mock
 
 import pytest
 
@@ -359,3 +360,79 @@ class TestReplanStepsValidation:
         }))
         assert "error" not in result
         assert result.get("replanned") is True
+
+
+# ---------------------------------------------------------------------------
+# Cycle 42 — complete_step guards
+# ---------------------------------------------------------------------------
+
+class TestCompleteStepGuards:
+    """Adversarial tests for Cycle 42 guards in _handle_complete_step."""
+
+    def _make_plan(self, session: str) -> None:
+        handle("plan_goal", {
+            "goal": "Goal for guard tests",
+            "session": session,
+        })
+
+    def test_corrupt_steps_not_list_returns_error(self, tmp_path, monkeypatch):
+        """If plan['steps'] is not a list (e.g. dict), must return error not crash."""
+        import json as _json
+        from agent.brain.planner import PlannerAgent
+
+        agent = PlannerAgent()
+        bad_plan = {"goal": "bad", "steps": {"key": "not a list"}, "status": "active"}
+
+        with unittest.mock.patch.object(agent, "_load_plan", return_value=bad_plan), \
+             unittest.mock.patch.object(agent, "_save_plan") as mock_save:
+            result = _json.loads(agent._handle_complete_step({
+                "step_id": "s1", "session": "c42_corrupt",
+            }))
+        assert "error" in result
+        assert "corrupt" in result["error"].lower() or "not a list" in result["error"].lower()
+        mock_save.assert_not_called()
+
+    def test_recompletion_of_done_step_returns_error(self):
+        """Completing an already-done step must return an error."""
+        session = "c42_recompletion"
+        handle("plan_goal", {"goal": "Recompletion test", "session": session})
+
+        # get first step id — get_plan returns steps at top level
+        plan_result = json.loads(handle("get_plan", {"session": session}))
+        first_step_id = plan_result["steps"][0]["id"]
+
+        # Complete it once — should succeed
+        r1 = json.loads(handle("complete_step", {"step_id": first_step_id, "session": session}))
+        assert "error" not in r1
+
+        # Complete it again — must fail
+        r2 = json.loads(handle("complete_step", {"step_id": first_step_id, "session": session}))
+        assert "error" in r2
+        assert "already" in r2["error"].lower()
+
+    def test_save_plan_failure_surfaces_error(self):
+        """If _save_plan raises, the error is surfaced as JSON, not an exception."""
+        import json as _json
+        from agent.brain.planner import PlannerAgent
+
+        agent = PlannerAgent()
+        steps = [{"id": "s1", "action": "Do X", "status": "active", "tools": []}]
+        good_plan = {"goal": "test", "steps": steps, "status": "active"}
+
+        with unittest.mock.patch.object(agent, "_load_plan", return_value=good_plan), \
+             unittest.mock.patch.object(agent, "_save_plan", side_effect=OSError("disk full")):
+            result = _json.loads(agent._handle_complete_step({
+                "step_id": "s1", "session": "c42_save_fail",
+            }))
+        assert "error" in result
+        assert "disk full" in result["error"] or "save" in result["error"].lower()
+
+    def test_complete_step_valid_still_works(self):
+        """Normal complete_step flow must still succeed after guards added."""
+        session = "c42_valid_complete"
+        handle("plan_goal", {"goal": "Normal flow", "session": session})
+        plan_result = json.loads(handle("get_plan", {"session": session}))
+        first_id = plan_result["steps"][0]["id"]
+        result = json.loads(handle("complete_step", {"step_id": first_id, "session": session}))
+        assert "error" not in result
+        assert result["completed"] == first_id

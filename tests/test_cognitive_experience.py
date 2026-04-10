@@ -464,3 +464,37 @@ class TestDecayWeightClamp:
         chunk = ExperienceChunk()
         chunk.timestamp = 0.0  # Unix epoch — very old
         assert chunk.decay_weight >= 0.0
+
+
+# ---------------------------------------------------------------------------
+# Cycle 42 — accumulator.record() input guards
+# ---------------------------------------------------------------------------
+
+class TestAccumulatorRecordGuards:
+    """Adversarial tests for None/wrong-type guards in Accumulator.record()."""
+
+    def _make_accumulator(self):
+        from cognitive.experience.accumulator import ExperienceAccumulator
+        return ExperienceAccumulator()
+
+    def test_record_none_raises_value_error(self):
+        """Passing None to record() must raise ValueError."""
+        import pytest
+        acc = self._make_accumulator()
+        with pytest.raises(ValueError, match="None"):
+            acc.record(None)
+
+    def test_record_string_raises_type_error(self):
+        """Passing a string to record() must raise TypeError."""
+        import pytest
+        acc = self._make_accumulator()
+        with pytest.raises(TypeError, match="ExperienceChunk"):
+            acc.record("not a chunk")
+
+    def test_record_valid_chunk_does_not_raise(self):
+        """Valid ExperienceChunk must be recorded without error."""
+        from cognitive.experience.chunk import ExperienceChunk
+        acc = self._make_accumulator()
+        chunk = ExperienceChunk()
+        acc.record(chunk)
+        assert len(acc._chunks) == 1

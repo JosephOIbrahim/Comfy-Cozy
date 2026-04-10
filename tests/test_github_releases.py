@@ -223,3 +223,32 @@ class TestResponseTypeGuards:
             result = github_releases._fetch_releases("owner/repo")
         assert isinstance(result, list)
         assert len(result) == 2
+
+
+# ---------------------------------------------------------------------------
+# Cycle 42 — check_node_updates non-JSON guard
+# ---------------------------------------------------------------------------
+
+class TestCheckNodeUpdatesNonJsonGuard:
+    """Guard against non-JSON returned by comfy_inspect.handle."""
+
+    def test_non_json_from_inspect_returns_error(self):
+        """If comfy_inspect.handle returns non-JSON, return structured error."""
+        from unittest.mock import patch
+        import json
+
+        with patch("agent.tools.comfy_inspect.handle", return_value="NOT JSON AT ALL"):
+            result = json.loads(github_releases.handle("check_node_updates", {}))
+        assert "error" in result
+        assert "parse" in result["error"].lower() or "json" in result["error"].lower()
+
+    def test_inspect_returns_valid_json_with_error_field(self):
+        """If inspect returns JSON with error key, surface it."""
+        from unittest.mock import patch
+        import json
+
+        error_payload = json.dumps({"error": "ComfyUI not running"})
+        with patch("agent.tools.comfy_inspect.handle", return_value=error_payload):
+            result = json.loads(github_releases.handle("check_node_updates", {}))
+        assert "error" in result
+        assert "comfyui" in result["error"].lower() or "custom nodes" in result["error"].lower()
