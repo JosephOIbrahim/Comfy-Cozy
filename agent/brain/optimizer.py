@@ -624,11 +624,18 @@ class OptimizerAgent(BrainAgent):
                 if not isinstance(node, dict):
                     continue
                 if node.get("class_type") == "EmptyLatentImage":
-                    patch_handle("set_input", {
+                    raw = patch_handle("set_input", {
                         "node_id": nid,
                         "input_name": "batch_size",
                         "value": target_batch,
                     })
+                    try:  # Cycle 35: validate patch result before recording success
+                        import json as _j
+                        pr = _j.loads(raw) if isinstance(raw, str) else raw
+                        if isinstance(pr, dict) and "error" in pr:
+                            continue
+                    except Exception:
+                        pass
                     updated.append(nid)
 
             return self.to_json({
@@ -652,11 +659,18 @@ class OptimizerAgent(BrainAgent):
                 if not isinstance(node, dict):
                     continue
                 if node.get("class_type") in ("KSampler", "KSamplerAdvanced"):
-                    patch_handle("set_input", {
+                    raw = patch_handle("set_input", {
                         "node_id": nid,
                         "input_name": "steps",
                         "value": target_steps,
                     })
+                    try:  # Cycle 35: validate patch result before recording success
+                        import json as _j
+                        pr = _j.loads(raw) if isinstance(raw, str) else raw
+                        if isinstance(pr, dict) and "error" in pr:
+                            continue
+                    except Exception:
+                        pass
                     updated.append(nid)
 
             return self.to_json({
@@ -682,16 +696,26 @@ class OptimizerAgent(BrainAgent):
                 if not isinstance(node, dict):
                     continue
                 if node.get("class_type") in ("KSampler", "KSamplerAdvanced"):
-                    patch_handle("set_input", {
+                    raw_s = patch_handle("set_input", {
                         "node_id": nid,
                         "input_name": "sampler_name",
                         "value": sampler,
                     })
-                    patch_handle("set_input", {
+                    raw_sc = patch_handle("set_input", {
                         "node_id": nid,
                         "input_name": "scheduler",
                         "value": scheduler,
                     })
+                    try:  # Cycle 35: validate both patch results before recording success
+                        import json as _j
+                        ps = _j.loads(raw_s) if isinstance(raw_s, str) else raw_s
+                        psc = _j.loads(raw_sc) if isinstance(raw_sc, str) else raw_sc
+                        if (isinstance(ps, dict) and "error" in ps) or (
+                            isinstance(psc, dict) and "error" in psc
+                        ):
+                            continue
+                    except Exception:
+                        pass
                     updated.append(nid)
 
             return self.to_json({

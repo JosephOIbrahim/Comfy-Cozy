@@ -4,9 +4,11 @@ He2025 alignment: deterministic JSON serialization ensures
 same inputs -> same outputs across sessions and runs.
 """
 
+import datetime as _datetime
 import json as _json
 import os
 import tempfile
+import uuid as _uuid
 from pathlib import Path
 
 # Directories that tools are allowed to read/write within.
@@ -105,13 +107,18 @@ def validate_path(path_str: str, *, must_exist: bool = False) -> str | None:
 def _json_default(obj):
     """Fallback encoder for common non-serializable types.
 
-    Handles Path (→ str) and set/frozenset (→ sorted list for He2025 determinism).
+    Handles Path (→ str), set/frozenset (→ sorted list, He2025 determinism),
+    datetime/date (→ ISO-8601 str), and UUID (→ str). (Cycle 35 fix)
     All other types raise TypeError with a descriptive message.
     """
     if isinstance(obj, Path):
         return str(obj)
     if isinstance(obj, (set, frozenset)):
         return sorted(obj)  # sorted for deterministic output (He2025)
+    if isinstance(obj, (_datetime.datetime, _datetime.date)):
+        return obj.isoformat()
+    if isinstance(obj, _uuid.UUID):
+        return str(obj)
     raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
 
 

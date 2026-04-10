@@ -304,3 +304,42 @@ class TestPackageExports:
         for cls in (DemoAgent, PlannerAgent, MemoryAgent, VisionAgent, OrchestratorAgent, OptimizerAgent):
             for tool in cls.TOOLS:
                 assert tool["name"] in all_names, f"{tool['name']} from {cls.__name__} not in ALL_BRAIN_TOOLS"
+
+
+# ---------------------------------------------------------------------------
+# Cycle 35: to_json handles datetime, date, and UUID without crashing
+# ---------------------------------------------------------------------------
+
+class TestToJsonExtendedTypes:
+    """_json_default must handle datetime, date, and UUID gracefully."""
+
+    def test_datetime_serializes_to_iso(self):
+        """datetime objects must serialize to ISO-8601 string, not TypeError."""
+        import datetime
+        from agent.tools._util import to_json
+        dt = datetime.datetime(2025, 1, 15, 10, 30, 0)
+        result = json.loads(to_json({"ts": dt}))
+        assert result["ts"] == "2025-01-15T10:30:00"
+
+    def test_date_serializes_to_iso(self):
+        """date objects must serialize to ISO-8601 date string."""
+        import datetime
+        from agent.tools._util import to_json
+        d = datetime.date(2025, 4, 10)
+        result = json.loads(to_json({"date": d}))
+        assert result["date"] == "2025-04-10"
+
+    def test_uuid_serializes_to_string(self):
+        """UUID objects must serialize to hex string."""
+        import uuid
+        from agent.tools._util import to_json
+        uid = uuid.UUID("12345678-1234-5678-1234-567812345678")
+        result = json.loads(to_json({"id": uid}))
+        assert result["id"] == "12345678-1234-5678-1234-567812345678"
+
+    def test_unsupported_type_still_raises(self):
+        """Complex/custom objects must still raise TypeError."""
+        import pytest
+        from agent.tools._util import to_json
+        with pytest.raises(TypeError):
+            to_json({"bad": object()})

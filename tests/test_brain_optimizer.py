@@ -294,3 +294,85 @@ class TestOptimizerInputValidation:
         }))
         assert "error" not in result
         assert result.get("steps") == 25
+
+
+# ---------------------------------------------------------------------------
+# Cycle 35: optimizer patch-result validation
+# ---------------------------------------------------------------------------
+
+class TestOptimizerPatchResultValidation:
+    """When patch_handle returns an error dict, the node must NOT appear in nodes_updated."""
+
+    def test_batch_size_patch_error_not_counted(self):
+        """If set_input errors on a node, that node must be excluded from nodes_updated."""
+        from agent.brain.optimizer import OptimizerAgent
+        from agent.brain._sdk import BrainConfig
+        import json as _json
+
+        wf = {
+            "1": {"class_type": "EmptyLatentImage", "inputs": {"batch_size": 1}},
+        }
+
+        error_response = _json.dumps({"error": "Node not found"})
+
+        cfg = BrainConfig(
+            get_workflow_state=lambda: {"current_workflow": wf},
+            patch_handle=lambda name, args: error_response,
+        )
+        agent = OptimizerAgent(cfg)
+        result = _json.loads(agent.handle("apply_optimization", {
+            "optimization_id": "batch_size",
+            "params": {"batch_size": 4},
+        }))
+        # No error at the top level — the patch failure is silently skipped
+        assert "error" not in result
+        # But the failing node must NOT appear in nodes_updated
+        assert result.get("nodes_updated") == []
+
+    def test_step_optimization_patch_error_not_counted(self):
+        """If set_input errors for steps, that node must be excluded from nodes_updated."""
+        from agent.brain.optimizer import OptimizerAgent
+        from agent.brain._sdk import BrainConfig
+        import json as _json
+
+        wf = {
+            "1": {"class_type": "KSampler", "inputs": {"steps": 20}},
+        }
+
+        error_response = _json.dumps({"error": "Unknown node"})
+
+        cfg = BrainConfig(
+            get_workflow_state=lambda: {"current_workflow": wf},
+            patch_handle=lambda name, args: error_response,
+        )
+        agent = OptimizerAgent(cfg)
+        result = _json.loads(agent.handle("apply_optimization", {
+            "optimization_id": "step_optimization",
+            "params": {"steps": 30},
+        }))
+        assert "error" not in result
+        assert result.get("nodes_updated") == []
+
+    def test_sampler_efficiency_patch_error_not_counted(self):
+        """If sampler set_input errors, that node must be excluded from nodes_updated."""
+        from agent.brain.optimizer import OptimizerAgent
+        from agent.brain._sdk import BrainConfig
+        import json as _json
+
+        wf = {
+            "1": {"class_type": "KSampler", "inputs": {"sampler_name": "euler"}},
+        }
+
+        error_response = _json.dumps({"error": "Bad input"})
+
+        cfg = BrainConfig(
+            get_workflow_state=lambda: {"current_workflow": wf},
+            patch_handle=lambda name, args: error_response,
+        )
+        agent = OptimizerAgent(cfg)
+        result = _json.loads(agent.handle("apply_optimization", {
+            "optimization_id": "sampler_efficiency",
+            "params": {"sampler": "dpmpp_2m", "scheduler": "karras"},
+        }))
+        assert "error" not in result
+        assert result.get("nodes_updated") == []

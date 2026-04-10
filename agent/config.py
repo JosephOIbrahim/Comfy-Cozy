@@ -17,8 +17,16 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1")
 
+# Validate ANTHROPIC_API_KEY — warn if missing when provider is anthropic. (Cycle 35 fix)
+if LLM_PROVIDER == "anthropic" and not ANTHROPIC_API_KEY:
+    print(
+        "WARNING: ANTHROPIC_API_KEY is not set. "
+        "Set it in your .env file or environment. "
+        "Get your key at https://console.anthropic.com/",
+        file=sys.stderr,
+    )
 # Validate Anthropic key format (warn, don't block — key may be valid in other formats)
-if ANTHROPIC_API_KEY and not re.match(r"^sk-ant-", ANTHROPIC_API_KEY):
+elif ANTHROPIC_API_KEY and not re.match(r"^sk-ant-", ANTHROPIC_API_KEY):
     print(
         "WARNING: ANTHROPIC_API_KEY doesn't match expected format (sk-ant-...). "
         "Verify your key at https://console.anthropic.com/",

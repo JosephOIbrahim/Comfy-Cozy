@@ -87,15 +87,28 @@ _TOOLS: list[dict] = [
 # ---------------------------------------------------------------------------
 
 class IntentCollectorAgent(BrainAgent):
-    """Captures and serves artistic intent for metadata embedding."""
+    """Captures and serves artistic intent for metadata embedding.
+
+    Intent is stored per-session so concurrent MCP connections do not
+    overwrite each other's creative context. The session key is derived
+    from current_conn_session() — each MCP connection gets a unique,
+    stable name (e.g. "conn_3f2a1b4c"); tests and CLI default to "default".
+    (Cycle 35 fix)
+    """
 
     TOOLS = _TOOLS
 
     def __init__(self, config: BrainConfig | None = None):
         super().__init__(config)
-        self._current_intent: dict | None = None
-        self._intent_history: list[dict] = []
+        # Per-session storage: session_key -> intent dict / history list
+        self._intents: dict[str, dict | None] = {}
+        self._histories: dict[str, list[dict]] = {}
         self._lock = threading.Lock()
+
+    def _session_key(self) -> str:
+        """Return the current MCP connection's session name (or 'default')."""
+        from .._conn_ctx import current_conn_session
+        return current_conn_session()
 
     def capture(
         self,
@@ -104,7 +117,7 @@ class IntentCollectorAgent(BrainAgent):
         style_references: list[str] | None = None,
         session_context: str = "",
     ) -> dict:
-        """Store intent for current generation."""
+        """Store intent for the current generation (isolated per MCP session)."""
         intent = {
             "user_request": user_request,
             "interpretation": interpretation,
@@ -112,27 +125,32 @@ class IntentCollectorAgent(BrainAgent):
             "session_context": session_context,
             "captured_at": time.time(),
         }
+        key = self._session_key()
         with self._lock:
-            self._current_intent = intent
-            self._intent_history.append(intent)
-            if len(self._intent_history) > _MAX_INTENT_HISTORY:
-                self._intent_history = self._intent_history[-_MAX_INTENT_HISTORY:]
+            self._intents[key] = intent
+            history = self._histories.setdefault(key, [])
+            history.append(intent)
+            if len(history) > _MAX_INTENT_HISTORY:
+                self._histories[key] = history[-_MAX_INTENT_HISTORY:]
         return intent
 
     def get_current(self) -> dict | None:
-        """Return the most recent intent, or None."""
+        """Return the most recent intent for this session, or None."""
+        key = self._session_key()
         with self._lock:
-            return self._current_intent
+            return self._intents.get(key)
 
     def clear(self) -> None:
-        """Clear current intent (after it's been consumed)."""
+        """Clear current intent for this session (after it's been consumed)."""
+        key = self._session_key()
         with self._lock:
-            self._current_intent = None
+            self._intents[key] = None
 
     def get_history(self) -> list[dict]:
-        """Return all captured intents this session."""
+        """Return all captured intents for this session."""
+        key = self._session_key()
         with self._lock:
-            return list(self._intent_history)
+            return list(self._histories.get(key, []))
 
     def handle(self, name: str, tool_input: dict) -> str:
         if name == "capture_intent":
@@ -145,7 +163,7 @@ class IntentCollectorAgent(BrainAgent):
             return self.to_json({
                 "status": "captured",
                 "intent": intent,
-                "history_count": len(self._intent_history),
+                "history_count": len(self.get_history()),
             })
         elif name == "get_current_intent":
             current = self.get_current()

@@ -29,8 +29,9 @@ def reset_singleton():
     BrainAgent._register_all()
     instance = BrainAgent._registry.get("capture_intent")
     if instance is not None:
-        instance._current_intent = None
-        instance._intent_history.clear()
+        # Cycle 35: storage is now per-session dicts
+        instance._intents.clear()
+        instance._histories.clear()
     yield
 
 
@@ -172,3 +173,70 @@ class TestModuleDispatch:
         from agent.brain.intent_collector import handle
         result = json.loads(handle("get_current_intent", {}))
         assert result["status"] == "empty"
+
+
+# ---------------------------------------------------------------------------
+# Cycle 35: per-session isolation — two sessions must not overwrite each other
+# ---------------------------------------------------------------------------
+
+class TestSessionIsolation:
+    """capture_intent must isolate intent per MCP session; no cross-contamination."""
+
+    def test_two_sessions_isolated(self):
+        """Intents captured under different session keys must not overwrite each other."""
+        from agent._conn_ctx import _conn_session
+        from agent.brain._sdk import BrainAgent
+
+        BrainAgent._register_all()
+        instance = BrainAgent._registry.get("capture_intent")
+        assert instance is not None
+
+        # Simulate two concurrent connections using the ContextVar
+        import contextvars
+
+        token_a = _conn_session.set("conn_session_a")
+        instance.capture("Session A request", "Lower CFG", session_context="a")
+        _conn_session.reset(token_a)
+
+        token_b = _conn_session.set("conn_session_b")
+        instance.capture("Session B request", "Higher steps", session_context="b")
+        _conn_session.reset(token_b)
+
+        # Now verify each session sees only its own intent
+        token_a = _conn_session.set("conn_session_a")
+        intent_a = instance.get_current()
+        _conn_session.reset(token_a)
+
+        token_b = _conn_session.set("conn_session_b")
+        intent_b = instance.get_current()
+        _conn_session.reset(token_b)
+
+        assert intent_a is not None
+        assert intent_b is not None
+        assert intent_a["user_request"] == "Session A request"
+        assert intent_b["user_request"] == "Session B request"
+        assert intent_a["user_request"] != intent_b["user_request"]
+
+    def test_clear_only_clears_current_session(self):
+        """clear() must only clear the intent for the calling session."""
+        from agent._conn_ctx import _conn_session
+        from agent.brain._sdk import BrainAgent
+
+        BrainAgent._register_all()
+        instance = BrainAgent._registry.get("capture_intent")
+
+        token_a = _conn_session.set("conn_clear_a")
+        instance.capture("A request", "A interp")
+        _conn_session.reset(token_a)
+
+        token_b = _conn_session.set("conn_clear_b")
+        instance.capture("B request", "B interp")
+        instance.clear()  # Only clears session B's intent
+        assert instance.get_current() is None  # B is cleared
+        _conn_session.reset(token_b)
+
+        # Session A should be untouched
+        token_a = _conn_session.set("conn_clear_a")
+        assert instance.get_current() is not None
+        assert instance.get_current()["user_request"] == "A request"
+        _conn_session.reset(token_a)
