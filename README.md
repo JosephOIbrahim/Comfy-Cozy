@@ -10,7 +10,7 @@
 
 **Talk to ComfyUI like a colleague. It talks back.**
 
-You describe what you want in plain English. The agent loads workflows, swaps models, tweaks parameters, installs missing nodes, runs generations, analyzes outputs, and learns what works for you -- all without you touching JSON or hunting through menus.
+You describe what you want in plain English. The agent loads workflows, swaps models, tweaks parameters, installs missing nodes, runs generations, analyzes outputs, and learns what works for you -- all without you touching JSON or hunting through menus. It doesn't ask permission -- it makes the change, reports what it did, and every change is undoable.
 
 ```mermaid
 graph LR
@@ -397,7 +397,7 @@ graph LR
 3. **PILOT** -- Makes changes through safe, reversible delta layers (never edits your original)
 4. **VERIFY** -- Runs the workflow, checks the output, records what worked
 
-Every change is undoable. Every generation teaches the agent something.
+Every change is undoable. Every generation teaches the agent something. The agent is a doer, not a describer -- say "wire the model" and it wires the model.
 
 ---
 
@@ -662,7 +662,7 @@ graph LR
     style Comfy fill:#ef4444,color:#fff
 ```
 
-The `cognitive/` package is layered by phase -- the core engine (Phase 1) is fully tested at 54/54 adversarial cases; later phases are present on disk and being verified incrementally.
+The `cognitive/` package is layered by phase -- the core engine (Phase 1) is fully tested at 54/54 adversarial cases. Phase 6 is complete: the autonomous pipeline is fully wired with real executor, template loading, rule-based evaluator, and experience persistence.
 
 ```mermaid
 graph TB
@@ -671,7 +671,7 @@ graph TB
     Cognitive --> Exp["experience/<br/>chunk -- signature -- accumulator"]
     Cognitive --> Pred["prediction/<br/>cwm -- arbiter -- counterfactual"]
     Cognitive --> Trans["transport/<br/>schema_cache -- events -- interrupt"]
-    Cognitive --> Pipe["pipeline/<br/>autonomous -- create_default_pipeline<br/>Phase 6A -- fully wired"]
+    Cognitive --> Pipe["pipeline/<br/>autonomous -- create_default_pipeline<br/>Phase 6 complete"]
     Cognitive --> CogTools["tools/<br/>analyze -- compose -- execute<br/>mutate -- query -- series -- dependencies"]
 
     style Cognitive fill:#8b5cf6,color:#fff
