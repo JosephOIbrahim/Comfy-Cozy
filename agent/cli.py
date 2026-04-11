@@ -11,6 +11,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
+from ._conn_ctx import current_conn_session
 from .config import AGENT_MODEL, COMFYUI_URL, COMFYUI_DATABASE, ANTHROPIC_API_KEY, LOG_DIR
 from .logging_config import setup_logging
 from .streaming import NullHandler
@@ -504,7 +505,7 @@ def orchestrate(
         from .stage import HAS_USD
         if HAS_USD:
             from .session_context import get_session_context
-            ctx = get_session_context(session or "default")
+            ctx = get_session_context(session or current_conn_session())
             stage = ctx.ensure_stage()
             if stage is not None:
                 console.print("[bold]Step 5/6:[/bold] Composing USD scene...")
@@ -637,7 +638,7 @@ def autoresearch(
         cws = None
         try:
             from .session_context import get_session_context
-            ctx = get_session_context("default")
+            ctx = get_session_context(current_conn_session())
             cws = ctx.ensure_stage()
         except Exception as e:
             log.debug("Could not initialize CWS for autoresearch: %s", e)
@@ -712,7 +713,7 @@ def autoresearch(
             from .session_context import get_session_context
             from .stage import register_model
 
-            ctx = get_session_context("default")
+            ctx = get_session_context(current_conn_session())
             stage = ctx.ensure_stage()
             if stage is None:
                 console.print("[yellow]Could not initialize stage.[/yellow]")

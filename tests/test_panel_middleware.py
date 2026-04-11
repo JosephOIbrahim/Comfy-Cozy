@@ -81,6 +81,16 @@ class TestCheckAuth:
         assert resp is not None
         assert resp.status == 401
 
+    def test_uses_constant_time_compare(self):
+        """Token comparison must use hmac.compare_digest to prevent timing attacks."""
+        import inspect
+
+        source = inspect.getsource(check_auth)
+        assert "compare_digest" in source, (
+            "check_auth must use hmac.compare_digest for constant-time "
+            "token comparison to prevent byte-by-byte timing attacks"
+        )
+
 
 # ── check_rate_limit ───────────────────────────────────────────
 

@@ -1,5 +1,6 @@
 """Panel route guards — auth, rate limiting, request size."""
 
+import hmac
 import logging
 import threading
 import time
@@ -61,7 +62,9 @@ def check_auth(request: web.Request) -> web.Response | None:
     if request.path.endswith("/health"):
         return None
     auth = request.headers.get("Authorization", "")
-    if not auth.startswith("Bearer ") or auth[7:] != MCP_AUTH_TOKEN:
+    if not auth.startswith("Bearer "):
+        return web.json_response({"error": "Unauthorized"}, status=401)
+    if not hmac.compare_digest(auth[7:], MCP_AUTH_TOKEN):
         return web.json_response({"error": "Unauthorized"}, status=401)
     return None
 

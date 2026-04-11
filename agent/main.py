@@ -36,6 +36,28 @@ from .tools import ALL_TOOLS
 
 log = logging.getLogger(__name__)
 
+
+def _wrap_safe(callback):
+    """Wrap a StreamHandler callback so its exceptions don't crash the agent loop.
+
+    Custom handlers can raise (KeyError, IOError, AttributeError, etc.). Without
+    this guard, a single bad handler would kill the entire conversation. We log
+    the exception at warning level and continue -- the conversation survives a
+    misbehaving renderer.
+    """
+    def safe_callback(*args, **kwargs):
+        try:
+            return callback(*args, **kwargs)
+        except Exception:
+            log.warning(
+                "Stream handler %s raised; continuing",
+                getattr(callback, "__name__", "<callback>"),
+                exc_info=True,
+            )
+            return None
+    return safe_callback
+
+
 # Graceful shutdown flag -- checked at top of each agent turn
 _shutdown = threading.Event()
 
@@ -83,8 +105,8 @@ def _stream_with_retry(
                 system=system,
                 tools=tools,
                 messages=messages,
-                on_text=h.on_text,
-                on_thinking=h.on_thinking,
+                on_text=_wrap_safe(h.on_text),
+                on_thinking=_wrap_safe(h.on_thinking),
             )
 
         except LLMRateLimitError as e:
@@ -170,7 +192,7 @@ def run_agent_turn(
     log.debug("API response in %.1fs, stop_reason=%s", elapsed, response.stop_reason)
 
     # Signal stream end (for newline handling in CLI)
-    h.on_stream_end()
+    _wrap_safe(h.on_stream_end)()
 
     # Process tool calls from the complete response
     assistant_content = response.content
@@ -184,7 +206,7 @@ def run_agent_turn(
     if len(tool_calls) > 1:
         # Execute multiple tool calls in parallel
         for tc in tool_calls:
-            h.on_tool_call(tc.name, tc.input)
+            _wrap_safe(h.on_tool_call)(tc.name, tc.input)
 
         def _run_tool(tc):
             t_tool = time.monotonic()
@@ -221,11 +243,11 @@ def run_agent_turn(
             tool_results.append(
                 ToolResultBlock(tool_use_id=tc.id, content=results_map[tc.id])
             )
-            h.on_tool_result(tc.name, tc.input, results_map[tc.id])
+            _wrap_safe(h.on_tool_result)(tc.name, tc.input, results_map[tc.id])
     elif len(tool_calls) == 1:
         # Single tool call -- run directly (no thread overhead)
         tc = tool_calls[0]
-        h.on_tool_call(tc.name, tc.input)
+        _wrap_safe(h.on_tool_call)(tc.name, tc.input)
         t_tool = time.monotonic()
         result = _tools.handle(tc.name, tc.input, progress=progress)
         log.debug(
@@ -234,7 +256,7 @@ def run_agent_turn(
         tool_results.append(
             ToolResultBlock(tool_use_id=tc.id, content=result)
         )
-        h.on_tool_result(tc.name, tc.input, result)
+        _wrap_safe(h.on_tool_result)(tc.name, tc.input, result)
 
     # Append assistant message
     messages.append({"role": "assistant", "content": assistant_content})
@@ -268,7 +290,7 @@ def run_interactive(
 
     while True:
         # Get user input
-        user_text = h.on_input()
+        user_text = _wrap_safe(h.on_input)()
 
         if user_text is None:
             break
@@ -296,16 +318,16 @@ def run_interactive(
                 )
             except LLMError as e:
                 log.error("API error after retries: %s", e)
-                h.on_text(f"\n[API error: {e}. Try again.]\n")
-                h.on_stream_end()
+                _wrap_safe(h.on_text)(f"\n[API error: {e}. Try again.]\n")
+                _wrap_safe(h.on_stream_end)()
                 break
 
             if done:
                 break
 
         if turns >= MAX_AGENT_TURNS:
-            h.on_text(
+            _wrap_safe(h.on_text)(
                 f"\n[Agent hit max turns ({MAX_AGENT_TURNS}). "
                 f"Ready for next input.]\n"
             )
-            h.on_stream_end()
+            _wrap_safe(h.on_stream_end)()

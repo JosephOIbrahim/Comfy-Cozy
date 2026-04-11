@@ -367,3 +367,84 @@ class TestRunAgentTurn:
             mock_stream.assert_not_called()
         finally:
             _shutdown.clear()
+
+
+# ---------------------------------------------------------------------------
+# Handler exception guard (regression for STREAM MoE fix)
+# ---------------------------------------------------------------------------
+
+
+class BrokenHandler(NullHandler):
+    """A handler whose callbacks raise — used to verify the guard."""
+
+    def on_text(self, text: str) -> None:
+        raise RuntimeError("intentional test error: on_text")
+
+    def on_thinking(self, text: str) -> None:
+        raise RuntimeError("intentional test error: on_thinking")
+
+    def on_tool_call(self, name: str, input: dict) -> None:
+        raise RuntimeError("intentional test error: on_tool_call")
+
+    def on_tool_result(self, name: str, input: dict, result: str) -> None:
+        raise RuntimeError("intentional test error: on_tool_result")
+
+    def on_stream_end(self) -> None:
+        raise RuntimeError("intentional test error: on_stream_end")
+
+
+class TestHandlerExceptionGuard:
+    """Regression: a misbehaving StreamHandler must not crash the agent loop."""
+
+    @patch("agent.main._stream_with_retry")
+    def test_broken_handler_does_not_crash_text_turn(self, mock_stream, caplog):
+        """Text-only turn survives a handler that raises on every callback."""
+        mock_stream.return_value = LLMResponse(
+            content=[TextBlock(text="Hello from the agent")],
+            stop_reason="end_turn",
+        )
+
+        client = MagicMock()
+        messages = [{"role": "user", "content": "Hi"}]
+
+        # Should NOT raise -- guard must swallow the handler exceptions.
+        import logging as _logging
+        with caplog.at_level(_logging.WARNING, logger="agent.main"):
+            msgs, done = run_agent_turn(
+                client, messages, "system", handler=BrokenHandler()
+            )
+
+        assert done is True
+        assert msgs[-1]["role"] == "assistant"
+        # At least one warning from the guard should have fired
+        # (on_stream_end is always called, so we expect >= 1 log).
+        guard_warnings = [
+            r for r in caplog.records if "Stream handler" in r.getMessage()
+        ]
+        assert len(guard_warnings) >= 1
+
+    @patch("agent.tools.handle")
+    @patch("agent.main._stream_with_retry")
+    def test_broken_handler_does_not_crash_tool_turn(
+        self, mock_stream, mock_handle, caplog
+    ):
+        """Single-tool-call turn survives a broken on_tool_call / on_tool_result."""
+        mock_stream.return_value = LLMResponse(
+            content=[ToolUseBlock(id="t1", name="is_comfyui_running", input={})],
+            stop_reason="tool_use",
+        )
+        mock_handle.return_value = '{"running": true}'
+
+        client = MagicMock()
+        messages = [{"role": "user", "content": "Check"}]
+
+        import logging as _logging
+        with caplog.at_level(_logging.WARNING, logger="agent.main"):
+            msgs, done = run_agent_turn(
+                client, messages, "system", handler=BrokenHandler()
+            )
+
+        # Tool was still executed despite handler explosions
+        assert done is False
+        mock_handle.assert_called_once()
+        assert isinstance(msgs[-1]["content"][0], ToolResultBlock)
