@@ -1223,6 +1223,32 @@ async def _handle_panel_action(ws, conv, loop, action, data):
 
 async def websocket_handler(request):
     """Bidirectional WebSocket for real-time sidebar <-> agent communication."""
+    # Origin validation — sidebar lives in the ComfyUI tab and must only
+    # accept WebSocket connections from the same origin. Browser WebSockets
+    # cannot send custom Authorization headers, so Origin validation IS the
+    # auth layer here. Without it, any page on any origin can connect and
+    # use the agent's full tool surface (info disclosure + confused-deputy
+    # workflow execution). See iter 8/9 security review.
+    from agent._session_helpers import allowed_origins
+    origin = request.headers.get("Origin", "")
+    if origin and origin not in allowed_origins():
+        log.warning("Sidebar WebSocket rejected — cross-origin: %s", origin)
+        return web.Response(status=403, text="Forbidden: invalid Origin")
+    # Non-browser clients (curl, Python httpx) have no Origin header.
+    # Allow them only if MCP_AUTH_TOKEN is configured AND they pass it.
+    if not origin:
+        from agent.config import MCP_AUTH_TOKEN
+        if MCP_AUTH_TOKEN:
+            import hmac
+            auth = request.headers.get("Authorization", "")
+            if not auth.startswith("Bearer ") or not hmac.compare_digest(
+                auth[7:], MCP_AUTH_TOKEN
+            ):
+                log.warning("Sidebar WebSocket rejected — non-browser without bearer auth")
+                return web.Response(status=403, text="Forbidden: auth required")
+        # If MCP_AUTH_TOKEN is not configured, allow non-browser clients
+        # (this matches the panel's existing behavior pre-cycle 5).
+
     ws = web.WebSocketResponse()
     await ws.prepare(request)
 

@@ -294,6 +294,17 @@ async def websocket_handler(request):
     if auth_err is not None:
         return auth_err
 
+    # Origin validation — defense-in-depth on top of bearer auth (cycle 5).
+    # Browser WebSockets cannot send custom Authorization headers, so a
+    # same-origin check guards against token leakage scenarios. Non-browser
+    # clients (curl, Python httpx) have no Origin header and pass through to
+    # the existing bearer auth in middleware.
+    from agent._session_helpers import allowed_origins
+    origin = request.headers.get("Origin", "")
+    if origin and origin not in allowed_origins():
+        log.warning("Panel WebSocket rejected — cross-origin: %s", origin)
+        return web.Response(status=403, text="Forbidden: invalid Origin")
+
     # P1-D: Reject when the connection table is at capacity (pre-handshake fast path).
     if len(_conversations) >= _MAX_WS_CONNECTIONS:
         return web.Response(

@@ -23,6 +23,17 @@ Executor helper:
 
 Both consume the SAME session_id for the contextvar and the correlation
 id.  This is intentional: one ID per conversation, greppable end-to-end.
+
+Origin allowlist helper:
+    allowed_origins() -> frozenset[str]
+
+Returns the set of HTTP Origin strings that are allowed to open
+WebSocket connections to the sidebar (`/superduper/ws`) and panel
+(`/comfy-cozy/chat-ws`) endpoints.  Browser WebSockets cannot send
+custom Authorization headers, so Origin validation is the auth layer
+for the sidebar — without this check, ANY page on ANY origin could
+connect cross-origin and use the agent's full tool surface (last
+verified in iter 8/9 review).
 """
 
 from __future__ import annotations
@@ -33,6 +44,23 @@ from typing import Any, Callable
 
 from ._conn_ctx import _conn_session
 from .logging_config import set_correlation_id
+
+
+def allowed_origins() -> frozenset[str]:
+    """Return the set of HTTP Origin strings allowed to open WebSockets.
+
+    Derived from COMFYUI_HOST/COMFYUI_PORT config plus localhost variants.
+    Read at call time (not import time) so test fixtures that monkeypatch
+    the config see fresh values.
+    """
+    from .config import COMFYUI_HOST, COMFYUI_PORT
+    port = COMFYUI_PORT
+    return frozenset({
+        f"http://{COMFYUI_HOST}:{port}",
+        f"http://127.0.0.1:{port}",
+        f"http://localhost:{port}",
+        f"http://[::1]:{port}",
+    })
 
 
 def spawn_with_session(
