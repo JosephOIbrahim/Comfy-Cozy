@@ -15,9 +15,17 @@ log = logging.getLogger("comfy-cozy")
 
 
 def _tool_call(tool_name, tool_input):
-    """Call an agent tool and return the JSON string result."""
+    """Call an agent tool and return the JSON string result.
+
+    Reads the session id from the _conn_session ContextVar instead of
+    hardcoding "default", so REST endpoints invoked from within an agent
+    loop or test fixture inherit the active conversation's session.  In
+    a stateless REST context with no contextvar set, current_conn_session()
+    falls back to "default" — no behavior change vs the previous hardcode.
+    """
+    from agent._conn_ctx import current_conn_session
     from agent.tools import handle
-    return handle(tool_name, tool_input, session_id="default")
+    return handle(tool_name, tool_input, session_id=current_conn_session())
 
 
 def _guard(request, category, *, post=False):

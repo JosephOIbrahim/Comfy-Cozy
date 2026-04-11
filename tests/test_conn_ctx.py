@@ -263,6 +263,108 @@ class TestWorkflowPatchSessionIsolation:
         assert _get_state() is get_session("default")
 
 
+class TestSharedSessionHelpers:
+    """agent/_session_helpers.py — shared transport helpers used by both
+    ui/server/routes.py (sidebar) and panel/server/chat.py (panel).
+
+    These tests prove the helpers correctly set _conn_session AND the
+    thread-local correlation ID inside the worker, so both transports get
+    the same per-conversation isolation guarantees.
+    """
+
+    def test_spawn_with_session_sets_both_contextvar_and_corr_id(self):
+        """spawn_with_session must set _conn_session + correlation ID inside the worker."""
+        from agent._session_helpers import spawn_with_session
+        from agent._conn_ctx import current_conn_session
+        from agent.logging_config import get_correlation_id
+
+        captured = {}
+
+        def _target():
+            captured["session"] = current_conn_session()
+            captured["corr"] = get_correlation_id()
+
+        thread = spawn_with_session(_target, args=(), session_id="conv_panel_a")
+        thread.start()
+        thread.join(timeout=2.0)
+
+        assert captured["session"] == "conv_panel_a"
+        assert captured["corr"] == "conv_panel_a"
+
+    def test_spawn_with_session_isolates_concurrent_workers(self):
+        """Two concurrent spawns with different session_ids must not bleed."""
+        from agent._session_helpers import spawn_with_session
+        from agent._conn_ctx import current_conn_session
+
+        results = {}
+        barrier = threading.Barrier(2)
+
+        def _target(slot):
+            barrier.wait()  # Both threads enter at the same time
+            results[slot] = current_conn_session()
+
+        t1 = spawn_with_session(_target, args=("t1",), session_id="conv_alpha")
+        t2 = spawn_with_session(_target, args=("t2",), session_id="conv_beta")
+        t1.start()
+        t2.start()
+        t1.join(timeout=2.0)
+        t2.join(timeout=2.0)
+
+        assert results["t1"] == "conv_alpha"
+        assert results["t2"] == "conv_beta"
+
+    def test_run_in_executor_with_session_sets_contextvar(self):
+        """run_in_executor_with_session must set _conn_session inside the executor."""
+        from agent._session_helpers import run_in_executor_with_session
+        from agent._conn_ctx import current_conn_session
+
+        captured = {}
+
+        def _target():
+            captured["session"] = current_conn_session()
+
+        async def _go():
+            loop = asyncio.get_running_loop()
+            await run_in_executor_with_session(loop, _target, session_id="conv_executor_x")
+
+        asyncio.run(_go())
+        assert captured["session"] == "conv_executor_x"
+
+
+class TestOrchestratorSubtaskContext:
+    """orchestrator.spawn_subtask must propagate _conn_session to the
+    spawned worker thread via contextvars.copy_context(), otherwise
+    subtasks fall back to the "default" session.
+    """
+
+    def test_subtask_inherits_parent_contextvar(self):
+        """A subtask spawned inside a session must see that session inside the worker."""
+        from agent._conn_ctx import _conn_session, current_conn_session
+
+        # Build a minimal subtask thread the same way orchestrator does:
+        # parent_ctx = contextvars.copy_context() → Thread(target=parent_ctx.run, args=(_worker,))
+        captured = {}
+
+        def _worker():
+            captured["session"] = current_conn_session()
+
+        def _spawn_in_parent_ctx():
+            parent_ctx = contextvars.copy_context()
+            t = threading.Thread(target=parent_ctx.run, args=(_worker,), daemon=True)
+            t.start()
+            t.join(timeout=2.0)
+
+        # Set the parent contextvar, then spawn — worker should inherit it.
+        ctx = contextvars.copy_context()
+        def _runner():
+            _conn_session.set("conv_parent_session")
+            _spawn_in_parent_ctx()
+
+        ctx.run(_runner)
+
+        assert captured["session"] == "conv_parent_session"
+
+
 class TestStageGateInteraction:
     """Stage tools must respect the gate AND let the gate see stage state.
 

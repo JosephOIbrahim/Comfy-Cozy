@@ -6,6 +6,7 @@ Tomorrow: Agent SDK sub-agents with isolated context windows.
 """
 
 import concurrent.futures
+import contextvars
 import logging
 import threading
 import time
@@ -293,8 +294,15 @@ class OrchestratorAgent(BrainAgent):
                 if not future.cancelled():
                     future.set_exception(exc)
 
+        # Copy the parent thread's context (which includes _conn_session
+        # and the correlation ID set by routes.py / mcp_server.py) so the
+        # subtask runs against THIS conversation's session instead of
+        # falling back to "default".  Without copy_context(), spawned
+        # threads start with an empty context — see _session_helpers.py.
+        parent_ctx = contextvars.copy_context()
         worker = threading.Thread(
-            target=_worker,
+            target=parent_ctx.run,
+            args=(_worker,),
             daemon=True,  # dies automatically when the process exits — no atexit blocking
             name=f"subtask-{task_id}",
         )

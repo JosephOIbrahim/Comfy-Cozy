@@ -57,48 +57,20 @@ def _ensure_brain():
 # ---------------------------------------------------------------------------
 # Session + correlation propagation
 # ---------------------------------------------------------------------------
-# The sidebar previously trampled MCP's "default" workflow slot because no
-# code path set agent._conn_ctx._conn_session before invoking tools.  These
-# helpers spawn worker threads / executor tasks with:
-#   1. _conn_session ContextVar set → workflow_patch._get_state() picks the
-#      right session (isolation between sidebar tabs and MCP connections).
-#   2. set_correlation_id() called → all log entries from this conversation
-#      get tagged with the conv.id, so a single chat is greppable end-to-end.
-#      threading.local() is per-thread, so the corr ID must be set inside
-#      the worker — not the parent — to take effect.
+# The helpers live in agent/_session_helpers.py so both the sidebar
+# (this file) and the panel (panel/server/chat.py) share the same
+# implementation. Each helper sets _conn_session and the correlation ID
+# inside the worker before invoking the target — see the module docstring
+# for the full rationale.
 
 def _spawn_with_session(target, args, session_id: str, *, daemon: bool = True):
-    """threading.Thread wrapper that sets _conn_session + correlation ID."""
-    import contextvars
-    from agent._conn_ctx import _conn_session
-    from agent.logging_config import set_correlation_id
-
-    def runner():
-        _conn_session.set(session_id)
-        set_correlation_id(session_id)
-        return target(*args)
-
-    ctx = contextvars.copy_context()
-    return threading.Thread(
-        target=ctx.run,
-        args=(runner,),
-        daemon=daemon,
-    )
+    from agent._session_helpers import spawn_with_session
+    return spawn_with_session(target, args, session_id, daemon=daemon)
 
 
 def _run_in_executor_with_session(loop, target, *args, session_id: str):
-    """run_in_executor wrapper that sets _conn_session + correlation ID."""
-    import contextvars
-    from agent._conn_ctx import _conn_session
-    from agent.logging_config import set_correlation_id
-
-    def runner():
-        _conn_session.set(session_id)
-        set_correlation_id(session_id)
-        return target(*args)
-
-    ctx = contextvars.copy_context()
-    return loop.run_in_executor(None, lambda: ctx.run(runner))
+    from agent._session_helpers import run_in_executor_with_session
+    return run_in_executor_with_session(loop, target, *args, session_id=session_id)
 
 
 # ---------------------------------------------------------------------------

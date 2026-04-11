@@ -354,21 +354,30 @@ async def websocket_handler(request):
                         })
                         continue
 
-                    # Inject workflow context
+                    # Inject workflow context.  Each executor / thread call
+                    # below sets _conn_session + correlation ID = conv.id
+                    # so the panel transport gets the same per-conversation
+                    # isolation that the sidebar got in cycles 0+1.
+                    from agent._session_helpers import (
+                        spawn_with_session as _spawn_with_session,
+                        run_in_executor_with_session as _run_in_executor_with_session,
+                    )
                     loop = asyncio.get_running_loop()
 
                     workflow_data = data.get("workflow")
                     if workflow_data and isinstance(workflow_data, dict):
                         try:
-                            await loop.run_in_executor(
-                                None, _inject_workflow_data, conv, workflow_data,
+                            await _run_in_executor_with_session(
+                                loop, _inject_workflow_data, conv, workflow_data,
+                                session_id=conv.id,
                             )
                         except Exception as e:
                             log.warning("Workflow injection error: %s", e)
                     else:
                         try:
-                            await loop.run_in_executor(
-                                None, _inject_current_workflow, conv,
+                            await _run_in_executor_with_session(
+                                loop, _inject_current_workflow, conv,
+                                session_id=conv.id,
                             )
                         except Exception as e:
                             log.warning("Current workflow injection error: %s", e)
@@ -376,10 +385,10 @@ async def websocket_handler(request):
                     conv.busy = True
 
                     msg_queue = queue.Queue()
-                    thread = threading.Thread(
-                        target=_run_agent_sync,
-                        args=(conv, content, msg_queue),
-                        daemon=True,
+                    thread = _spawn_with_session(
+                        _run_agent_sync,
+                        (conv, content, msg_queue),
+                        session_id=conv.id,
                     )
                     thread.start()
 
@@ -411,10 +420,14 @@ async def websocket_handler(request):
                 elif msg_type == "workflow":
                     workflow_data = data.get("data")
                     if workflow_data and isinstance(workflow_data, dict):
+                        from agent._session_helpers import (
+                            run_in_executor_with_session as _run_in_executor_with_session,
+                        )
                         loop = asyncio.get_running_loop()
                         try:
-                            await loop.run_in_executor(
-                                None, _inject_workflow_data, conv, workflow_data,
+                            await _run_in_executor_with_session(
+                                loop, _inject_workflow_data, conv, workflow_data,
+                                session_id=conv.id,
                             )
                             await ws.send_json({
                                 "type": "workflow_ack",
