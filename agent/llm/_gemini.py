@@ -115,16 +115,18 @@ class GeminiProvider(LLMProvider):
                     if not candidate.content or not candidate.content.parts:
                         continue
                     for part in candidate.content.parts:
-                        # Text delta
-                        if hasattr(part, "text") and part.text:
-                            accumulated_text += part.text
-                            if on_text:
-                                on_text(part.text)
-
-                        # Thinking delta (Gemini 2.5 models)
+                        # Cycle 7: thinking parts (Gemini 2.5) MUST NOT also
+                        # fire on_text. The two branches are mutually
+                        # exclusive — a part is EITHER a thinking step OR
+                        # user-visible text, never both. Without this, the
+                        # model's reasoning leaks into the main response.
                         if hasattr(part, "thought") and part.thought:
                             if on_thinking:
                                 on_thinking(part.text or "")
+                        elif hasattr(part, "text") and part.text:
+                            accumulated_text += part.text
+                            if on_text:
+                                on_text(part.text)
 
                         # Function call
                         if hasattr(part, "function_call") and part.function_call:

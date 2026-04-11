@@ -439,6 +439,7 @@ class TestOpenAIProvider:
             chunk1.choices[0].delta.tool_calls = None
             chunk1.choices[0].finish_reason = None
             chunk1.model = "gpt-test"
+            chunk1.usage = None  # Cycle 7: no usage on text chunks
 
             chunk2 = MagicMock()
             chunk2.choices = [MagicMock()]
@@ -446,12 +447,14 @@ class TestOpenAIProvider:
             chunk2.choices[0].delta.tool_calls = None
             chunk2.choices[0].finish_reason = None
             chunk2.model = "gpt-test"
+            chunk2.usage = None  # Cycle 7
 
             final = MagicMock()
             final.choices = [MagicMock()]
             final.choices[0].delta = MagicMock(content=None, tool_calls=None)
             final.choices[0].finish_reason = "stop"
             final.model = "gpt-test"
+            final.usage = None  # Cycle 7
 
             provider._client.chat.completions.create.return_value = iter(
                 [chunk1, chunk2, final]
@@ -493,6 +496,7 @@ class TestOpenAIProvider:
             chunk1.choices[0].delta.tool_calls = [tc_delta1]
             chunk1.choices[0].finish_reason = None
             chunk1.model = "gpt-test"
+            chunk1.usage = None  # Cycle 7
 
             # Second chunk: continues arguments
             tc_delta2 = MagicMock()
@@ -508,6 +512,7 @@ class TestOpenAIProvider:
             chunk2.choices[0].delta.tool_calls = [tc_delta2]
             chunk2.choices[0].finish_reason = None
             chunk2.model = "gpt-test"
+            chunk2.usage = None  # Cycle 7
 
             # Final chunk
             final = MagicMock()
@@ -515,6 +520,7 @@ class TestOpenAIProvider:
             final.choices[0].delta = MagicMock(content=None, tool_calls=None)
             final.choices[0].finish_reason = "tool_calls"
             final.model = "gpt-test"
+            final.usage = None  # Cycle 7
 
             provider._client.chat.completions.create.return_value = iter(
                 [chunk1, chunk2, final]
@@ -627,6 +633,88 @@ class TestOpenAIProvider:
             assert tc["function"]["name"] == "search"
             assert json.loads(tc["function"]["arguments"]) == {"q": "test"}
 
+    def test_streaming_usage_extracted_from_final_chunk(self):
+        """Cycle 7: OpenAI streaming must populate usage via stream_options.
+
+        Regression for compact() fallback — without stream_options={"include_usage": True},
+        the streaming path returned usage={} and context compaction silently broke for
+        OpenAI users. The fix requests usage and captures it from OpenAI's final
+        (choices=[], usage=...) chunk.
+        """
+        with patch("agent.llm._openai.openai") as mock_sdk:
+            provider = _make_openai_provider(mock_sdk)
+
+            # Normal text chunk
+            text_chunk = MagicMock()
+            text_chunk.choices = [MagicMock()]
+            text_chunk.choices[0].delta.content = "Hello"
+            text_chunk.choices[0].delta.tool_calls = None
+            text_chunk.choices[0].finish_reason = None
+            text_chunk.model = "gpt-4"
+            text_chunk.usage = None
+
+            # Stop-reason chunk
+            stop_chunk = MagicMock()
+            stop_chunk.choices = [MagicMock()]
+            stop_chunk.choices[0].delta = MagicMock(content=None, tool_calls=None)
+            stop_chunk.choices[0].finish_reason = "stop"
+            stop_chunk.model = "gpt-4"
+            stop_chunk.usage = None
+
+            # OpenAI's final usage chunk: empty choices, populated usage
+            usage_obj = MagicMock()
+            usage_obj.prompt_tokens = 100
+            usage_obj.completion_tokens = 50
+
+            final_chunk = MagicMock()
+            final_chunk.choices = []
+            final_chunk.usage = usage_obj
+            final_chunk.model = "gpt-4"
+
+            provider._client.chat.completions.create.return_value = iter(
+                [text_chunk, stop_chunk, final_chunk]
+            )
+
+            resp = provider.stream(
+                model="gpt-4",
+                max_tokens=100,
+                system="test",
+                tools=[],
+                messages=[{"role": "user", "content": "hi"}],
+            )
+
+            # Verify stream_options was passed so OpenAI emits the usage chunk
+            call_kwargs = provider._client.chat.completions.create.call_args.kwargs
+            assert call_kwargs.get("stream_options") == {"include_usage": True}
+
+            # Verify usage was extracted into LLMResponse (fixes compact() fallback)
+            assert resp.usage == {"input_tokens": 100, "output_tokens": 50}
+
+    def test_streaming_usage_empty_when_not_provided(self):
+        """Cycle 7: If no usage chunk arrives (e.g. mid-flight abort), usage stays {}."""
+        with patch("agent.llm._openai.openai") as mock_sdk:
+            provider = _make_openai_provider(mock_sdk)
+
+            text_chunk = MagicMock()
+            text_chunk.choices = [MagicMock()]
+            text_chunk.choices[0].delta.content = "hi"
+            text_chunk.choices[0].delta.tool_calls = None
+            text_chunk.choices[0].finish_reason = "stop"
+            text_chunk.model = "gpt-4"
+            text_chunk.usage = None
+
+            provider._client.chat.completions.create.return_value = iter([text_chunk])
+
+            resp = provider.stream(
+                model="gpt-4",
+                max_tokens=100,
+                system="test",
+                tools=[],
+                messages=[{"role": "user", "content": "hi"}],
+            )
+
+            assert resp.usage == {}
+
 
 # ======================================================================
 # 4. GeminiProvider tests
@@ -719,6 +807,77 @@ class TestGeminiProvider:
             assert resp.content[0].text == "hello gemini"
             on_text.assert_called_once_with("hello gemini")
             assert resp.stop_reason == "end_turn"
+
+    def test_thinking_part_does_not_fire_on_text(self):
+        """Cycle 7 regression: Gemini 2.5 thinking parts fire on_thinking only.
+
+        When a part has both thought=True and text=<reasoning>, the handler
+        must route it to on_thinking and NOT also emit on_text. Otherwise
+        the model's reasoning leaks into the user-visible response.
+        """
+        mock_genai = MagicMock()
+        mock_types = MagicMock()
+        mock_errors = MagicMock()
+
+        with (
+            patch("agent.llm._gemini.genai", mock_genai),
+            patch("agent.llm._gemini.genai_types", mock_types),
+            patch("agent.llm._gemini.genai_errors", mock_errors),
+            patch("agent.llm._gemini._require_sdk"),
+            patch.dict("os.environ", {"GEMINI_API_KEY": "test-key"}),
+        ):
+            from agent.llm._gemini import GeminiProvider
+
+            provider = GeminiProvider()
+
+            # A thinking part: thought=True AND text=<reasoning>.
+            thinking_part = MagicMock()
+            thinking_part.thought = True
+            thinking_part.text = "Let me think about this..."
+            thinking_part.function_call = None
+
+            # A regular visible text part in the same stream.
+            text_part = MagicMock()
+            text_part.thought = False
+            text_part.text = "final answer"
+            text_part.function_call = None
+
+            candidate = MagicMock()
+            candidate.content.parts = [thinking_part, text_part]
+
+            chunk = MagicMock()
+            chunk.candidates = [candidate]
+            chunk.usage_metadata = MagicMock(
+                prompt_token_count=5, candidates_token_count=3
+            )
+
+            provider._client.models.generate_content_stream.return_value = iter(
+                [chunk]
+            )
+
+            text_emissions: list[str] = []
+            thinking_emissions: list[str] = []
+
+            resp = provider.stream(
+                model="gemini-2.5-test",
+                max_tokens=100,
+                system="test",
+                tools=[],
+                messages=[{"role": "user", "content": "hi"}],
+                on_text=text_emissions.append,
+                on_thinking=thinking_emissions.append,
+            )
+
+            # Thinking content went to on_thinking only.
+            assert thinking_emissions == ["Let me think about this..."]
+            # on_text received ONLY the visible text part — NOT the
+            # thinking content. This is the critical regression check.
+            assert text_emissions == ["final answer"]
+            # Accumulated response text excludes the thinking content.
+            assert isinstance(resp, LLMResponse)
+            assert len(resp.content) == 1
+            assert isinstance(resp.content[0], TextBlock)
+            assert resp.content[0].text == "final answer"
 
     def test_convert_tools(self):
         """convert_tools wraps tools in a Gemini Tool with FunctionDeclarations."""
@@ -878,6 +1037,118 @@ class TestOllamaProvider:
             assert resp.content[0].text == "hello ollama"
             assert on_text.call_count == 2
             assert resp.stop_reason == "end_turn"
+
+    def test_stream_usage_extracted_from_final_chunk(self):
+        """Cycle 7: Ollama streaming must populate usage from the final chunk.
+
+        Without this, compact() falls back to a len(content)//4 heuristic
+        that drifts vs. real token counts, causing silent context overflow.
+        """
+        with (
+            patch("agent.llm._ollama.openai") as mock_sdk,
+            patch(
+                "agent.config.OLLAMA_BASE_URL",
+                "http://localhost:11434/v1",
+            ),
+        ):
+            mock_client = MagicMock()
+            mock_sdk.OpenAI.return_value = mock_client
+            mock_sdk.AuthenticationError = type("AuthenticationError", (Exception,), {})
+            mock_sdk.RateLimitError = type("RateLimitError", (Exception,), {})
+            mock_sdk.APIConnectionError = type("APIConnectionError", (Exception,), {})
+            mock_sdk.APIStatusError = type("APIStatusError", (Exception,), {"status_code": 500})
+            mock_sdk.APIError = type("APIError", (Exception,), {})
+
+            from agent.llm._ollama import OllamaProvider
+
+            provider = OllamaProvider()
+
+            # Mid-stream text chunk (no usage).
+            text_chunk = MagicMock()
+            text_chunk.choices = [MagicMock()]
+            text_chunk.choices[0].delta = MagicMock(content="hello", tool_calls=None)
+            text_chunk.choices[0].finish_reason = None
+            text_chunk.model = "llama3.1"
+            text_chunk.usage = None
+
+            # finish_reason chunk.
+            stop_chunk = MagicMock()
+            stop_chunk.choices = [MagicMock()]
+            stop_chunk.choices[0].delta = MagicMock(content=None, tool_calls=None)
+            stop_chunk.choices[0].finish_reason = "stop"
+            stop_chunk.model = "llama3.1"
+            stop_chunk.usage = None
+
+            # Terminal usage chunk: empty choices, populated usage.
+            # This is what OpenAI-compat endpoints emit when
+            # stream_options.include_usage is requested.
+            usage_chunk = MagicMock()
+            usage_chunk.choices = []
+            usage_chunk.model = "llama3.1"
+            usage_obj = MagicMock()
+            usage_obj.prompt_tokens = 234
+            usage_obj.completion_tokens = 567
+            usage_chunk.usage = usage_obj
+
+            mock_client.chat.completions.create.return_value = iter(
+                [text_chunk, stop_chunk, usage_chunk]
+            )
+
+            resp = provider.stream(
+                model="llama3.1",
+                max_tokens=100,
+                system="test",
+                tools=[],
+                messages=[{"role": "user", "content": "hi"}],
+            )
+
+            # The whole point of this fix: usage must reach compact().
+            assert resp.usage == {"input_tokens": 234, "output_tokens": 567}
+
+            # stream_options.include_usage must have been requested,
+            # otherwise Ollama won't emit the terminal usage chunk.
+            call_kwargs = mock_client.chat.completions.create.call_args.kwargs
+            assert call_kwargs.get("stream_options") == {"include_usage": True}
+
+    def test_stream_usage_empty_when_missing(self):
+        """Cycle 7: if the endpoint doesn't emit usage (older Ollama),
+        usage falls back to empty dict defensively — no crash."""
+        with (
+            patch("agent.llm._ollama.openai") as mock_sdk,
+            patch(
+                "agent.config.OLLAMA_BASE_URL",
+                "http://localhost:11434/v1",
+            ),
+        ):
+            mock_client = MagicMock()
+            mock_sdk.OpenAI.return_value = mock_client
+            mock_sdk.AuthenticationError = type("AuthenticationError", (Exception,), {})
+            mock_sdk.RateLimitError = type("RateLimitError", (Exception,), {})
+            mock_sdk.APIConnectionError = type("APIConnectionError", (Exception,), {})
+            mock_sdk.APIStatusError = type("APIStatusError", (Exception,), {"status_code": 500})
+            mock_sdk.APIError = type("APIError", (Exception,), {})
+
+            from agent.llm._ollama import OllamaProvider
+
+            provider = OllamaProvider()
+
+            chunk = MagicMock()
+            chunk.choices = [MagicMock()]
+            chunk.choices[0].delta = MagicMock(content="hi", tool_calls=None)
+            chunk.choices[0].finish_reason = "stop"
+            chunk.model = "llama3.1"
+            chunk.usage = None  # Older Ollama: no usage at all
+
+            mock_client.chat.completions.create.return_value = iter([chunk])
+
+            resp = provider.stream(
+                model="llama3.1",
+                max_tokens=100,
+                system="test",
+                tools=[],
+                messages=[{"role": "user", "content": "hi"}],
+            )
+            assert resp.usage == {}
 
     def test_convert_tools(self):
         """Ollama convert_tools produces OpenAI function-calling format."""

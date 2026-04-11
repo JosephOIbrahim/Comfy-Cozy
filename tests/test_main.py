@@ -8,6 +8,8 @@ import json
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from agent.context import (
     estimate_tokens,
     summarize_dropped,
@@ -448,3 +450,75 @@ class TestHandlerExceptionGuard:
         assert done is False
         mock_handle.assert_called_once()
         assert isinstance(msgs[-1]["content"][0], ToolResultBlock)
+
+
+class TestStreamRetryDuplication:
+    """Cycle 7: _stream_with_retry must not retry if content was already emitted."""
+
+    def test_no_retry_after_partial_text(self):
+        """If on_text fired before a transient error, raise instead of retry."""
+        from agent.main import _stream_with_retry
+
+        text_emissions = []
+
+        class CapturingHandler(NullHandler):
+            def on_text(self, text):
+                text_emissions.append(text)
+
+        # Mock provider that emits "Hello " then raises a rate limit error
+        def _stream_side_effect(**kwargs):
+            on_text = kwargs.get("on_text")
+            if on_text:
+                on_text("Hello ")
+            raise LLMRateLimitError("rate limited")
+
+        provider = MagicMock()
+        provider.stream.side_effect = _stream_side_effect
+
+        handler = CapturingHandler()
+        with pytest.raises(LLMRateLimitError):
+            _stream_with_retry(
+                provider,
+                model="x",
+                max_tokens=100,
+                system="",
+                tools=[],
+                messages=[],
+                handler=handler,
+            )
+
+        # provider.stream should have been called EXACTLY ONCE (no retry
+        # because content was already emitted)
+        assert provider.stream.call_count == 1
+        # The user saw "Hello " exactly once, not twice
+        assert text_emissions == ["Hello "]
+
+    def test_retries_when_no_content_emitted(self):
+        """If the error fires before any on_text, retry as normal."""
+        from agent.llm import LLMConnectionError
+        from agent.main import _stream_with_retry
+
+        attempts = [0]
+
+        def _stream_side_effect(**kwargs):
+            attempts[0] += 1
+            if attempts[0] == 1:
+                raise LLMConnectionError("connection refused")
+            return MagicMock(stop_reason="end_turn", content=[], usage={})
+
+        provider = MagicMock()
+        provider.stream.side_effect = _stream_side_effect
+
+        # Should retry and succeed on second attempt
+        with patch("agent.main.time.sleep"):
+            result = _stream_with_retry(
+                provider,
+                model="x",
+                max_tokens=100,
+                system="",
+                tools=[],
+                messages=[],
+                handler=NullHandler(),
+            )
+        assert provider.stream.call_count == 2
+        assert result.stop_reason == "end_turn"

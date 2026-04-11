@@ -87,6 +87,12 @@ class OllamaProvider(LLMProvider):
             "max_tokens": max_tokens,
             "messages": native_messages,
             "stream": True,
+            # Cycle 7: ask Ollama's OpenAI-compat endpoint to emit a final
+            # chunk containing token usage so compact() can trigger context
+            # compaction correctly. Without this, usage stays empty and
+            # compact() falls back to a len(content)//4 heuristic that
+            # drifts vs. real token counts, causing silent context overflow.
+            "stream_options": {"include_usage": True},
         }
         if native_tools:
             kwargs["tools"] = native_tools
@@ -240,8 +246,24 @@ class OllamaProvider(LLMProvider):
         tool_acc: dict[int, dict] = {}
         finish_reason = ""
         model_name = ""
+        # Cycle 7: capture usage from the final chunk so compact() can
+        # correctly trigger context compaction. OpenAI-compat streams emit
+        # a terminal chunk with a populated `usage` object (and empty
+        # `choices`) when stream_options.include_usage is requested.
+        prompt_tokens: int | None = None
+        completion_tokens: int | None = None
 
         for chunk in stream:
+            # Usage may arrive on the terminal chunk even when choices is empty.
+            chunk_usage = getattr(chunk, "usage", None)
+            if chunk_usage is not None:
+                pt = getattr(chunk_usage, "prompt_tokens", None)
+                ct = getattr(chunk_usage, "completion_tokens", None)
+                if isinstance(pt, int):
+                    prompt_tokens = pt
+                if isinstance(ct, int):
+                    completion_tokens = ct
+
             if not chunk.choices:
                 continue
             choice = chunk.choices[0]
@@ -302,11 +324,22 @@ class OllamaProvider(LLMProvider):
         # Map finish reason
         stop_reason = _map_stop_reason(finish_reason)
 
+        # Cycle 7: populate usage from the final streaming chunk so
+        # compact() can correctly trigger context compaction for Ollama
+        # users. Falls back to empty dict if the endpoint didn't emit
+        # usage (older Ollama versions without stream_options support).
+        usage: dict[str, int] = {}
+        if prompt_tokens is not None and completion_tokens is not None:
+            usage = {
+                "input_tokens": prompt_tokens,
+                "output_tokens": completion_tokens,
+            }
+
         return LLMResponse(
             content=content,
             stop_reason=stop_reason,
             model=model_name,
-            usage={},  # Ollama streaming doesn't reliably provide usage stats
+            usage=usage,
         )
 
     def _convert_vision_messages(self, messages: list[dict]) -> list[dict]:

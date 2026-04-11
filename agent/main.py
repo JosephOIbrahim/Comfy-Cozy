@@ -98,6 +98,21 @@ def _stream_with_retry(
     last_error = None
 
     for attempt in range(API_MAX_RETRIES + 1):
+        # Cycle 7: track whether content was emitted on this attempt.
+        # If a transient error fires after on_text/on_thinking already
+        # ran, retrying would call them again from scratch and duplicate
+        # text in the user's UI. Instead, raise the error and let the
+        # caller decide.
+        content_emitted = [False]
+
+        def _tracking_on_text(text, _flag=content_emitted, _cb=h.on_text):
+            _flag[0] = True
+            return _cb(text)
+
+        def _tracking_on_thinking(text, _flag=content_emitted, _cb=h.on_thinking):
+            _flag[0] = True
+            return _cb(text)
+
         try:
             return provider.stream(
                 model=model,
@@ -105,12 +120,18 @@ def _stream_with_retry(
                 system=system,
                 tools=tools,
                 messages=messages,
-                on_text=_wrap_safe(h.on_text),
-                on_thinking=_wrap_safe(h.on_thinking),
+                on_text=_wrap_safe(_tracking_on_text),
+                on_thinking=_wrap_safe(_tracking_on_thinking),
             )
 
         except LLMRateLimitError as e:
             last_error = e
+            if content_emitted[0]:
+                log.warning(
+                    "Rate limit after partial content streamed — not retrying "
+                    "(would duplicate text in UI)"
+                )
+                raise
             if attempt < API_MAX_RETRIES:
                 delay = API_RETRY_DELAY * (2 ** attempt)
                 log.warning(
@@ -122,6 +143,11 @@ def _stream_with_retry(
 
         except LLMConnectionError as e:
             last_error = e
+            if content_emitted[0]:
+                log.warning(
+                    "Connection error after partial content streamed — not retrying"
+                )
+                raise
             if attempt < API_MAX_RETRIES:
                 delay = API_RETRY_DELAY * (2 ** attempt)
                 log.warning("Connection error, retrying in %.1fs: %s", delay, e)
@@ -131,6 +157,11 @@ def _stream_with_retry(
 
         except LLMServerError as e:
             last_error = e
+            if content_emitted[0]:
+                log.warning(
+                    "Server error after partial content streamed — not retrying"
+                )
+                raise
             if e.status_code >= 500 and attempt < API_MAX_RETRIES:
                 delay = API_RETRY_DELAY * (2 ** attempt)
                 log.warning(

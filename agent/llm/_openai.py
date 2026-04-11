@@ -72,6 +72,9 @@ class OpenAIProvider(LLMProvider):
             "max_tokens": max_tokens,
             "messages": all_messages,
             "stream": True,
+            # Cycle 7: request usage on final chunk so compact() can trigger
+            # context compaction for OpenAI streaming users (was silently {}).
+            "stream_options": {"include_usage": True},
         }
         if native_tools:
             kwargs["tools"] = native_tools
@@ -85,8 +88,15 @@ class OpenAIProvider(LLMProvider):
             tool_calls_acc: dict[int, dict[str, Any]] = {}
             finish_reason = None
             resp_model = ""
+            final_usage: Any = None
 
             for chunk in stream:
+                # Cycle 7: capture the usage chunk emitted when
+                # stream_options={"include_usage": True}. That chunk has
+                # empty choices, so handle it before the choices[0] access.
+                if getattr(chunk, "usage", None) is not None:
+                    final_usage = chunk.usage
+
                 if not chunk.choices:
                     continue
 
@@ -143,6 +153,7 @@ class OpenAIProvider(LLMProvider):
             tool_calls_acc=tool_calls_acc,
             finish_reason=finish_reason,
             model=resp_model,
+            final_usage=final_usage,
         )
 
     def create(
@@ -356,6 +367,7 @@ def _build_response(
     tool_calls_acc: dict[int, dict[str, Any]],
     finish_reason: str | None,
     model: str,
+    final_usage: Any = None,
 ) -> LLMResponse:
     """Build LLMResponse from accumulated streaming data."""
     content: list[TextBlock | ToolUseBlock] = []
@@ -385,11 +397,19 @@ def _build_response(
     # Map OpenAI finish reasons to common stop reasons
     stop_reason = _map_finish_reason(finish_reason)
 
+    # Cycle 7: extract usage from the final usage chunk (see stream() kwargs).
+    usage: dict[str, int] = {}
+    if final_usage is not None:
+        usage = {
+            "input_tokens": getattr(final_usage, "prompt_tokens", 0) or 0,
+            "output_tokens": getattr(final_usage, "completion_tokens", 0) or 0,
+        }
+
     return LLMResponse(
         content=content,
         stop_reason=stop_reason,
         model=model,
-        usage={},
+        usage=usage,
     )
 
 
