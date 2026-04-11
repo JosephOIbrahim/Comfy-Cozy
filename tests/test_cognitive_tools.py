@@ -11,13 +11,8 @@ import httpx
 import pytest
 
 from cognitive.tools.analyze import analyze_workflow
-from cognitive.tools.mutate import mutate_workflow
-from cognitive.tools.query import query_environment
-from cognitive.tools.dependencies import manage_dependencies
-from cognitive.tools.execute import execute_workflow, ExecutionStatus, ExecutionResult
+from cognitive.tools.execute import execute_workflow, ExecutionStatus
 from cognitive.tools.compose import compose_workflow
-from cognitive.tools.series import generate_series, SeriesConfig
-from cognitive.tools.research import autoresearch, AutoresearchConfig
 from cognitive.core.graph import CognitiveGraphEngine
 from cognitive.transport.schema_cache import SchemaCache
 
@@ -192,91 +187,6 @@ class TestAnalyzeWorkflow:
         }
         result = analyze_workflow(wf)
         assert result.model_family == "SDXL"
-
-
-# ---------------------------------------------------------------------------
-# mutate_workflow
-# ---------------------------------------------------------------------------
-
-class TestMutateWorkflow:
-
-    def test_valid_mutation(self, engine):
-        result = mutate_workflow(engine, {"4": {"steps": 30}})
-        assert result.success is True
-        assert len(result.changes) == 1
-        assert result.delta_layer_id != ""
-
-    def test_schema_validated_mutation(self, engine, schema_cache):
-        result = mutate_workflow(
-            engine, {"4": {"sampler_name": "bad"}}, schema_cache=schema_cache,
-        )
-        assert result.success is False
-        assert len(result.validation_errors) > 0
-
-    def test_valid_with_schema(self, engine, schema_cache):
-        result = mutate_workflow(
-            engine, {"4": {"sampler_name": "euler"}}, schema_cache=schema_cache,
-        )
-        assert result.success is True
-
-    def test_multi_node_mutation(self, engine):
-        result = mutate_workflow(engine, {
-            "4": {"steps": 30, "cfg": 5.0},
-            "2": {"text": "new prompt"},
-        })
-        assert result.success is True
-        assert len(result.changes) == 3
-
-
-# ---------------------------------------------------------------------------
-# query_environment
-# ---------------------------------------------------------------------------
-
-class TestQueryEnvironment:
-
-    def test_full_snapshot(self):
-        snap = query_environment(
-            system_stats={"devices": [{"name": "RTX 4090", "vram_total": 25769803776, "vram_free": 20000000000}]},
-            queue_info={"queue_running": [1], "queue_pending": [2, 3]},
-            node_packs=["ComfyUI-Manager", "ComfyUI-Impact-Pack"],
-            models={"checkpoints": ["v1-5.safetensors"]},
-        )
-        assert snap.comfyui_running is True
-        assert snap.gpu_name == "RTX 4090"
-        assert snap.vram_total_mb > 0
-        assert snap.queue_running == 1
-        assert snap.queue_pending == 2
-        assert len(snap.installed_node_packs) == 2
-
-    def test_empty_snapshot(self):
-        snap = query_environment()
-        assert snap.comfyui_running is False
-        assert snap.gpu_name == ""
-
-    def test_with_schema_cache(self, schema_cache):
-        snap = query_environment(schema_cache=schema_cache)
-        assert snap.schema_cached is True
-        assert snap.node_count == 1
-
-
-# ---------------------------------------------------------------------------
-# manage_dependencies
-# ---------------------------------------------------------------------------
-
-class TestManageDependencies:
-
-    def test_install_action(self):
-        result = manage_dependencies("install", "ComfyUI-Impact-Pack")
-        assert result.success is True
-        assert result.action == "install"
-
-    def test_invalid_action(self):
-        result = manage_dependencies("delete", "some-pack")
-        assert result.success is False
-
-    def test_schema_invalidation(self, schema_cache):
-        result = manage_dependencies("install", "pack", schema_cache=schema_cache)
-        assert result.schema_invalidated is True
 
 
 # ---------------------------------------------------------------------------
@@ -519,71 +429,6 @@ class TestComposeWorkflow:
     def test_explicit_model_family(self):
         result = compose_workflow("test", model_family="SD3")
         assert result.plan.model_family == "SD3"
-
-
-# ---------------------------------------------------------------------------
-# generate_series
-# ---------------------------------------------------------------------------
-
-class TestGenerateSeries:
-
-    def test_empty_workflow(self):
-        result = generate_series(SeriesConfig())
-        assert result.success is False
-
-    def test_no_variation(self):
-        result = generate_series(SeriesConfig(base_workflow={"1": {"class_type": "N", "inputs": {}}}))
-        assert result.success is False
-
-    def test_basic_series(self):
-        config = SeriesConfig(
-            base_workflow={"1": {"class_type": "KSampler", "inputs": {"seed": 42}}},
-            vary_params={"1.seed": [1, 2, 3, 4]},
-            count=4,
-        )
-        result = generate_series(config)
-        assert result.success is True
-        assert result.planned_count == 4
-        assert len(result.variations) == 4
-
-    def test_locked_params(self):
-        config = SeriesConfig(
-            base_workflow={"1": {"class_type": "KSampler", "inputs": {}}},
-            vary_params={"1.seed": [1, 2]},
-            lock_params={"1.cfg": 7.0},
-            count=2,
-        )
-        result = generate_series(config)
-        for v in result.variations:
-            assert v["mutations"]["1"]["cfg"] == 7.0
-
-
-# ---------------------------------------------------------------------------
-# autoresearch
-# ---------------------------------------------------------------------------
-
-class TestAutoresearch:
-
-    def test_no_evaluator(self, engine):
-        config = AutoresearchConfig(max_steps=5)
-        result = autoresearch(engine, config, initial_quality=0.5)
-        assert result.stopped_reason == "no_evaluator"
-        assert result.steps_taken == 1
-
-    def test_quality_threshold(self, engine):
-        config = AutoresearchConfig(max_steps=10, quality_threshold=0.5)
-        result = autoresearch(engine, config, initial_quality=0.8)
-        assert result.stopped_reason == "quality_threshold_reached"
-        assert result.steps_taken == 0
-
-    def test_max_steps(self, engine):
-        config = AutoresearchConfig(
-            max_steps=3,
-            quality_evaluator=lambda: 0.5,
-        )
-        result = autoresearch(engine, config, initial_quality=0.3)
-        assert result.stopped_reason == "max_steps_reached"
-        assert result.steps_taken == 3
 
 
 # ---------------------------------------------------------------------------

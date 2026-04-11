@@ -13,8 +13,6 @@
 import copy
 import json
 
-import pytest
-
 from agent.system_prompt import build_system_prompt, _detect_relevant_knowledge
 from agent.context import summarize_dropped, mask_processed_results
 from agent.tools import workflow_patch, workflow_templates, comfy_api, comfy_inspect
@@ -23,13 +21,6 @@ from agent.tools import workflow_patch, workflow_templates, comfy_api, comfy_ins
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
-
-@pytest.fixture(autouse=True)
-def reset_workflow_state():
-    """Reset workflow_patch state between tests."""
-    original = copy.deepcopy(workflow_patch._get_state())
-    yield
-    workflow_patch._get_state().update(original)
 
 
 SAMPLE_WORKFLOW = {

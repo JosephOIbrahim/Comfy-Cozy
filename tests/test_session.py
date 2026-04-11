@@ -16,17 +16,6 @@ def use_tmp_sessions(tmp_path):
         yield tmp_path / "sessions"
 
 
-@pytest.fixture(autouse=True)
-def reset_workflow_state():
-    """Reset workflow_patch state between tests."""
-    workflow_patch._get_state()["loaded_path"] = None
-    workflow_patch._get_state()["base_workflow"] = None
-    workflow_patch._get_state()["current_workflow"] = None
-    workflow_patch._get_state()["history"] = []
-    workflow_patch._get_state()["format"] = None
-    yield
-
-
 class TestSaveSession:
     def test_save_empty(self):
         result = json.loads(session_tools.handle("save_session", {"name": "test1"}))

@@ -4,8 +4,6 @@ import copy
 import json
 from unittest.mock import patch
 
-import pytest
-
 from agent.brain import handle
 from agent.tools import workflow_patch
 
@@ -22,14 +20,6 @@ SAMPLE_WORKFLOW = {
     "5": {"class_type": "VAEDecode", "inputs": {"samples": ["3", 0], "vae": ["1", 2]}},
     "6": {"class_type": "SaveImage", "inputs": {"images": ["5", 0], "filename_prefix": "test"}},
 }
-
-
-@pytest.fixture(autouse=True)
-def reset_workflow_state():
-    """Reset workflow_patch state between tests."""
-    original = copy.deepcopy(workflow_patch._get_state())
-    yield
-    workflow_patch._get_state().update(original)
 
 
 def _load_sample():

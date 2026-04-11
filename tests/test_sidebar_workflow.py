@@ -11,14 +11,6 @@ import pytest
 from agent.tools import workflow_patch, workflow_parse
 
 
-@pytest.fixture(autouse=True)
-def reset_workflow_state():
-    """Reset workflow_patch state between tests."""
-    original = copy.deepcopy(dict(workflow_patch._get_state()))
-    yield
-    workflow_patch._get_state().update(original)
-
-
 # -- Sample workflows ---------------------------------------------------------
 
 SAMPLE_API_WORKFLOW = {

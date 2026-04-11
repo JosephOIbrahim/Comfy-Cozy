@@ -151,7 +151,7 @@ tests/             # 2000+ tests, all mocked, pytest + pytest-asyncio
 - **Config via .env**: `ANTHROPIC_API_KEY` (required), `COMFYUI_DATABASE` (default `G:/COMFYUI_Database`), `COMFYUI_HOST`/`COMFYUI_PORT`.
 - **Custom_Nodes**: Capital C, capital N (ComfyUI convention).
 - **asyncio_mode = "auto"**: In pyproject.toml for pytest-asyncio.
-- **Python 3.11+**: Match ComfyUI's requirement. Type hints everywhere. `httpx` for HTTP.
+- **Python 3.10+**: Matches `pyproject.toml` `requires-python`. Type hints everywhere. `httpx` for HTTP.
 - **Thread safety**: workflow_patch, orchestrator, demo, intent_collector, iteration_accumulator use `threading.Lock`.
 - **Path sanitization**: `_util.validate_path()` blocks access outside allowed directories.
 - **Error messages**: Never show raw tracebacks. Translate to human language.

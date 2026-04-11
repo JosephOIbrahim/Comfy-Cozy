@@ -1,8 +1,50 @@
 """Shared test fixtures for the Comfy Cozy test suite."""
 
+import copy
 import json
 
 import pytest
+
+
+@pytest.fixture(autouse=True)
+def _reset_conn_session():
+    """Snapshot ``_conn_session`` ContextVar and restore after each test.
+
+    Without this, a test that calls ``_conn_session.set('foo')`` leaks the
+    value into the next test, causing order-dependent flakiness. The
+    ``LookupError`` branch handles the common case where the var has no
+    prior value — we install a ``"default"`` sentinel so there is always
+    a token to reset to.
+    """
+    from agent._conn_ctx import _conn_session
+
+    try:
+        token = _conn_session.set(_conn_session.get())
+    except LookupError:
+        token = _conn_session.set("default")
+    try:
+        yield
+    finally:
+        try:
+            _conn_session.reset(token)
+        except (ValueError, LookupError):
+            pass  # Token was already reset by the test itself
+
+
+@pytest.fixture(autouse=True)
+def reset_workflow_state():
+    """Deep-snapshot and restore ``workflow_patch`` state between tests.
+
+    Consolidated from four duplicate implementations across test_session,
+    test_sidebar_workflow, test_new_features, and test_brain_optimizer.
+    Uses deepcopy + ``.update()`` so mutable containers (history list,
+    current_workflow dict) are fully restored, not aliased.
+    """
+    from agent.tools import workflow_patch
+
+    original = copy.deepcopy(workflow_patch._get_state())
+    yield
+    workflow_patch._get_state().update(original)
 
 
 @pytest.fixture
