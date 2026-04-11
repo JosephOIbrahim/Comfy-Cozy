@@ -661,31 +661,43 @@ flowchart LR
     style Escalate fill:#FF9900,color:#000
 ```
 
-### Per-Connection Session Isolation
+### Per-Connection Session Isolation (all 4 transports)
 
-Each sidebar conversation and each MCP client connection gets its own isolated `WorkflowSession` + `CognitiveWorkflowStage`. State never leaks across tabs or clients. Isolation is propagated via a single `_conn_session` `ContextVar` set at every entry point: WebSocket handlers, MCP tool dispatch, executor pool submissions, and parallel-tool ThreadPoolExecutor workers all see the right session without passing it as an explicit argument.
+Every sidebar conversation, every panel chat, every MCP client connection, and every `agent run --session foo` invocation gets its own isolated `WorkflowSession` + `CognitiveWorkflowStage`. State never leaks across tabs, clients, or named sessions. Isolation is propagated via a single `_conn_session` `ContextVar` set at every entry point — and by the per-session dicts inside the four stage modules (`provision`, `foresight`, `compositor`, `hyperagent`).
 
 ```mermaid
 flowchart LR
-    SBA["Sidebar tab A<br/>conv.id = a3f8d22e"] --> H1["_spawn_with_session<br/>sets _conn_session"]
-    SBB["Sidebar tab B<br/>conv.id = 7c1b8e44"] --> H2["_spawn_with_session<br/>sets _conn_session"]
-    MCP["MCP client<br/>conn_5f2a1b4c"] --> H3["mcp_server._handler<br/>sets _conn_session"]
+    SB["Sidebar tabs<br/>conv.id"] --> H1["_spawn_with_session<br/>(shared helper)"]
+    PNL["Panel chats<br/>conv.id"] --> H1
+    MCP["MCP clients<br/>conn_xxxxxxxx"] --> H2["mcp_server._handler<br/>sets _conn_session"]
+    CLI["agent run --session foo<br/>(CLI)"] --> H3["cli.run<br/>+ _save_and_exit"]
     H1 --> CV[("_conn_ctx<br/>ContextVar")]
     H2 --> CV
     H3 --> CV
-    CV --> GS["workflow_patch._get_state()<br/>stage_tools._get_stage()"]
-    GS --> WSA[("WorkflowSession A<br/>+ Stage A")]
-    GS --> WSB[("WorkflowSession B<br/>+ Stage B")]
-    GS --> WSM[("WorkflowSession M<br/>+ Stage M")]
+    CV --> WP["workflow_patch._get_state()"]
+    CV --> ST["stage_tools._get_stage()"]
+    CV --> FT["foresight_tools._get_*()"]
+    CV --> PV["provision_tools._get_provisioner()"]
+    CV --> CT["compositor_tools._scenes[sid]"]
+    CV --> HY["hyperagent_tools._meta_agents[sid]"]
+    WP --> WS[("Per-session<br/>WorkflowSession + Stage")]
+    ST --> WS
+    FT --> WS
+    PV --> WS
+    CT --> WS
+    HY --> WS
 
     style CV fill:#8b5cf6,color:#fff
-    style GS fill:#3b82f6,color:#fff
-    style WSA fill:#10b981,color:#fff
-    style WSB fill:#10b981,color:#fff
-    style WSM fill:#10b981,color:#fff
+    style WP fill:#3b82f6,color:#fff
+    style ST fill:#3b82f6,color:#fff
+    style FT fill:#3b82f6,color:#fff
+    style PV fill:#3b82f6,color:#fff
+    style CT fill:#3b82f6,color:#fff
+    style HY fill:#3b82f6,color:#fff
+    style WS fill:#10b981,color:#fff
 ```
 
-The same `conv.id` is also installed as the per-thread correlation ID, so every log entry from a sidebar conversation is greppable end-to-end. Parallel tool calls inside a single turn inherit the contextvar via `contextvars.copy_context()` per `ThreadPoolExecutor.submit()`.
+The same connection id is also installed as the per-thread correlation ID via `set_correlation_id`, so every log entry from a single conversation is greppable end-to-end. Parallel tool calls inside a single turn inherit the contextvar via `contextvars.copy_context()` per `ThreadPoolExecutor.submit()`. And `_save_and_exit()` (called on normal exit, atexit, or SIGTERM) self-sets the contextvar before saving so the user's named session never gets corrupted with empty default workflow state.
 
 ### LIVRPS -- How Conflicts Get Resolved
 
@@ -734,7 +746,7 @@ graph TB
     Cognitive --> Pred["prediction/<br/>cwm -- arbiter -- counterfactual"]
     Cognitive --> Trans["transport/<br/>schema_cache -- events -- interrupt"]
     Cognitive --> Pipe["pipeline/<br/>autonomous -- create_default_pipeline<br/>Phase 6 complete"]
-    Cognitive --> CogTools["tools/<br/>analyze -- compose -- execute<br/>mutate -- query -- series -- dependencies"]
+    Cognitive --> CogTools["tools/<br/>analyze -- compose -- execute<br/>(cycle 9 deleted 5 dead modules)"]
 
     style Cognitive fill:#8b5cf6,color:#fff
     style Core fill:#0066FF,color:#fff
@@ -746,6 +758,36 @@ graph TB
 ```
 
 Each delta layer carries its `creation_hash` (SHA-256 of `opinion + sorted-JSON mutations`). `verify_stack_integrity()` walks the stack and flags any layer whose `layer_hash` no longer matches its `creation_hash` -- making post-hoc tampering detectable. Link arrays (`["node_id", output_index]`) are preserved through every parse/mutate/serialize round-trip, which is the #1 failure mode in ComfyUI agents.
+
+### LLM Provider Hardening
+
+The agent supports four LLM providers (Anthropic, OpenAI, Gemini, Ollama). Cycle 7+18 closed five real bugs in the streaming + retry path that affected every conversation. After this work, every provider correctly: extracts streaming token usage, doesn't duplicate text on retry, doesn't drop thinking blocks, doesn't fire callbacks with empty content, and doesn't leak reasoning into the user-visible text.
+
+```mermaid
+graph TB
+    Stream["_stream_with_retry<br/>(agent/main.py)"] --> Track["content_emitted = [False]<br/>per attempt — closure-captured"]
+    Track --> Wrap["_wrap_safe + tracking<br/>on_text / on_thinking"]
+    Wrap --> Provider{Which provider?}
+
+    Provider -->|Anthropic| A["✓ thinking blocks preserved<br/>in _to_response<br/>✓ empty deltas filtered<br/>(cycle 18)"]
+    Provider -->|OpenAI| O["✓ stream_options=<br/>{include_usage: true}<br/>✓ usage from final chunk<br/>(cycle 7)"]
+    Provider -->|Gemini| G["✓ thinking / text branches<br/>mutually exclusive (if/elif)<br/>(cycle 7)"]
+    Provider -->|Ollama| OL["✓ stream_options=<br/>{include_usage: true}<br/>✓ usage from final chunk<br/>(cycle 7)"]
+
+    Track -->|content emitted + transient error| NoRetry["RAISE — don't retry<br/>(would duplicate text in UI)"]
+    Track -->|no content + transient error| Retry["Retry with backoff<br/>RateLimit / Connection / 5xx"]
+
+    style Stream fill:#3b82f6,color:#fff
+    style Track fill:#8b5cf6,color:#fff
+    style A fill:#10b981,color:#fff
+    style O fill:#10b981,color:#fff
+    style G fill:#10b981,color:#fff
+    style OL fill:#10b981,color:#fff
+    style NoRetry fill:#ef4444,color:#fff
+    style Retry fill:#10b981,color:#fff
+```
+
+The retry tracker pattern is the key insight: an `on_text("Hello ")` followed by a transient `LLMRateLimitError` USED TO retry from scratch, calling `on_text("Hello ")` again, then `on_text("world!")` — the user saw `"Hello Hello world!"` in the UI. After cycle 7, any error fired AFTER content was emitted raises immediately instead of retrying. Tested across all 4 providers via `tests/test_main.py::TestStreamRetryDuplication` + provider-specific regression tests.
 
 ### Graceful Degradation
 
@@ -845,7 +887,7 @@ tests/                3579 passing tests, all mocked, ~60s
 | **Fault Isolation** | Each subsystem fails independently. Circuit breakers prevent cascading failures. `brain` (threshold=3, timeout=30s) and `comfyui_http` (threshold=5, timeout=60s) registered; `BRAIN_ENABLED=0` kill switch fully enforced in tool registry. Session isolation: each `agent mcp` process gets a unique `conn_XXXXXXXX` namespace; ContextVar set in executor thread before dispatch. Parallel tool dispatch routes through `agent.tools.handle` live module reference -- monkey-patch visible to all ThreadPoolExecutor workers. |
 | **Determinism** | Pure computation DAG. Deterministic JSON. Ordinal state enums. Same input = same output. |
 | **Audit Trail** | Every mutation logged: who changed what, when, and what got overridden. |
-| **Security** | Bearer token auth on all routes including WebSocket. Path traversal blocked. SSRF prevented on initial URL and every redirect hop (RFC 1918 + loopback + link-local + CGNAT rejected via DNS resolution). MCP tool errors return `isError=True` per protocol. Gate exceptions deny by default (no silent allow). 10 MB + chunked-transfer size guards. Max 20 concurrent WebSocket connections. Atomic file writes (write-to-tmp-then-`os.replace()`). Thread-safe token bucket rate limiter. |
+| **Security** | Bearer token auth on all routes including WebSocket — **constant-time `hmac.compare_digest`** comparison (no timing-attack leakage). **WebSocket Origin allowlist** on sidebar + panel (rejects cross-origin connects from `evil.com`; same-origin LAN browsers pass). Path traversal blocked. **`download_model` symlink-bypass guard**: resolves the full target path (parent + filename) and re-checks against `MODELS_DIR` so a planted symlink in a `Custom_Nodes` subdirectory can't escape. SSRF prevented on initial URL and every redirect hop (RFC 1918 + loopback + link-local + CGNAT rejected via DNS resolution). MCP tool errors return `isError=True` per protocol. Gate exceptions deny by default (no silent allow). 10 MB + chunked-transfer size guards. Max 20 concurrent WebSocket connections. Atomic file writes (write-to-tmp-then-`os.replace()`). Thread-safe token bucket rate limiter. **Handler exception guard**: stream callbacks wrapped with `_wrap_safe` so a misbehaving custom renderer can't crash the agent loop. |
 | **Bounded Resources** | Intent history (100), iteration steps (200), demo checkpoints (100). No unbounded growth. |
 
 ```mermaid
@@ -900,7 +942,7 @@ All settings live in your `.env` file:
 No ComfyUI needed -- everything is mocked:
 
 ```bash
-python -m pytest tests/ -v        # 3579 passing tests, ~60s
+python -m pytest tests/ -v        # 3608 passing tests, ~70s
 
 # Skip tests that require a real ComfyUI server or API keys
 python -m pytest tests/ -v -m "not integration"
