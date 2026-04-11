@@ -633,13 +633,17 @@ graph LR
 
 ### Pre-Dispatch Safety Gate
 
-Every tool call passes through a default-deny gate. Read-only tools bypass it (zero overhead). Destructive tools are always locked. The gate auto-detects loaded workflows -- if a workflow is in memory (from the sidebar or CLI), execution tools are allowed without explicit session context.
+Every tool call passes through a default-deny gate. Read-only tools bypass it (zero overhead). Destructive tools are always locked. The gate auto-detects loaded workflows AND USD stages: if either kind of workspace state exists for the current connection, mutation tools are allowed without explicit session context. Stage tools (`stage_write`, `stage_add_delta`) are recognized separately from workflow tools — a USD stage can exist independently of any loaded workflow.
 
 ```mermaid
 flowchart LR
-    Tool([Tool Call]) --> Session{"Workflow\nloaded?"}
-    Session -->|Yes| Risk{Risk Level?}
-    Session -->|No| Deny["Denied:\nno active session"]
+    Tool([Tool Call]) --> Type{"Stage\ntool?"}
+    Type -->|No| WF{"Workflow\nloaded?"}
+    Type -->|Yes| ST{"Stage\nexists?"}
+    WF -->|Yes| Risk{Risk Level?}
+    WF -->|No| Deny["Denied:\nno active session"]
+    ST -->|Yes| Risk
+    ST -->|No| Deny
     Risk -->|"Read-only"| Pass[Pass through]
     Risk -->|"Mutation / Execute"| Checks[5 safety checks]
     Risk -->|"Install / Download"| Escalate[Escalate to LLM]
@@ -656,6 +660,32 @@ flowchart LR
     style Deny fill:#ef4444,color:#fff
     style Escalate fill:#FF9900,color:#000
 ```
+
+### Per-Connection Session Isolation
+
+Each sidebar conversation and each MCP client connection gets its own isolated `WorkflowSession` + `CognitiveWorkflowStage`. State never leaks across tabs or clients. Isolation is propagated via a single `_conn_session` `ContextVar` set at every entry point: WebSocket handlers, MCP tool dispatch, executor pool submissions, and parallel-tool ThreadPoolExecutor workers all see the right session without passing it as an explicit argument.
+
+```mermaid
+flowchart LR
+    SBA["Sidebar tab A<br/>conv.id = a3f8d22e"] --> H1["_spawn_with_session<br/>sets _conn_session"]
+    SBB["Sidebar tab B<br/>conv.id = 7c1b8e44"] --> H2["_spawn_with_session<br/>sets _conn_session"]
+    MCP["MCP client<br/>conn_5f2a1b4c"] --> H3["mcp_server._handler<br/>sets _conn_session"]
+    H1 --> CV[("_conn_ctx<br/>ContextVar")]
+    H2 --> CV
+    H3 --> CV
+    CV --> GS["workflow_patch._get_state()<br/>stage_tools._get_stage()"]
+    GS --> WSA[("WorkflowSession A<br/>+ Stage A")]
+    GS --> WSB[("WorkflowSession B<br/>+ Stage B")]
+    GS --> WSM[("WorkflowSession M<br/>+ Stage M")]
+
+    style CV fill:#8b5cf6,color:#fff
+    style GS fill:#3b82f6,color:#fff
+    style WSA fill:#10b981,color:#fff
+    style WSB fill:#10b981,color:#fff
+    style WSM fill:#10b981,color:#fff
+```
+
+The same `conv.id` is also installed as the per-thread correlation ID, so every log entry from a sidebar conversation is greppable end-to-end. Parallel tool calls inside a single turn inherit the contextvar via `contextvars.copy_context()` per `ThreadPoolExecutor.submit()`.
 
 ### LIVRPS -- How Conflicts Get Resolved
 
@@ -676,12 +706,12 @@ This is an intentional inversion of USD's native LIVRPS (where Specializes is we
 
 ### Cognitive State Engine (Phase 0.5 -- live in production)
 
-LIVRPS is no longer a table on a slide. Since Phase 0.5 the engine is a real top-level package (`cognitive/`) installed alongside `agent/`, and `agent/tools/workflow_patch.py` imports it directly at module load -- no try/except, no silent fallback. Every PILOT mutation is recorded as a delta layer with SHA-256 tamper detection, then resolved on demand.
+LIVRPS is no longer a table on a slide. Since Phase 0.5 the engine is a real top-level package (`cognitive/`) installed alongside `agent/`, and `agent/tools/workflow_patch.py` imports it directly at module load -- no try/except, no silent fallback. Every PILOT mutation is recorded as a delta layer with SHA-256 tamper detection, then resolved on demand. The engine is session-scoped via the `_conn_session` ContextVar described above, so each sidebar tab and MCP connection mutates its own delta stack.
 
 ```mermaid
 graph LR
     User([Tool Call<br/>via MCP]) --> WP["agent/tools/<br/>workflow_patch.py"]
-    WP -->|"from cognitive.core.graph<br/>import CognitiveGraphEngine"| CGE["CognitiveGraphEngine<br/>(session-scoped)"]
+    WP -->|"_get_state() reads<br/>_conn_session ContextVar"| CGE["CognitiveGraphEngine<br/>(per-session)"]
     CGE --> Stack["Delta Stack<br/>P -- R -- V -- I -- L -- S"]
     Stack -->|"sort weakest to strongest<br/>apply, preserve link arrays"| Resolved["Resolved WorkflowGraph"]
     Resolved -->|"to_api_json()"| Comfy["ComfyUI /prompt"]
