@@ -1,0 +1,92 @@
+{
+  "1": {
+    "class_type": "CheckpointLoaderSimple",
+    "inputs": {
+      "ckpt_name": "sd_xl_base_1.0.safetensors"
+    }
+  },
+  "2": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "input.png"
+    }
+  },
+  "3": {
+    "class_type": "MiDaS-DepthMapPreprocessor",
+    "inputs": {
+      "image": ["2", 0],
+      "a": 1.0,
+      "bg_threshold": 0.1,
+      "resolution": 512
+    }
+  },
+  "4": {
+    "class_type": "ControlNetLoader",
+    "inputs": {
+      "control_net_name": "control-depth-sdxl.safetensors"
+    }
+  },
+  "5": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "text": "a detailed scene, professional lighting, high quality",
+      "clip": ["1", 1]
+    }
+  },
+  "6": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "text": "ugly, blurry, low quality, deformed",
+      "clip": ["1", 1]
+    }
+  },
+  "7": {
+    "class_type": "ControlNetApplyAdvanced",
+    "inputs": {
+      "positive": ["5", 0],
+      "negative": ["6", 0],
+      "control_net": ["4", 0],
+      "image": ["3", 0],
+      "strength": 0.8,
+      "start_percent": 0.0,
+      "end_percent": 1.0
+    }
+  },
+  "8": {
+    "class_type": "KSampler",
+    "inputs": {
+      "seed": 42,
+      "steps": 30,
+      "cfg": 7.0,
+      "sampler_name": "dpmpp_2m",
+      "scheduler": "karras",
+      "denoise": 1.0,
+      "model": ["1", 0],
+      "positive": ["7", 0],
+      "negative": ["7", 1],
+      "latent_image": ["80", 0]
+    }
+  },
+  "80": {
+    "class_type": "EmptyLatentImage",
+    "inputs": {
+      "width": 1024,
+      "height": 1024,
+      "batch_size": 1
+    }
+  },
+  "9": {
+    "class_type": "VAEDecode",
+    "inputs": {
+      "samples": ["8", 0],
+      "vae": ["1", 2]
+    }
+  },
+  "10": {
+    "class_type": "SaveImage",
+    "inputs": {
+      "filename_prefix": "controlnet_depth",
+      "images": ["9", 0]
+    }
+  }
+}

@@ -189,29 +189,56 @@ def _compute_experience_scores(
     }
 
 
+def _collect_raw_scores(
+    chunks: list[ExperienceChunk],
+) -> dict[str, list[float]]:
+    """Collect raw per-axis outcome scores from experience chunks.
+
+    Returns a dict mapping axis name to list of individual scores,
+    suitable for variance computation in SNR-weighted blending.
+    """
+    raw: dict[str, list[float]] = {}
+    for chunk in chunks:
+        for axis, score in chunk.outcome.items():
+            if axis not in raw:
+                raw[axis] = []
+            raw[axis].append(score)
+    return raw
+
+
 def _blend_scores(
     prior: dict[str, float],
     experience: dict[str, float],
     experience_count: int,
+    experience_scores: dict[str, list[float]] | None = None,
 ) -> tuple[dict[str, float], str]:
     """Blend prior and experience scores based on learning phase.
+
+    Args:
+        prior: Prior scores per axis.
+        experience: Weighted-average experience scores per axis.
+        experience_count: Total experience count (determines phase).
+        experience_scores: Optional per-axis raw score lists for SNR
+            weighting. When provided, axes with low variance (consistent
+            signal) get higher alpha (more trust in experience) and axes
+            with high variance get lower alpha (more trust in prior).
 
     Returns (blended_scores, phase_name).
     """
     if experience_count < PHASE_PRIOR_ONLY:
         phase = "prior_only"
         # Prior dominates, small experience nudge
-        alpha = experience_count / PHASE_PRIOR_ONLY * 0.3  # max 0.3
+        base_alpha = experience_count / PHASE_PRIOR_ONLY * 0.3  # max 0.3
     elif experience_count < PHASE_BLENDED:
         phase = "blended"
         # Linear blend from 0.3 to 0.8
         progress = (experience_count - PHASE_PRIOR_ONLY) / (
             PHASE_BLENDED - PHASE_PRIOR_ONLY
         )
-        alpha = 0.3 + progress * 0.5
+        base_alpha = 0.3 + progress * 0.5
     else:
         phase = "experience_dominant"
-        alpha = 0.9  # experience almost fully dominates
+        base_alpha = 0.9  # experience almost fully dominates
 
     result: dict[str, float] = {}
     all_axes = set(prior) | set(experience)
@@ -219,6 +246,20 @@ def _blend_scores(
     for axis in all_axes:
         p = prior.get(axis, 0.5)
         e = experience.get(axis, p)  # fall back to prior if no experience
+
+        alpha = base_alpha
+
+        # SNR-based alpha adjustment when per-axis scores are available
+        if experience_scores is not None and axis in experience_scores:
+            scores = experience_scores[axis]
+            if len(scores) >= 2:
+                mean = sum(scores) / len(scores)
+                variance = sum((s - mean) ** 2 for s in scores) / len(scores)
+                snr_factor = 1.0 / (1.0 + variance)
+                alpha = base_alpha * snr_factor + base_alpha * (
+                    1.0 - snr_factor
+                ) * 0.5
+
         result[axis] = (1.0 - alpha) * p + alpha * e
 
     return result, phase
@@ -294,8 +335,14 @@ def predict(
         experience_pool, current_signature,
     )
 
+    # Collect raw per-axis scores for SNR-weighted blending
+    raw_scores = _collect_raw_scores(experience_pool) if experience_pool else None
+
     # Blend
-    blended, phase = _blend_scores(prior, experience_scores, experience_count)
+    blended, phase = _blend_scores(
+        prior, experience_scores, experience_count,
+        experience_scores=raw_scores,
+    )
 
     # Confidence
     confidence = _compute_confidence(experience_count, similar_count, phase)

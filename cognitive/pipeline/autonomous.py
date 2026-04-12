@@ -42,6 +42,63 @@ EXPERIENCE_FILE = (
 
 log = logging.getLogger(__name__)
 
+
+def _get_breaker():
+    """Lazily obtain the ComfyUI circuit breaker, or None if unavailable.
+
+    cognitive/ should not hard-depend on agent.circuit_breaker, so this
+    import is wrapped in try/except for graceful degradation.
+    """
+    try:
+        from agent.circuit_breaker import COMFYUI_BREAKER
+        return COMFYUI_BREAKER()
+    except Exception:
+        return None
+
+
+def _try_create_vision_analyzer():
+    """Try to create a vision analyzer callable from agent.brain.vision.
+
+    Returns a callable (image_path -> dict) or None if the import fails.
+    cognitive/ should not hard-depend on agent.brain, so this is lazy.
+    """
+    try:
+        from agent.brain.vision import VisionAgent
+        from agent.brain._sdk import get_integrated_config
+        agent_instance = VisionAgent(get_integrated_config())
+
+        def _analyze(image_path: str) -> dict:
+            raw = agent_instance._handle_analyze_image({"image_path": image_path})
+            parsed = json.loads(raw)
+            return parsed
+
+        return _analyze
+    except Exception:
+        return None
+
+
+def _extract_model_names(workflow_data: dict) -> list[str]:
+    """Extract model filenames from workflow node inputs.
+
+    Scans for ckpt_name, lora_name, and vae_name fields across all nodes.
+    Returns a deduplicated list of model filenames found.
+    """
+    model_keys = {"ckpt_name", "lora_name", "vae_name"}
+    names: list[str] = []
+    seen: set[str] = set()
+    for _node_id, node_data in workflow_data.items():
+        if not isinstance(node_data, dict):
+            continue
+        inputs = node_data.get("inputs", {})
+        if not isinstance(inputs, dict):
+            continue
+        for key in model_keys:
+            val = inputs.get(key)
+            if isinstance(val, str) and val and val not in seen:
+                seen.add(val)
+                names.append(val)
+    return names
+
 _FALLBACK_WORKFLOW_SD15: dict = {
     "1": {
         "class_type": "CheckpointLoaderSimple",
@@ -162,6 +219,8 @@ class PipelineConfig:
     executor: Callable | None = None  # Actual execution delegate
     evaluator: Callable | None = None  # Quality evaluation delegate
     vision_analyzer: Callable | None = None  # Injected vision analysis callback
+    models_dir: Path | None = None  # Model directory for provision check
+    brain_available: bool = False  # Auto-wire vision evaluator when True
 
 
 @dataclass
@@ -286,6 +345,21 @@ class AutonomousPipeline:
                 f"No template found for family '{config.model_family}'; fell back to SD1.5 default"
             )
 
+        # Provision check: warn about missing models (F3)
+        if config.models_dir is not None:
+            model_names = _extract_model_names(result.workflow_data)
+            for mname in model_names:
+                # Search common subdirectories (checkpoints, loras, vae)
+                found = False
+                for subdir in ("checkpoints", "loras", "vae", ""):
+                    candidate = config.models_dir / subdir / mname
+                    if candidate.exists():
+                        found = True
+                        break
+                if not found:
+                    result.warnings.append(f"Missing model: {mname}")
+                    log.warning("Model not found on disk: %s", mname)
+
         model_family = composition.plan.model_family if composition.plan else ""
         params = composition.plan.parameters if composition.plan else {}
 
@@ -347,6 +421,14 @@ class AutonomousPipeline:
             _evaluator = config.evaluator
         elif config.vision_analyzer is not None:
             _evaluator = self._vision_evaluator(config.vision_analyzer)
+        elif config.brain_available:
+            # Auto-wire vision evaluator when brain layer is available (F4)
+            _auto_analyzer = _try_create_vision_analyzer()
+            if _auto_analyzer is not None:
+                _evaluator = self._vision_evaluator(_auto_analyzer)
+                result.log("Auto-wired vision evaluator from brain layer")
+            else:
+                _evaluator = self._default_evaluator
         else:
             _evaluator = self._default_evaluator
 
@@ -356,13 +438,28 @@ class AutonomousPipeline:
             else _execute_workflow_default
         )
 
+        # Obtain circuit breaker (optional — graceful degradation)
+        _breaker = _get_breaker()
+
         # Execute → Evaluate → Retry loop
         while True:
             # Stage 5: EXECUTE
             result.stage = PipelineStage.EXECUTE
+
+            # Circuit breaker gate: skip execution if breaker is open
+            if _breaker is not None and not _breaker.allow_request():
+                result.error = (
+                    "Circuit breaker open — skipping retry"
+                )
+                result.stage = PipelineStage.FAILED
+                result.log("Circuit breaker open — aborting execution")
+                return result
+
             try:
                 exec_result = _executor(result.workflow_data)
                 result.execution_result = exec_result
+                if _breaker is not None:
+                    _breaker.record_success()
                 if result.retry_count == 0:
                     result.log("Execution complete")
                 else:
@@ -371,6 +468,8 @@ class AutonomousPipeline:
                         f"(attempt {result.retry_count})"
                     )
             except Exception as e:
+                if _breaker is not None:
+                    _breaker.record_failure()
                 label = "Retry execution" if result.retry_count else "Execution"
                 result.error = f"{label} failed: {e}"
                 result.stage = PipelineStage.FAILED

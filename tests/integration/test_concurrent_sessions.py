@@ -75,10 +75,11 @@ class TestConcurrentSessions:
                 barrier.wait()
 
                 # Load workflow into this session's state
-                from agent.tools import handle
-
+                # Use workflow_patch.handle directly to bypass the gate
+                # (gate requires an active session which is set up by MCP,
+                # not by bare ContextVar assignment)
                 load_result = json.loads(
-                    handle(
+                    workflow_patch.handle(
                         "apply_workflow_patch",
                         {
                             "path": str(wf_path),
