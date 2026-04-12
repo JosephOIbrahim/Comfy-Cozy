@@ -1,4 +1,6 @@
-# CLAUDE.md — ComfyUI Comfy Cozy Agent
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 > AI co-pilot for VFX artists using ComfyUI. Driver, not generator.
 > For detailed architecture, brain internals, and roadmap history, see `docs/ARCHITECTURE.md`.
@@ -15,7 +17,12 @@
 pip install -e ".[dev]"                    # Install
 agent run                                  # CLI agent (standalone fallback)
 agent mcp                                  # MCP server (primary interface)
-python -m pytest tests/ -v                 # 2000+ tests, all mocked, <60s
+python -m pytest tests/ -v                 # All tests (~3600, all mocked, <60s)
+python -m pytest tests/test_workflow_patch.py -v          # Single file
+python -m pytest tests/test_workflow_patch.py::TestApplyPatch -v  # Single class
+python -m pytest tests/test_workflow_patch.py::TestApplyPatch::test_load_and_patch -v  # Single test
+python -m pytest tests/ -m "not integration" -v           # Skip integration tests
+python -m pytest tests/ --cov=agent                       # With coverage
 ruff check agent/ tests/                   # Lint
 ruff format agent/ tests/                  # Format
 ```
@@ -48,11 +55,11 @@ ruff format agent/ tests/                  # Format
 10. Log key decisions to session notes (`add_note`) for continuity.
 11. Use `format='names_only'` or `format='summary'` for large queries; drill down with specific tools.
 12. Before executing, use `validate_before_execute` to catch errors early. If errors found, FIX them, re-validate, and execute. Do not stop at validation.
-11. Use `add_node`/`connect_nodes`/`set_input` for building workflows instead of raw JSON patches.
-12. Never generate entire workflows from scratch. Make surgical, validated modifications.
-13. Every patch is validated before application. No exceptions.
+13. Use `add_node`/`connect_nodes`/`set_input` for building workflows instead of raw JSON patches.
+14. Never generate entire workflows from scratch. Make surgical, validated modifications.
+15. Every patch is validated before application. No exceptions.
 
-## Tool Overview (85 tools)
+## Tool Overview (~103 tools: ~53 intelligence + ~27 brain + ~23 stage)
 
 | Category | Tools |
 |----------|-------|
@@ -124,37 +131,95 @@ Patch engine operates on this format exclusively. Three input formats handled tr
 ```
 agent/
   main.py          # Agent loop (streaming, context management, retry)
-  cli.py           # Typer CLI (run, mcp commands)
-  mcp_server.py    # MCP server exposing all 85 tools
+  cli.py           # Typer CLI (run, mcp, inspect, parse commands)
+  mcp_server.py    # MCP server exposing all tools
   config.py        # .env loading (ANTHROPIC_API_KEY, COMFYUI_DATABASE, etc.)
   system_prompt.py # Session-aware prompt builder + knowledge detection
-  tools/           # Intelligence layer (56 tools, TOOLS+handle() pattern)
-  brain/           # Brain layer (27 tools, BrainAgent SDK pattern)
+  tools/           # Intelligence layer (~53 tools, TOOLS+handle() pattern)
+    __init__.py    # Central dispatch: _HANDLERS map, lazy brain loading, gate integration
+    workflow_patch.py  # Session-scoped workflow state, undo history, semantic build (add_node, connect_nodes)
+    workflow_parse.py  # Load/analyze workflows (API/UI format detection)
+    comfy_api.py   # REST calls to ComfyUI
+    comfy_execute.py   # Queue prompts, stream progress via websocket
+    comfy_discover.py  # Search CivitAI, HuggingFace, ComfyUI Manager
+    _util.py       # to_json() (deterministic), validate_path() (sandbox)
+  brain/           # Brain layer (~27 tools, BrainAgent SDK pattern)
+    _sdk.py        # BrainAgent base class, BrainConfig DI container, auto-registration
+  stage/           # Stage layer (~23 tools, USD/LIVRPS composition)
+    stage_tools.py     # stage_read, stage_write, stage_add_delta, stage_list_deltas
+    provision_tools.py # Provision operations
+    foresight_tools.py # Predictive analysis
   profiles/        # YAML model profiles (Flux, SDXL, LTX-2, WAN 2.x + architecture fallbacks)
   schemas/         # Schema system (loader, validator, generator)
   agents/          # MoE specialists (intent_agent, verify_agent, router)
   knowledge/       # Markdown reference files (loaded by keyword triggers)
   memory/          # Session persistence (JSONL outcomes, JSON state)
   templates/       # Starter workflow JSON files
-tests/             # 2000+ tests, all mocked, pytest + pytest-asyncio
+cognitive/         # Standalone library — does NOT import agent.* (clean dependency boundary)
+  core/            # CognitiveGraphEngine, DeltaLayer, LIVRPS composition
+  experience/      # ExperienceChunk, JSONL accumulator, WorkflowSignature hashing
+  pipeline/        # Autonomous generation (create_default_pipeline(), PipelineConfig)
+  prediction/      # CWM, arbiter, counterfactuals
+  tools/           # Standalone async functions (NOT in MCP registry, consumed by pipeline only)
+  transport/       # Events, interrupts
+tests/             # ~3600 tests, all mocked, pytest + pytest-asyncio
+  conftest.py      # autouse fixtures: _reset_conn_session, reset_workflow_state
+  fixtures/        # Shared test data (sample workflows, fake images)
 ```
 
 **Tool module pattern:** Every module in `tools/` and `brain/` exports `TOOLS: list[dict]` + `handle(name, tool_input) -> str`. Registration in `tools/__init__.py` and `brain/__init__.py`.
 
-**Exception — `cognitive/tools/`:** This layer intentionally uses standalone async functions (e.g. `analyze_workflow()`, `execute_workflow()`) rather than the TOOLS+handle() pattern. Cognitive tools are consumed directly by the cognitive pipeline (`cognitive/pipeline/`) — they are not registered in the MCP/agent tool registry and are never called through `handle()`. This is by design: the cognitive layer is forbidden from importing `agent.*` to keep the dependency boundary clean.
+## Architecture
+
+### Three-Layer Tool Dispatch
+
+```
+agent/tools/__init__.py:handle()  ←  Central dispatcher
+  ├── Intelligence layer (agent/tools/*.py)  — TOOLS+handle() pattern, ~53 tools
+  ├── Brain layer (agent/brain/*.py)         — BrainAgent subclasses, ~27 tools, lazy-loaded
+  └── Stage layer (agent/stage/*.py)         — TOOLS+handle() pattern, ~23 tools
+```
+
+All tool modules export `TOOLS: list[dict]` (Anthropic schema) + `handle(name, tool_input) -> str`. Brain modules inherit from `BrainAgent` (in `brain/_sdk.py`) which auto-registers subclasses via `__init_subclass__`. Modules that fail to import are logged and skipped (graceful degradation).
+
+### Session Isolation
+
+Workflow state is per-connection via `_conn_session` ContextVar in `workflow_patch.py`. Each MCP connection, sidebar, and CLI session gets its own `WorkflowSession` containing: `current_workflow` (API-format dict), `history` (undo stack, 50-item limit), and `_engine` (CognitiveGraphEngine if available). Tests use autouse fixtures to snapshot/restore ContextVar and workflow state between tests.
+
+### Cognitive Layer Boundary
+
+`cognitive/` is a standalone library that does NOT import `agent.*`. It provides:
+- **LIVRPS delta composition** (`core/delta.py`): DeltaLayer with Opinion tiers (P < R < V < I < L < S) and SHA-256 integrity
+- **CognitiveGraphEngine** (`core/graph.py`): syncs with workflow_patch state
+- **Experience persistence** (`experience/`): JSONL accumulator, WorkflowSignature hashing
+- **Autonomous pipeline** (`pipeline/`): `create_default_pipeline()`, PipelineConfig, rule-based QualityScore
+
+Cognitive tools (`cognitive/tools/`) use standalone async functions — they are NOT in the MCP registry.
+
+### BrainAgent SDK
+
+Brain agents (`brain/*.py`) inherit from `BrainAgent` (`brain/_sdk.py`). Dependency injection via `BrainConfig` dataclass provides: `to_json`, `validate_path`, `comfyui_url`, `custom_nodes_dir`, `models_dir`, `tool_dispatcher`, `get_workflow_state`, etc. Config auto-populated from `agent.config` + `agent.tools._util` via `get_integrated_config()` singleton.
 
 ## Key Conventions
 
 - **Deterministic JSON**: `sort_keys=True` everywhere (He2025 pattern). Use `_util.py:to_json()`.
 - **Line length**: 99 chars (ruff config in pyproject.toml)
 - **All tests mocked**: No ComfyUI server or API key needed. HTTP via `unittest.mock.patch`.
-- **Config via .env**: `ANTHROPIC_API_KEY` (required), `COMFYUI_DATABASE` (default `G:/COMFYUI_Database`), `COMFYUI_HOST`/`COMFYUI_PORT`.
+- **Config via .env**: `ANTHROPIC_API_KEY` (required), `COMFYUI_DATABASE` (default `G:/COMFYUI_Database`), `COMFYUI_HOST`/`COMFYUI_PORT`, `LLM_PROVIDER` (anthropic|openai|gemini|ollama), `AGENT_MODEL`, `BRAIN_ENABLED`, `GATE_ENABLED`.
 - **Custom_Nodes**: Capital C, capital N (ComfyUI convention).
 - **asyncio_mode = "auto"**: In pyproject.toml for pytest-asyncio.
 - **Python 3.10+**: Matches `pyproject.toml` `requires-python`. Type hints everywhere. `httpx` for HTTP.
 - **Thread safety**: workflow_patch, orchestrator, demo, intent_collector, iteration_accumulator use `threading.Lock`.
 - **Path sanitization**: `_util.validate_path()` blocks access outside allowed directories.
 - **Error messages**: Never show raw tracebacks. Translate to human language.
+
+## Test Patterns
+
+- **All tests are mocked** — no ComfyUI server or API key needed. HTTP mocked via `unittest.mock.patch`.
+- **autouse fixtures** in `conftest.py`: `_reset_conn_session` (snapshot/restore ContextVar) and `reset_workflow_state` (deep-copy/restore workflow_patch state). These ensure test isolation.
+- **Common fixtures**: `sample_workflow` (minimal SD1.5 API-format dict), `sample_workflow_file` (JSON on disk), `fake_image` (tiny valid PNG).
+- **Pattern**: Load workflow → call `handle()` → `json.loads()` result → assert fields. Tools return JSON strings.
+- **Integration tests**: marked with `@pytest.mark.integration`, excluded by default with `-m "not integration"`.
 
 ## Forbidden Operations
 
