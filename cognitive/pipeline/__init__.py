@@ -45,5 +45,6 @@ __all__ = [
     "PipelineConfig",
     "PipelineResult",
     "PipelineStage",
+    "EXPERIENCE_FILE",
     "create_default_pipeline",
 ]

@@ -14,6 +14,8 @@ experience is the strongest when sufficient data exists.
 
 from __future__ import annotations
 
+import json
+import threading
 from dataclasses import dataclass
 from typing import Any
 
@@ -319,3 +321,168 @@ def predict(
         similar_count=similar_count,
         reasoning=". ".join(reasoning_parts),
     )
+
+
+# ---------------------------------------------------------------------------
+# CWM Recalibrator — rolling-window accuracy tracking + threshold adjustment
+# ---------------------------------------------------------------------------
+
+# Imported here to reuse the constant from the sibling arbiter module.
+# Safe circular-import-free: arbiter imports from cwm, not the other way
+# around (arbiter imports PredictedOutcome only). This import is lazy-ish
+# and only used at class body time, not module import time.
+CALIBRATION_STEP = 0.02
+
+_DEFAULT_CONFIDENCE_HIGH = 0.7
+_DEFAULT_CONFIDENCE_LOW = 0.3
+_ACCURACY_WINDOW_SIZE = 10
+
+
+class CWMRecalibrator:
+    """Rolling-window accuracy tracker with confidence threshold adjustment.
+
+    Tracks the last *window_size* prediction accuracies and adjusts
+    ``confidence_high`` / ``confidence_low`` thresholds accordingly:
+
+    - Rolling accuracy > 0.8  → increase ``confidence_high`` by step
+    - Rolling accuracy < 0.4  → decrease ``confidence_high`` by step
+
+    Bounds:
+        confidence_high in [0.5, 0.95]
+        confidence_low  in [0.1, 0.5]
+    """
+
+    def __init__(
+        self,
+        *,
+        confidence_high: float = _DEFAULT_CONFIDENCE_HIGH,
+        confidence_low: float = _DEFAULT_CONFIDENCE_LOW,
+        window_size: int = _ACCURACY_WINDOW_SIZE,
+        calibration_step: float = CALIBRATION_STEP,
+    ) -> None:
+        self._confidence_high = confidence_high
+        self._confidence_low = confidence_low
+        self._window_size = window_size
+        self._calibration_step = calibration_step
+        self._accuracy_window: list[float] = []
+        self._lock = threading.Lock()
+
+    # -- Properties ----------------------------------------------------------
+
+    @property
+    def confidence_high(self) -> float:
+        with self._lock:
+            return self._confidence_high
+
+    @property
+    def confidence_low(self) -> float:
+        with self._lock:
+            return self._confidence_low
+
+    @property
+    def accuracy_window(self) -> list[float]:
+        """Copy of the rolling accuracy window."""
+        with self._lock:
+            return list(self._accuracy_window)
+
+    @property
+    def rolling_accuracy(self) -> float | None:
+        """Mean of the rolling window, or None if empty."""
+        with self._lock:
+            if not self._accuracy_window:
+                return None
+            return sum(self._accuracy_window) / len(self._accuracy_window)
+
+    # -- Core API ------------------------------------------------------------
+
+    def record_accuracy(self, predicted: float, actual: float) -> None:
+        """Record a prediction vs actual pair and recalibrate thresholds.
+
+        Accuracy is measured as 1 - |predicted - actual|, clamped to [0, 1].
+
+        Args:
+            predicted: Predicted quality (0.0-1.0).
+            actual: Actual quality (0.0-1.0).
+        """
+        predicted = max(0.0, min(1.0, float(predicted)))
+        actual = max(0.0, min(1.0, float(actual)))
+        accuracy = 1.0 - abs(predicted - actual)
+
+        with self._lock:
+            self._accuracy_window.append(accuracy)
+            if len(self._accuracy_window) > self._window_size:
+                self._accuracy_window.pop(0)
+            self._recalibrate_locked()
+
+    def _recalibrate_locked(self) -> None:
+        """Adjust thresholds based on rolling accuracy. Must hold _lock."""
+        if len(self._accuracy_window) < self._window_size:
+            return  # Not enough data yet
+
+        mean_acc = sum(self._accuracy_window) / len(self._accuracy_window)
+
+        if mean_acc > 0.8:
+            self._confidence_high = min(
+                0.95, self._confidence_high + self._calibration_step,
+            )
+        elif mean_acc < 0.4:
+            self._confidence_high = max(
+                0.5, self._confidence_high - self._calibration_step,
+            )
+
+        # Keep confidence_low bounded
+        self._confidence_low = max(0.1, min(0.5, self._confidence_low))
+
+    # -- Serialization -------------------------------------------------------
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize calibration state for cross-session persistence."""
+        with self._lock:
+            return {
+                "confidence_high": self._confidence_high,
+                "confidence_low": self._confidence_low,
+                "accuracy_window": list(self._accuracy_window),
+                "window_size": self._window_size,
+                "calibration_step": self._calibration_step,
+            }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> CWMRecalibrator:
+        """Restore calibration state from a previously serialized dict."""
+        instance = cls(
+            confidence_high=data.get(
+                "confidence_high", _DEFAULT_CONFIDENCE_HIGH,
+            ),
+            confidence_low=data.get(
+                "confidence_low", _DEFAULT_CONFIDENCE_LOW,
+            ),
+            window_size=data.get("window_size", _ACCURACY_WINDOW_SIZE),
+            calibration_step=data.get("calibration_step", CALIBRATION_STEP),
+        )
+        window = data.get("accuracy_window", [])
+        if isinstance(window, list):
+            instance._accuracy_window = [
+                max(0.0, min(1.0, float(v))) for v in window
+            ]
+        return instance
+
+    def save_json(self, path: str) -> None:
+        """Persist calibration state to a JSON file."""
+        import os
+        data = json.dumps(self.to_dict(), sort_keys=True)
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC)
+        try:
+            os.write(fd, data.encode("utf-8"))
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+
+    @classmethod
+    def load_json(cls, path: str) -> CWMRecalibrator:
+        """Load calibration state from a JSON file."""
+        try:
+            with open(path, encoding="utf-8") as f:
+                data = json.load(f)
+            return cls.from_dict(data)
+        except (FileNotFoundError, json.JSONDecodeError, OSError):
+            return cls()

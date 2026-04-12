@@ -12,6 +12,8 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any
 
+from ..experience.chunk import ExperienceChunk, QualityScore
+
 
 @dataclass
 class Counterfactual:
@@ -166,7 +168,11 @@ class CounterfactualGenerator:
 
         return None
 
-    def validate(self, cf_id: str, actual_quality_delta: float) -> bool:
+    def validate(
+        self,
+        cf_id: str,
+        actual_quality_delta: float,
+    ) -> tuple[bool, ExperienceChunk | None]:
         """Validate a counterfactual with actual quality data.
 
         Args:
@@ -174,15 +180,20 @@ class CounterfactualGenerator:
             actual_quality_delta: Actual quality difference observed.
 
         Returns:
-            True if found and validated, False if not found.
+            Tuple of (found, experience_chunk). ``found`` is True when the
+            counterfactual was located and validated. ``experience_chunk``
+            is an :class:`ExperienceChunk` with ``source="counterfactual"``
+            capturing the validation outcome, or None when the
+            counterfactual was not found.
         """
         with self._lock:
             for cf in self._counterfactuals:
                 if cf.cf_id == cf_id:
                     cf.actual_quality_delta = actual_quality_delta
                     cf.validated = True
-                    return True
-        return False
+                    chunk = _build_experience_chunk(cf)
+                    return True, chunk
+        return False, None
 
     def get_adjustment(self) -> float:
         """Get a calibration adjustment based on validation history.
@@ -206,3 +217,21 @@ class CounterfactualGenerator:
             return 0.0
 
         return round(sum(biases) / len(biases), 3)
+
+
+def _build_experience_chunk(cf: Counterfactual) -> ExperienceChunk:
+    """Build an ExperienceChunk from a validated counterfactual.
+
+    The chunk captures the counterfactual experiment so the accumulator
+    can learn from "what if" validations alongside real generations.
+    """
+    # Compute overall quality from the delta (relative to a 0.5 baseline)
+    delta = cf.actual_quality_delta if cf.actual_quality_delta is not None else 0.0
+    overall = max(0.0, min(1.0, 0.5 + delta))
+
+    return ExperienceChunk(
+        prompt=f"counterfactual: vary {cf.changed_parameter}",
+        parameters=cf.alternative_params,
+        quality=QualityScore(overall=overall, source="counterfactual"),
+        tags=["counterfactual", cf.changed_parameter],
+    )

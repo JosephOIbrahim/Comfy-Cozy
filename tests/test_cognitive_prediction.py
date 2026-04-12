@@ -191,14 +191,16 @@ class TestCounterfactuals:
     def test_validate_counterfactual(self, generator):
         cf = generator.generate({"cfg": 7.0}, predicted_quality=0.7)
         assert cf is not None
-        ok = generator.validate(cf.cf_id, actual_quality_delta=0.05)
+        ok, chunk = generator.validate(cf.cf_id, actual_quality_delta=0.05)
         assert ok is True
         assert cf.validated is True
         assert cf.actual_quality_delta == 0.05
+        assert chunk is not None
 
     def test_validate_unknown_id(self, generator):
-        ok = generator.validate("nonexistent", 0.0)
+        ok, chunk = generator.validate("nonexistent", 0.0)
         assert ok is False
+        assert chunk is None
 
     def test_prediction_error(self):
         cf = Counterfactual(predicted_quality_delta=0.1, actual_quality_delta=0.05, validated=True)

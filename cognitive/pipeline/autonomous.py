@@ -144,6 +144,7 @@ class PipelineStage(Enum):
     GATE = "gate"  # Arbiter decides whether to proceed
     EXECUTE = "execute"
     EVALUATE = "evaluate"
+    RETRY = "retry"
     LEARN = "learn"
     COMPLETE = "complete"
     FAILED = "failed"
@@ -157,8 +158,10 @@ class PipelineConfig:
     intent: str = ""
     model_family: str | None = None
     quality_threshold: float = 0.6
+    max_retries: int = 2  # Max retry attempts when quality < threshold
     executor: Callable | None = None  # Actual execution delegate
     evaluator: Callable | None = None  # Quality evaluation delegate
+    vision_analyzer: Callable | None = None  # Injected vision analysis callback
 
 
 @dataclass
@@ -176,6 +179,7 @@ class PipelineResult:
     error: str = ""
     stage_log: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+    retry_count: int = 0
 
     @property
     def success(self) -> bool:
@@ -338,33 +342,73 @@ class AutonomousPipeline:
         if decision.mode != DeliveryMode.SILENT:
             result.log(f"Arbiter ({decision.mode.value}): {decision.message}")
 
-        # Stage 5: EXECUTE
-        result.stage = PipelineStage.EXECUTE
-        _executor = config.executor if config.executor is not None else _execute_workflow_default
-        try:
-            exec_result = _executor(result.workflow_data)
-            result.execution_result = exec_result
-            result.log("Execution complete")
-        except Exception as e:
-            result.error = f"Execution failed: {e}"
-            result.stage = PipelineStage.FAILED
-            return result
+        # Resolve evaluator once (used by execute-evaluate-retry loop)
+        if config.evaluator is not None:
+            _evaluator = config.evaluator
+        elif config.vision_analyzer is not None:
+            _evaluator = self._vision_evaluator(config.vision_analyzer)
+        else:
+            _evaluator = self._default_evaluator
 
-        # Stage 6: EVALUATE
-        result.stage = PipelineStage.EVALUATE
-        _evaluator = config.evaluator if config.evaluator is not None else self._default_evaluator
-        try:
-            quality = _evaluator(result.execution_result)
-            if isinstance(quality, QualityScore):
-                result.quality = quality
-            elif isinstance(quality, (int, float)):
-                result.quality = QualityScore(overall=float(quality))
-            result.log(f"Quality: {result.quality.overall:.1%}")
-        except Exception as e:
-            result.log(f"Evaluation failed: {e}")
-            result.error = f"Evaluation failed: {e}"
-            result.stage = PipelineStage.FAILED
-            return result
+        _executor = (
+            config.executor
+            if config.executor is not None
+            else _execute_workflow_default
+        )
+
+        # Execute → Evaluate → Retry loop
+        while True:
+            # Stage 5: EXECUTE
+            result.stage = PipelineStage.EXECUTE
+            try:
+                exec_result = _executor(result.workflow_data)
+                result.execution_result = exec_result
+                if result.retry_count == 0:
+                    result.log("Execution complete")
+                else:
+                    result.log(
+                        f"Retry execution complete "
+                        f"(attempt {result.retry_count})"
+                    )
+            except Exception as e:
+                label = "Retry execution" if result.retry_count else "Execution"
+                result.error = f"{label} failed: {e}"
+                result.stage = PipelineStage.FAILED
+                return result
+
+            # Stage 6: EVALUATE
+            result.stage = PipelineStage.EVALUATE
+            try:
+                quality = _evaluator(result.execution_result)
+                if isinstance(quality, QualityScore):
+                    result.quality = quality
+                elif isinstance(quality, (int, float)):
+                    result.quality = QualityScore(overall=float(quality))
+                result.log(f"Quality: {result.quality.overall:.1%}")
+            except Exception as e:
+                result.log(f"Evaluation failed: {e}")
+                result.error = f"Evaluation failed: {e}"
+                result.stage = PipelineStage.FAILED
+                return result
+
+            # Check if retry needed
+            if (
+                result.quality.overall < config.quality_threshold
+                and result.retry_count < config.max_retries
+            ):
+                result.retry_count += 1
+                result.stage = PipelineStage.RETRY
+                result.log(
+                    f"Quality {result.quality.overall:.1%} below threshold "
+                    f"{config.quality_threshold:.1%}, retry "
+                    f"{result.retry_count}/{config.max_retries}"
+                )
+
+                # Adjust parameters for retry: increase steps, nudge CFG
+                self._adjust_params_for_retry(result.workflow_data)
+                continue  # loop back to EXECUTE
+
+            break  # quality OK or retries exhausted
 
         # Stage 7: LEARN
         result.stage = PipelineStage.LEARN
@@ -449,3 +493,90 @@ class AutonomousPipeline:
         if execution_result is not None and getattr(execution_result, "success", False):
             return QualityScore(overall=0.7, source="rule")
         return QualityScore(overall=0.1, source="rule")
+
+    @staticmethod
+    def _vision_evaluator(
+        vision_analyzer: Callable,
+    ) -> Callable[[Any], QualityScore]:
+        """Build an evaluator that delegates to an injected vision analyzer.
+
+        The *vision_analyzer* callable receives an image path (str) and
+        returns a dict with keys: ``quality_score``, ``prompt_adherence``,
+        and optionally ``technical_score``, ``aesthetic_score``.
+
+        When the analyzer returns unusable data the evaluator degrades
+        to a rule-based 0.5 score so the pipeline never crashes.
+        """
+
+        def _evaluate(execution_result: Any) -> QualityScore:
+            # Extract output image path from execution result
+            filenames: list[str] = getattr(
+                execution_result, "output_filenames", [],
+            )
+            if not filenames:
+                return QualityScore(overall=0.5, source="vision_fallback")
+
+            image_path = filenames[0]
+
+            try:
+                raw = vision_analyzer(image_path)
+            except Exception as exc:
+                log.warning("Vision analyzer failed: %s", exc)
+                return QualityScore(overall=0.5, source="vision_error")
+
+            if not isinstance(raw, dict):
+                # Try JSON parse if string
+                if isinstance(raw, str):
+                    try:
+                        raw = json.loads(raw)
+                    except (json.JSONDecodeError, TypeError):
+                        return QualityScore(
+                            overall=0.5, source="vision_parse_error",
+                        )
+                else:
+                    return QualityScore(
+                        overall=0.5, source="vision_type_error",
+                    )
+
+            overall = float(raw.get("quality_score", 0.5))
+            technical = float(raw.get("technical_score", 0.0))
+            aesthetic = float(raw.get("aesthetic_score", 0.0))
+            adherence = float(raw.get("prompt_adherence", 0.0))
+
+            return QualityScore(
+                overall=overall,
+                technical=technical,
+                aesthetic=aesthetic,
+                prompt_adherence=adherence,
+                source="vision",
+            )
+
+        return _evaluate
+
+    @staticmethod
+    def _adjust_params_for_retry(workflow_data: dict[str, Any]) -> None:
+        """Adjust workflow parameters between retry attempts.
+
+        Increases steps by 10 and nudges CFG toward 7.0 (the general
+        sweet spot across model families).
+        """
+        for _node_id, node_data in workflow_data.items():
+            if not isinstance(node_data, dict):
+                continue
+            inputs = node_data.get("inputs", {})
+            if not isinstance(inputs, dict):
+                continue
+            if "steps" in inputs:
+                try:
+                    inputs["steps"] = int(inputs["steps"]) + 10
+                except (ValueError, TypeError):
+                    pass
+            if "cfg" in inputs:
+                try:
+                    cfg_val = float(inputs["cfg"])
+                    if cfg_val < 7.0:
+                        inputs["cfg"] = round(cfg_val + 0.5, 1)
+                    elif cfg_val > 7.0:
+                        inputs["cfg"] = round(cfg_val - 0.5, 1)
+                except (ValueError, TypeError):
+                    pass
