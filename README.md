@@ -75,7 +75,7 @@ Done. That's the only install command you need.
 <summary>Optional installs (click to expand)</summary>
 
 ```bash
-pip install -e ".[dev]"           # + test suite (3807 passing tests)
+pip install -e ".[dev]"           # + test suite (3879 passing tests)
 pip install -e ".[dev,stage]"     # + USD stage subsystem (~200MB, most users skip this)
 ```
 
@@ -427,6 +427,38 @@ flowchart TD
 ```
 
 Every change is undoable. Every generation teaches the agent something. The agent is a doer, not a describer -- say "wire the model" and it wires the model. Say "repair this" and it finds the missing nodes, installs them, and validates. Say "run it" and it validates, fixes anything broken, then executes. No confirmation dialogs, no "would you like me to..." -- it acts, then tells you what it did.
+
+### Event Triggers
+
+Register callbacks (or webhooks) that fire automatically when ComfyUI events happen. Built into the execution pipeline -- no polling.
+
+```mermaid
+flowchart LR
+    WS["ComfyUI<br/>WebSocket"] -->|event| Parse["ExecutionEvent<br/>.from_ws_message()"]
+    Parse --> Dispatch["TriggerRegistry<br/>.dispatch()"]
+    Dispatch --> CB1["on_complete<br/>→ auto-evaluate"]
+    Dispatch --> CB2["on_error<br/>→ log to session"]
+    Dispatch --> CB3["on_progress<br/>→ custom callback"]
+    Dispatch --> WH["Webhook<br/>→ POST JSON to URL"]
+
+    style WS fill:#ef4444,color:#fff
+    style Parse fill:#3b82f6,color:#fff
+    style Dispatch fill:#8b5cf6,color:#fff
+    style CB1 fill:#10b981,color:#fff
+    style CB2 fill:#d97706,color:#fff
+    style CB3 fill:#10b981,color:#fff
+    style WH fill:#10b981,color:#fff
+```
+
+```python
+from cognitive.transport.triggers import on_execution_complete, register_webhook
+
+# Python callback
+on_execution_complete(lambda event: print(f"Done in {event.elapsed:.1f}s"))
+
+# External webhook (POSTs JSON on every execution_complete + execution_error)
+register_webhook("https://your-server.com/hook", ["execution_complete", "execution_error"])
+```
 
 ---
 
@@ -900,7 +932,7 @@ cognitive/            LIVRPS state engine -- installed as top-level package (Pha
   core/               CognitiveGraphEngine, DeltaLayer, WorkflowGraph (link-preserving)
   experience/         ExperienceChunk, GenerationContextSignature, Accumulator
   prediction/         CognitiveWorldModel, SimulationArbiter, CounterfactualGenerator
-  transport/          SchemaCache, ExecutionEvent, interrupt, system_stats
+  transport/          SchemaCache, ExecutionEvent, interrupt, system_stats, TriggerRegistry
   pipeline/           Autonomous end-to-end orchestration
   tools/              Phase 3 macro-tools (analyze, mutate, query, compose, ...)
 ui/
@@ -912,7 +944,8 @@ panel/
   __init__.py         WEB_DIRECTORY + route registration + sys.path injection
   server/routes.py    49 REST routes -- full tool surface
   web/js/             Headless canvas↔agent bridge (no visible UI -- sidebar is primary)
-tests/                3807 passing tests, all mocked, ~60s
+tests/                3879 passing tests, all mocked, ~60s
+  integration/        Skips cleanly when ComfyUI not running
 ```
 
 ### Production Hardening
@@ -986,7 +1019,7 @@ All settings live in your `.env` file:
 No ComfyUI needed -- everything is mocked:
 
 ```bash
-python -m pytest tests/ -v        # 3807 passing tests, ~70s
+python -m pytest tests/ -v        # 3879 passing tests, ~70s
 
 # Skip tests that require a real ComfyUI server or API keys
 python -m pytest tests/ -v -m "not integration"

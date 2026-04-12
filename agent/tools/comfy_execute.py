@@ -18,6 +18,14 @@ from ._util import to_json, validate_path
 
 log = logging.getLogger(__name__)
 
+# Lazy-import trigger dispatch so failures can't break execution
+try:
+    from cognitive.transport.triggers import dispatch as _trigger_dispatch
+    from cognitive.transport.events import ExecutionEvent as _ExecEvent
+    _HAS_TRIGGERS = True
+except ImportError:
+    _HAS_TRIGGERS = False
+
 try:
     import websockets
     import websockets.sync.client
@@ -402,6 +410,14 @@ def _execute_with_websocket(
 
                 msg_type = msg.get("type", "")
                 data = msg.get("data", {})
+
+                # Dispatch to event trigger system (non-blocking, failure-safe)
+                if _HAS_TRIGGERS:
+                    try:
+                        _evt = _ExecEvent.from_ws_message(msg, started_at=start_time)
+                        _trigger_dispatch(_evt)
+                    except Exception:
+                        pass  # trigger dispatch must never interrupt execution
 
                 if msg_type == "status":
                     queue_remaining = data.get("status", {}).get("exec_info", {}).get("queue_remaining", 0)
