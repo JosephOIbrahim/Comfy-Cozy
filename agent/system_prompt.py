@@ -11,6 +11,10 @@ from .config import (
     COMFYUI_INSTALL_DIR, COMFYUI_BLUEPRINTS_DIR, WORKFLOWS_DIR,
 )
 
+# Lazy-loaded semantic index (module-level, thread-safe)
+_semantic_index = None
+_semantic_index_lock = threading.Lock()
+
 _RULES = """\
 RULES:
 1. NEVER claim to know about specific models from memory. ALWAYS use tools.
@@ -134,7 +138,37 @@ def _detect_relevant_knowledge(session_context: dict | None) -> set[str]:
         if any(kw.lower() in combined for kw in keywords):
             triggers.add(knowledge_file)
 
+    # Hybrid: if keyword triggers found fewer than 2 files and we have context,
+    # fall back to semantic TF-IDF search for additional matches.
+    if len(triggers) < 2 and combined.strip():
+        semantic_matches = _semantic_search(combined)
+        triggers.update(semantic_matches)
+
     return triggers
+
+
+def _semantic_search(query_text: str) -> set[str]:
+    """Run TF-IDF semantic search over knowledge files. Returns file stems."""
+    global _semantic_index
+    try:
+        from .knowledge.embedder import KnowledgeIndex
+    except Exception:
+        return set()
+
+    with _semantic_index_lock:
+        if _semantic_index is None:
+            _semantic_index = KnowledgeIndex()
+            _semantic_index.build(KNOWLEDGE_DIR)
+        elif _semantic_index.is_stale(KNOWLEDGE_DIR):
+            _semantic_index.rebuild_incremental(KNOWLEDGE_DIR)
+
+    try:
+        results = _semantic_index.search(query_text, top_k=3, threshold=0.15)
+    except Exception as exc:
+        log.debug("Semantic search failed: %s", exc)
+        return set()
+
+    return {chunk.file_name for chunk in results}
 
 
 def build_system_prompt(session_context: dict | None = None) -> str:

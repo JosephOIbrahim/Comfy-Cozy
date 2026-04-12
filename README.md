@@ -75,7 +75,7 @@ Done. That's the only install command you need.
 <summary>Optional installs (click to expand)</summary>
 
 ```bash
-pip install -e ".[dev]"           # + test suite (3608 passing tests)
+pip install -e ".[dev]"           # + test suite (3807 passing tests)
 pip install -e ".[dev,stage]"     # + USD stage subsystem (~200MB, most users skip this)
 ```
 
@@ -254,7 +254,7 @@ graph LR
     style D fill:#ef4444,color:#fff
 ```
 
-Common types (`TextBlock`, `ToolUseBlock`, `LLMResponse`), unified error hierarchy, provider-specific format conversion handled internally. Switch providers with one env var -- no code changes.
+Common types (`TextBlock`, `ToolUseBlock`, `LLMResponse`), unified error hierarchy, provider-specific format conversion handled internally. Switch providers with one env var -- no code changes. All 4 providers have dedicated test suites (132 tests) plus a parameterized conformance suite that verifies protocol compliance across providers.
 
 ---
 
@@ -471,7 +471,7 @@ if result.warnings:
 ```
 
 - **No executor required.** The pipeline calls ComfyUI directly via the real `execute_workflow` implementation.
-- **No evaluator required.** Rule-based scoring (success = 0.7, failure = 0.1) enables CWM calibration from day one.
+- **Vision evaluator available.** Inject a `vision_analyzer` callback into `PipelineConfig` for multi-axis quality scoring (technical, aesthetic, prompt adherence). Falls back to rule-based scoring (0.7/0.1) when vision is unavailable.
 - **Template library.** Workflows loaded from `agent/templates/` (SD 1.5 / SDXL / img2img / LoRA). Hardcoded 7-node SD 1.5 fallback if no template matches.
 - **Experience persists across sessions -- crash-safe.** Every run saved atomically (write-to-tmp then `os.replace()`). After 30+ runs, the agent starts using your personal history to bias parameter selection.
 - **Pipeline failures are graceful.** CWM exceptions return `PipelineStage.FAILED` cleanly. Template mismatches populate `result.warnings`.
@@ -823,6 +823,23 @@ Every generation is an experiment. The agent tracks what worked:
 - **Sessions 30-100**: Blends knowledge with what it's learned from your renders
 - **Sessions 100+**: Primarily driven by your personal history
 
+### Semantic Knowledge Retrieval
+
+The agent ships with 11 knowledge files (ControlNet patterns, Flux specifics, video workflows, etc.). Retrieval is hybrid: keyword triggers fire first (fast path), then TF-IDF semantic search fills gaps when keywords miss. Pure Python, zero external dependencies -- no vector DB required.
+
+```mermaid
+flowchart LR
+    Context["Workflow context<br/>+ session notes"] --> KW{"Keyword<br/>triggers"}
+    KW -->|"≥ 2 files"| Done["Load knowledge"]
+    KW -->|"< 2 files"| TFIDF["TF-IDF<br/>cosine similarity"]
+    TFIDF --> Merge["Union results"]
+    Merge --> Done
+
+    style KW fill:#3b82f6,color:#fff
+    style TFIDF fill:#8b5cf6,color:#fff
+    style Done fill:#10b981,color:#fff
+```
+
 ### Tool Inventory
 
 **113 tools across three layers:**
@@ -875,6 +892,7 @@ agent/
   stage/              23 tools -- USD state, prediction, composition (USD optional via [stage])
     dag/              Workflow intelligence (6 computation nodes)
   gate/               Pre-dispatch safety (5-check pipeline)
+  metrics.py          Observability (Counter, Histogram, Gauge -- pure stdlib, thread-safe)
   degradation.py      Fault isolation manager
   config.py           Environment + 4 kill switches + LLM provider selection
   mcp_server.py       MCP server (primary interface)
@@ -894,7 +912,7 @@ panel/
   __init__.py         WEB_DIRECTORY + route registration + sys.path injection
   server/routes.py    49 REST routes -- full tool surface
   web/js/             Headless canvas↔agent bridge (no visible UI -- sidebar is primary)
-tests/                3608 passing tests, all mocked, ~60s
+tests/                3807 passing tests, all mocked, ~60s
 ```
 
 ### Production Hardening
@@ -906,6 +924,7 @@ tests/                3608 passing tests, all mocked, ~60s
 | **Determinism** | Pure computation DAG. Deterministic JSON. Ordinal state enums. Same input = same output. |
 | **Audit Trail** | Every mutation logged: who changed what, when, and what got overridden. |
 | **Security** | Bearer token auth on all routes including WebSocket — **constant-time `hmac.compare_digest`** comparison (no timing-attack leakage). **WebSocket Origin allowlist** on sidebar + panel (rejects cross-origin connects from `evil.com`; same-origin LAN browsers pass). Path traversal blocked. **`download_model` symlink-bypass guard**: resolves the full target path (parent + filename) and re-checks against `MODELS_DIR` so a planted symlink in a `Custom_Nodes` subdirectory can't escape. SSRF prevented on initial URL and every redirect hop (RFC 1918 + loopback + link-local + CGNAT rejected via DNS resolution). MCP tool errors return `isError=True` per protocol. Gate exceptions deny by default (no silent allow). 10 MB + chunked-transfer size guards. Max 20 concurrent WebSocket connections. Atomic file writes with `flush()`+`os.fsync()` before rename (session.py + workflow_patch.py). Thread-safe token bucket rate limiter. **Handler exception guard**: stream callbacks wrapped with `_wrap_safe` so a misbehaving custom renderer can't crash the agent loop. **Config sanitization**: `COMFYUI_HOST` stripped of whitespace and trailing slashes to prevent malformed URLs. |
+| **Observability** | Thread-safe metrics module (`agent/metrics.py`): Counter, Histogram, Gauge. Tool call latency (p50/p99), error rates, LLM call timing, circuit breaker transitions, session counts. JSON + Prometheus text export. Health endpoint includes metrics summary. Zero external dependencies. |
 | **Bounded Resources** | Intent history (100), iteration steps (200), demo checkpoints (100). No unbounded growth. |
 
 ```mermaid
@@ -927,10 +946,17 @@ graph TB
         C2["Template mismatch<br/>--> result.warnings"]
         C3["Save failure<br/>--> non-fatal log"]
     end
+    subgraph Obs ["Observability"]
+        D1["Counter / Histogram / Gauge<br/>thread-safe, pure stdlib"]
+        D2["tool_call_total<br/>tool_call_duration_seconds"]
+        D3["get_metrics() -- JSON<br/>get_metrics_prometheus() -- text"]
+        D1 --> D2 --> D3
+    end
 
     style Sec fill:#1a1a2e,color:#F0F0F0,stroke:#ef4444
     style Atom fill:#1a1a2e,color:#F0F0F0,stroke:#8b5cf6
     style Resil fill:#1a1a2e,color:#F0F0F0,stroke:#10b981
+    style Obs fill:#1a1a2e,color:#F0F0F0,stroke:#d97706
 ```
 
 </details>
@@ -960,7 +986,7 @@ All settings live in your `.env` file:
 No ComfyUI needed -- everything is mocked:
 
 ```bash
-python -m pytest tests/ -v        # 3608 passing tests, ~70s
+python -m pytest tests/ -v        # 3807 passing tests, ~70s
 
 # Skip tests that require a real ComfyUI server or API keys
 python -m pytest tests/ -v -m "not integration"

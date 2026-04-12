@@ -12,6 +12,7 @@ Brain tools are lazily imported to avoid circular dependencies
 import importlib
 import logging
 import threading
+import time
 
 log = logging.getLogger(__name__)
 
@@ -115,6 +116,16 @@ def select_tools(requirements: dict) -> list[str]:
         return [c.tool_name for c in caps]
     except Exception:
         return []
+
+
+def _record_metric(name: str, status: str, elapsed: float) -> None:
+    """Record tool call metrics. Lazy import so metrics failure doesn't break tools."""
+    try:
+        from ..metrics import tool_call_total, tool_call_duration_seconds
+        tool_call_total.inc(tool_name=name, status=status)
+        tool_call_duration_seconds.observe(elapsed, tool_name=name)
+    except Exception:
+        pass  # Metrics failure must never break tool dispatch
 
 
 def _observe(name: str, tool_input: dict, ctx: "object | None") -> None:
@@ -298,11 +309,14 @@ def handle(
     # Check brain tools (_ensure_brain already called above before gate check)
     if name in _BRAIN_TOOL_NAMES:
         from ..brain import handle as handle_brain
+        _t0 = time.monotonic()
         try:
             result = handle_brain(name, tool_input)
             _observe(name, tool_input, ctx)
+            _record_metric(name, "ok", time.monotonic() - _t0)
             return result
         except Exception:
+            _record_metric(name, "error", time.monotonic() - _t0)
             log.error("Unhandled error in brain tool %s", name, exc_info=True)
             from ..errors import error_json
             return error_json(
@@ -316,6 +330,7 @@ def handle(
         log.warning("Unknown tool called: %s", name)
         from ..errors import error_json
         return error_json(f"Unknown tool: {name}", hint="Check the tool name and try again.")
+    _t0 = time.monotonic()
     try:
         # Forward progress to any module that accepts it; fall back gracefully
         try:
@@ -323,8 +338,10 @@ def handle(
         except TypeError:
             result = mod.handle(name, tool_input)
         _observe(name, tool_input, ctx)
+        _record_metric(name, "ok", time.monotonic() - _t0)
         return result
     except Exception:
+        _record_metric(name, "error", time.monotonic() - _t0)
         log.error("Unhandled error in tool %s", name, exc_info=True)
         from ..errors import error_json
         return error_json(
