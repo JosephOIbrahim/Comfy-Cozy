@@ -863,21 +863,20 @@ class TestGetLearnedPatternsQueryValidation:
 class TestOutcomeRotationLogsError:
     """Rotation failures must be logged (not silently swallowed)."""
 
-    def test_rotation_oserror_is_logged(self):
+    def test_rotation_oserror_is_logged(self, tmp_path):
         """When _rotate_outcomes raises OSError, a warning must be logged."""
         from unittest.mock import patch, MagicMock
         from agent.brain.memory import MemoryAgent
 
         agent = MemoryAgent()
-        # Make rotation fail with OSError
-        with patch("agent.brain.memory._rotate_outcomes", side_effect=OSError("disk full")), \
+        # Create a real outcomes file that exceeds the size threshold
+        outcomes_file = tmp_path / "test-session-outcomes.jsonl"
+        outcomes_file.write_text('{"x":1}\n' * 100, encoding="utf-8")
+
+        with patch.object(agent, "_outcomes_path", return_value=outcomes_file), \
+             patch("agent.brain.memory._rotate_outcomes", side_effect=OSError("disk full")), \
              patch("agent.brain.memory.OUTCOME_MAX_BYTES", 0), \
-             patch("pathlib.Path.exists", return_value=True), \
-             patch("pathlib.Path.stat") as mock_stat, \
-             patch("builtins.open", MagicMock()), \
-             patch("os.fsync"), \
              patch("agent.brain.memory.log") as mock_log:
-            mock_stat.return_value.st_size = 999999
             try:
                 agent._append_outcome("test-session", {"outcome": "test", "timestamp": 1})
             except Exception:
