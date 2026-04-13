@@ -4,8 +4,7 @@ Verifies that tool calls and LLM calls correctly increment the
 observability metrics defined in agent.metrics.
 """
 
-import json
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 

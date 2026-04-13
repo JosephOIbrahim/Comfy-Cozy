@@ -7,7 +7,7 @@ import threading
 import pytest
 
 from agent._conn_ctx import _conn_session
-from agent.metrics import Counter, tool_call_total
+from agent.metrics import Counter
 from agent.tools import workflow_patch
 
 pytestmark = pytest.mark.integration
