@@ -44,6 +44,24 @@ graph LR
 
 ---
 
+## Sponsor This Project
+
+Comfy Cozy is production software. 3,902 tests (all mocked, runnable in under a minute) cover the 113 MCP tools that drive the workflow lifecycle end-to-end. Four LLM providers — Anthropic, OpenAI, Gemini, Ollama — sit behind a single abstraction with parity across all four. The [CHANGELOG](CHANGELOG.md) tracks active hardening and new work.
+
+If Comfy Cozy saves you time inside ComfyUI, sponsorship is the most direct way to keep it moving.
+
+**Sponsorship funds:**
+
+- Continued development of the MCP agent layer
+- Priority response on sponsor-filed issues
+- New intelligence-layer tools — vision evaluators, provisioning, planning
+
+A separate Pro tier with additional offerings is planned. Details when it's ready, not before.
+
+[**Become a sponsor →**](https://github.com/sponsors/JosephOIbrahim) &nbsp;·&nbsp; [Acknowledgments](SPONSORS.md)
+
+---
+
 ## Get Running
 
 ```mermaid
