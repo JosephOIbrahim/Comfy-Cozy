@@ -142,7 +142,7 @@ Adopt roles sequentially. Announce each transition explicitly with a role tag at
 
 | Role          | Authority                                          | Forbidden                                       |
 |---------------|----------------------------------------------------|-------------------------------------------------|
-| **SCOUT**     | Read-only inventory, risk identification           | Any file mutation. Any architectural proposal.  |
+| **SCOUT**     | Read-only inventory of `agent/`, `cognitive/`, `tests/`. Write to `scout_outputs/` deliverables only. | File mutations outside `scout_outputs/`. Any architectural proposal. |
 | **CRUCIBLE**  | Adversarial review of any prior phase's output     | Building. Implementation. Decision-making.      |
 | **ARCHITECT** | Design Phase 2 plan from scout findings            | Code. Test execution. File mutations outside the plan doc itself. |
 | **FORGE**     | Implementation per architect's plan                | Design freelancing. Plan deviation without flag.|

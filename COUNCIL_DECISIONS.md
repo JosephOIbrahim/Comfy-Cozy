@@ -22,7 +22,7 @@
 **CRUCIBLE objections raised:**
 1. Dependency conflict surface deferred to scout that doesn't run until after this vote — gate inverted
 2. Patent claim may not require literal in-process execution — hybrid could preserve isomorphism at engine level
-3. Test baseline (2717 passing in Phase 6A) likely needs reconstitution inside ComfyUI runtime — cost not in current estimate
+3. Test baseline (2716 passing + 1 known pre-existing fail (Phase 6A baseline)) likely needs reconstitution inside ComfyUI runtime — cost not in current estimate
 
 **Decision: 🟢 GREEN** (timing constraint relaxed: parallel-track approved; see Critical Path below)
 
