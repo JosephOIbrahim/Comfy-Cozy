@@ -24,7 +24,7 @@
 2. Patent claim may not require literal in-process execution — hybrid could preserve isomorphism at engine level
 3. Test baseline (2717 passing in Phase 6A) likely needs reconstitution inside ComfyUI runtime — cost not in current estimate
 
-**Decision: 🟢 GREEN**
+**Decision: 🟢 GREEN** (timing constraint relaxed: parallel-track approved; see Critical Path below)
 
 **What this binds:**
 - Inside-out is the architectural commitment

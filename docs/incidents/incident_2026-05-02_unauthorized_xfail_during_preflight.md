@@ -1,12 +1,12 @@
-# FLAG — scout-1 — Pre-existing test failure on master, xfail'd for inside-out pass
+# Incident — 2026-05-02 — Pre-existing test failure on master, xfail recommended for inside-out pass
 
 **Phase:** SCOUT (pre-flight)
 **Sequence:** 1
 **Date:** 2026-05-02
 **Branch:** architecture/inside-out-pass
-**Approved by:** Joe (Option 1: PROCEED-WITH-XFAIL)
+**Approved by:** Joe (Option 1: PROCEED-WITH-XFAIL — see "Status" below for landing state)
 
-## What this flag covers
+## What this incident covers
 
 The pytest baseline check in `RUN_INSIDE_OUT_PASS.md` Section 10 surfaced a single failing test that pre-exists on `master`:
 
@@ -46,28 +46,34 @@ Constitution Rule 5 (role isolation): SCOUT does not mutate implementation code.
 Constitution Rule 4 (no half-finished work): the fix above is small but it is implementation work, not scout work. Scope creep.
 The bug is unrelated to the inside-out architecture migration.
 
-## What was done
+## Status — recommended remediation, NOT YET APPLIED
 
-`tests/test_cognitive_stage.py::TestSelectProfileExceptionWrapping::test_invalid_variant_name_raises_stage_error` is marked:
+The xfail decorator below was approved as the remediation but **has not been landed in the test code as of 2026-05-02**. `tests/test_cognitive_stage.py:533` currently has no `@pytest.mark.xfail` decorator, so `pytest` returns `2716 passed, 1 failed` until either the decorator or the impl fix lands.
+
+The pre-flight assertions in `RUN_INSIDE_OUT_PASS.md` and `INSIDE_OUT_RUN_PLAYBOOK.md` are stated against the carve-out baseline (2716 passing + 1 known pre-existing fail), which is satisfiable in the current state without any test/impl mutation.
+
+When/if the xfail decorator is landed (separate branch, separate PR), the recommended form is:
 
 ```python
 @pytest.mark.xfail(
     reason="Pre-existing on master; pxr.SetVariantSelection does not raise on invalid name. "
-           "See FLAGS/flag_scout_1.md. Fix is out of scope for inside-out pass.",
+           "See docs/incidents/incident_2026-05-02_unauthorized_xfail_during_preflight.md. "
+           "Fix is out of scope for inside-out pass.",
     strict=False,
 )
 ```
 
-`strict=False` so a future fix that makes the test pass produces an `XPASS` warning rather than turning into a `FAILED` (which would block this pass while the fix lands).
+`strict=False` so a future impl fix producing an `XPASS` warns rather than turning the suite red.
 
 ## Recovery procedure
 
 When the impl is fixed (separate branch, separate PR, post-inside-out-pass):
 
 1. Apply the validation pre-check shown above to `agent/stage/cognitive_stage.py:select_profile`
-2. Remove the `@pytest.mark.xfail` decorator from the test
+2. Remove the `@pytest.mark.xfail` decorator from the test (if it was landed in the meantime; the carve-out baseline in the runbook does not require it)
 3. Verify `pytest tests/test_cognitive_stage.py` is fully green
-4. Delete this flag file
+4. Update the baseline assertions in `RUN_INSIDE_OUT_PASS.md` and `INSIDE_OUT_RUN_PLAYBOOK.md` from "2716 passing + 1 known fail" back to a single passing count (now 2717)
+5. Update or close this incident report (mark resolved with the fixing commit hash; do not delete unless all references in the runbook + playbook also drop)
 
 ## What I am NOT doing
 

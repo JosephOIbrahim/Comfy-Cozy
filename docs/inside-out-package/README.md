@@ -2,14 +2,14 @@
 
 **Package:** Comfy-Cozy × Moneta — Inside-Out Substrate Migration
 **Created:** 2026-04-30
-**Status:** READY FOR COUNCIL SESSION
+**Status:** POST-COUNCIL — binding decisions in `COUNCIL_DECISIONS.md` at repo root (council session 2026-05-01). The brief recommendations in this package are preserved as the input artifact going *into* council; council outcomes override them where they differ.
 **Author:** Joe Ibrahim (Architect), Claude (translation)
 
 ---
 
 ## 0. What This Is
 
-Six documents preparing a MOE council decision session on whether Comfy-Cozy should migrate from outside-in (REST/WebSocket to ComfyUI) to inside-out (custom node package, Moneta in-process, workflow graph as composition substrate).
+Seven documents covering a MOE council decision session on whether Comfy-Cozy should migrate from outside-in (REST/WebSocket to ComfyUI) to inside-out (custom node package, Moneta in-process, workflow graph as composition substrate). Council ran 2026-05-01; binding outcomes are in `COUNCIL_DECISIONS.md` at repo root and the run is operationalized via `INSIDE_OUT_RUN_PLAYBOOK.md` + `RUN_INSIDE_OUT_PASS.md`.
 
 **This is decision work only. No code. No forge. No commits.** Building tasks happen in Claude Code after council approval.
 
@@ -22,11 +22,13 @@ Read in this order. Each document builds on the previous.
 | # | Document | Purpose | Required reading? |
 |---|---|---|---|
 | 0 | `00_INSIDE_OUT_EXPLORATION_PLAN.md` | Strategic frame — why now, the three questions, decision sequence | YES — start here |
-| 1 | `01_SCOUT_INSIDE_OUT_v0_1.md` | Claude Code scout pass — runs *after* council if ARCH-1 lands GREEN | NO — for Claude Code, post-council |
+| 1 | `01_SCOUT_INSIDE_OUT_v0_1.md` | Claude Code scout pass — execution spec consumed by `RUN_INSIDE_OUT_PASS.md` | NO — for Claude Code at run time |
 | 2 | `02_ARCH-1_INSIDE_OUT_BRIEF.md` | Council brief — outside-in vs inside-out (the transport decision) | YES |
 | 3 | `03_ARCH-2_MONETA_EVOLUTION_BRIEF.md` | Council brief — Moneta v1.3 (state-machine absorption) | YES |
 | 4 | `04_ARCH-5_WORKFLOW_LIVRPS_BRIEF.md` | Council brief — workflow graph as LIVRPS substrate (patent extension) | YES |
-| 5 | `README.md` | This file (index, council session protocol) | Reference as needed |
+| 5 | `INSIDE_OUT_RUN_PLAYBOOK.md` | Joe's pre-flight + gate-review playbook — the operational companion to `RUN_INSIDE_OUT_PASS.md` | YES — required during execution |
+| 6 | `../../COUNCIL_DECISIONS.md` (repo root) | Binding council outcomes — overrides brief recommendations where they differ | YES — read before acting on briefs |
+| 7 | `README.md` | This file (index, council session protocol) | Reference as needed |
 
 ---
 
@@ -78,7 +80,9 @@ Recommendation: 🟢 GREEN with timing constraint (Tier 1-2 hardens first, scout
 ### ARCH-2 — Substrate Evolution
 **Should Moneta v1.3 absorb Harlo's state-machine pattern?**
 
-Recommendation: 🟡 YELLOW — start with thin telemetry component; defer full absorption pending three-isolated-stores resolution and patent counsel review.
+Brief recommendation: 🟡 YELLOW — start with thin telemetry component; defer full absorption pending three-isolated-stores resolution and patent counsel review.
+
+**Council decision (2026-05-01): 🟢 GREEN — full absorption, override of CRUCIBLE 🔴 RED-DEFER recommendation. See `COUNCIL_DECISIONS.md` for binding outcome and the override rationale.**
 
 ### ARCH-5 — Patent Extension
 **ComfyUI workflow graph as LIVRPS substrate; CIP patent filing?**
@@ -89,29 +93,25 @@ Recommendation: 🟢 GREEN, conditional on ARCH-1 = 🟢 and patent counsel revi
 
 ## 4. Critical Path
 
-If all three land GREEN/YELLOW (no REDs), the path forward:
+All three landed GREEN at the 2026-05-01 council. Authoritative path is in `COUNCIL_DECISIONS.md` "Critical Path"; reproduced here for navigation:
 
 ```
-Now              →  Tier 1-2 hardening continues on outside-in
-                    (P0-J SSRF, path traversal, workflow JSON minification, async)
+Now              →  Tier 1-2 hardening continues on outside-in (parallel track,
+                    not gated by inside-out work)
+                    Inside-out scout/architect/forge run via RUN_INSIDE_OUT_PASS.md
+                    in Claude Code (read-only scout, then plan, then forge)
 
-Post-Tier-2      →  Scout pass execution (01_SCOUT_INSIDE_OUT_v0_1.md)
-                    Patent counsel review begins
-                    Three-isolated-stores brief written
-
-Post-scout       →  Phase 2 implementation plan drafted
-                    HARD risks (if any) addressed or ARCH-1 re-decided
-
-Phase 2 begin    →  Inside-out implementation starts
-                    Frames B and F scoped
-                    Moneta v1.3 thin telemetry component begins
+Parallel tracks  →  Three-isolated-stores brief drafted (Joe)
+                    Patent counsel meeting scheduled (ARCH-5 CIP, ARCH-2 partition)
+                    ARCH-2 thin component scoping begins after three-stores brief
 
 Phase 2 ship     →  CIP filing (if counsel approved)
                     SuperDuper Panel + GRAPH mode lands inside-out
                     Cozy Shadow Graph operational
+                    Moneta v1.3 absorption first milestones land
 ```
 
-Wall-clock estimate: ~3-4 months from council session to inside-out shipping. **This estimate is not committed; it's directional.**
+Wall-clock estimate: ~3–5 months from council session to inside-out shipping (per `COUNCIL_DECISIONS.md`), longer if ARCH-2 work surfaces three-stores complications. **This estimate is not committed; it's directional.**
 
 ---
 
@@ -137,25 +137,17 @@ These are issues the briefs flagged that need resolution but are out of scope fo
 
 ---
 
-## 7. Council Sign-off
+## 7. Council Sign-off — RECORDED
+
+Council session ran 2026-05-01. The binding record (with CRUCIBLE objections, override rationale for ARCH-2, and Critical Path) lives in `COUNCIL_DECISIONS.md` at repo root. Recorded outcomes:
 
 ```
-COUNCIL SESSION SIGN-OFF
+ARCH-1: 🟢 GREEN   (timing constraint relaxed: parallel-track approved)
+ARCH-5: 🟢 GREEN
+ARCH-2: 🟢 GREEN   (override of CRUCIBLE 🔴 RED-DEFER recommendation)
 
-Date:    _______________
-Session: ARCH-1 / ARCH-2 / ARCH-5 (all three)
-
-Decisions logged:
-
-  ARCH-1: [ ] GREEN  [ ] YELLOW  [ ] RED
-  ARCH-2: [ ] GREEN  [ ] YELLOW  [ ] RED
-  ARCH-5: [ ] GREEN  [ ] YELLOW  [ ] RED
-
-Next action: ____________________________________________
-
-___________________________________________________________
-
-Signed: Joe Ibrahim                  Date: _______________
+Signed: Joe Ibrahim                  Date: 2026-05-01
+Next action: pre-flight per INSIDE_OUT_RUN_PLAYBOOK.md, then RUN_INSIDE_OUT_PASS.md
 ```
 
 ---
@@ -172,6 +164,11 @@ G:\Comfy-Cozy\docs\inside-out-package\
   02_ARCH-1_INSIDE_OUT_BRIEF.md
   03_ARCH-2_MONETA_EVOLUTION_BRIEF.md
   04_ARCH-5_WORKFLOW_LIVRPS_BRIEF.md
+  INSIDE_OUT_RUN_PLAYBOOK.md
+
+G:\Comfy-Cozy\
+  COUNCIL_DECISIONS.md      (binding council outcomes, repo root)
+  RUN_INSIDE_OUT_PASS.md    (Claude Code drop-in execution prompt, repo root)
 ```
 
 Commit as a single PR:

@@ -40,7 +40,7 @@ Reconnaissance always precedes mutation. Operational rules:
 The distance between a change and its verification is exactly one step. Operational rules:
 
 - **Immediate verification.** After every file create/modify, run the verification suite. Not "later." Not "after I finish this batch."
-- **Regression is sacred.** Phase 6A baseline is 2717 passing tests. Breaking one is higher priority than any new work.
+- **Regression is sacred.** Phase 6A baseline is 2716 passing + 1 known pre-existing fail (`test_invalid_variant_name_raises_stage_error`, see `docs/incidents/incident_2026-05-02_unauthorized_xfail_during_preflight.md`). Breaking any of the 2716 passing is higher priority than any new work.
 - **Net-positive test count.** You leave more verification than you found. The system is strictly more provable after you touch it.
 
 ### Rule 3 — Bounded failure → escalate
@@ -257,7 +257,7 @@ The plan must cover:
 
 **B. Test infrastructure rebuild**
 - How pytest runs inside ComfyUI's runtime
-- Path to preserving the 2717-test baseline (or explicit accounting for what does not survive and why)
+- Path to preserving the 2716-passing + 1-known-fail baseline (or explicit accounting for what does not survive and why; known fail per `docs/incidents/incident_2026-05-02_unauthorized_xfail_during_preflight.md`)
 - Coverage parity vs current state
 
 **C. Dependency conflict resolution strategy**
@@ -357,11 +357,24 @@ Execute the Phase 2 plan literally. **No design freelancing.**
 - Skipping verification "to save time"
 - Combining commits across plan sections
 
+**CRUCIBLE pass on implementation:**
+
+Before the gate, switch to `[CRUCIBLE MODE]` and adversarially review the implementation. Specifically attack:
+- **Diff fidelity:** does each commit's diff match the corresponding Phase 2 plan section, file by file? Anything in the diff that is not in the plan?
+- **Test integrity (Rule 7):** was any passing test weakened — vague assertions, removed cases, narrowed scope, `xfail` added without flag — to make it pass? Compare every test touched against its prior form.
+- **Scope flag honesty (Rule 5):** were any scope expansions silently absorbed instead of raised as `FLAGS/SCOPE_FLAG_<n>.md`?
+- **Commit-message truthfulness:** do messages describe what actually changed, not what was intended?
+- **Forbidden patterns in the diff (Rule 4):** any `# TODO`, `// ... existing code ...`, ellipses, or other truncation? Fail-closed if found.
+- **Baseline integrity:** test count after Phase 3 ≥ 2716 passing. The 1 known pre-existing fail is the only allowed failure; any new failure is a regression to fix forward.
+
+Document objections in `FLAGS/flag_forge_crucible_<n>.md`. Surface objection summary at GATE C.
+
 **Phase 3 exit criteria:**
 - [ ] All commits per Phase 2 plan made
-- [ ] All tests passing (count documented, vs Phase 6A baseline of 2717)
+- [ ] All tests passing (count documented, vs Phase 6A baseline of 2716 passing + 1 known pre-existing fail per `incident_2026-05-02`; no new failures)
 - [ ] All scope flags raised (or none)
 - [ ] All blockers resolved or escalated
+- [ ] CRUCIBLE pass on implementation complete; objections documented or none
 
 **HUMAN GATE C — Joe approval required for push.**
 
@@ -370,11 +383,12 @@ Per `CLAUDE.md` Git Authority Map: per-call approval required for `git push`. Fo
 Output a summary to Joe:
 
 1. All commits made (hash + plan section reference)
-2. Test count vs baseline
+2. Test count vs baseline (2716 passing + 1 known pre-existing fail; no new failures)
 3. All scope flags raised
 4. All blockers resolved or escalated
-5. Branch state: ready to push, ready to merge, or needs review
-6. Your recommendation: READY TO PUSH / NEEDS REVIEW / BLOCKED
+5. CRUCIBLE objections raised on the implementation (or none)
+6. Branch state: ready to push, ready to merge, or needs review
+7. Your recommendation: READY TO PUSH / NEEDS REVIEW / BLOCKED
 
 Then write **explicitly**: `Awaiting Joe's approval at GATE C. Will not push without explicit go.`
 
@@ -459,7 +473,7 @@ Constitution Rule 2 in operational form:
 
 **No batch mutations.** Do not edit five files then verify. Edit one, verify, commit. Repeat.
 
-**Full-suite run** before GATE C: `pytest` against full test suite. Confirm 2717+ passing, 0 failures, 0 errors.
+**Full-suite run** before GATE C: `pytest` against full test suite. Confirm ≥2716 passing, only the known pre-existing fail (`test_invalid_variant_name_raises_stage_error` per `docs/incidents/incident_2026-05-02_unauthorized_xfail_during_preflight.md`), 0 errors. Any other failure is a regression to fix forward.
 
 ---
 
@@ -506,7 +520,7 @@ The pass does NOT exit early on:
 
 **Step 2.** Confirm via terminal:
 - `git status` — clean working tree on branch `architecture/inside-out-pass`
-- `pytest` baseline — 2717 passing
+- `pytest` baseline — 2716 passing + 1 known pre-existing fail (`test_invalid_variant_name_raises_stage_error` per `docs/incidents/incident_2026-05-02_unauthorized_xfail_during_preflight.md`). PROCEED if exactly this fail; STOP if any other fail or error.
 - `python --version` — 3.12.10
 - `.venv312` activated
 
