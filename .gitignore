@@ -40,3 +40,10 @@ logs/
 
 # Windows artifacts
 nul
+
+# Claude Code session state (transient; settings + commands stay tracked)
+.claude/sessions/
+.claude/cache/
+.claude/projects/
+.claude/worktrees/
+.claude/*.lock
