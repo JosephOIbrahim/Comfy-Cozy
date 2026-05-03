@@ -819,6 +819,84 @@ def autoresearch(
 
 
 @app.command()
+def autonomous(
+    hours: float = typer.Option(
+        24.0, "--hours", "-h",
+        help="Maximum runtime in hours.",
+    ),
+    max_experiments: int = typer.Option(
+        1000, "--max-experiments",
+        help="Maximum number of experiments before halting.",
+    ),
+    program: str = typer.Option(
+        None, "--program",
+        help="Path to a program.md file for the autoresearch driver.",
+    ),
+    checkpoint_path: str = typer.Option(
+        None, "--checkpoint",
+        help="Override STAGE_DEFAULT_PATH for this run's checkpoint target.",
+    ),
+    checkpoint_every_seconds: float = typer.Option(
+        300.0, "--checkpoint-every-seconds",
+        help="Time-based checkpoint interval (also flushes every N iterations).",
+    ),
+    session_name: str = typer.Option(
+        "cozy_autonomous", "--session",
+        help="Session name for ratchet/experience persistence.",
+    ),
+    resume: bool = typer.Option(
+        False, "--resume",
+        help="Resume from a previously checkpointed session.",
+    ),
+):
+    """Run the long-running self-healing harness (Cozy Constitution).
+
+    Wraps AutoresearchRunner with the self_healing_ladder classifier,
+    checkpoints the stage on every iteration boundary, and only halts on
+    TERMINAL classifications. See .claude/COZY_CONSTITUTION.md for doctrine.
+    """
+    from rich.console import Console
+    console = Console()
+
+    from .harness import CozyLoop, CozyLoopConfig
+    from .session_context import get_session_context
+
+    ctx = get_session_context(session_name)
+    cws = ctx.ensure_stage()
+    if cws is None:
+        console.print(
+            "[red]Cannot start autonomous harness: usd-core is not installed."
+            "[/red]"
+        )
+        raise typer.Exit(code=1)
+
+    config = CozyLoopConfig(
+        budget_hours=hours,
+        max_experiments=max_experiments,
+        program_path=program,
+        checkpoint_path=checkpoint_path,
+        checkpoint_every_seconds=checkpoint_every_seconds,
+        session_name=session_name,
+        resume=resume,
+    )
+
+    console.print(
+        f"[bold]Cozy autonomous harness[/bold] starting "
+        f"(budget={hours}h, max_experiments={max_experiments}, "
+        f"checkpoint={config.checkpoint_path or 'in-memory only'})"
+    )
+    loop = CozyLoop(config, cws=cws)
+    result = loop.run()
+
+    console.print(
+        f"\n[bold]Halt[/bold]: {result.halt_reason}\n"
+        f"  iterations:   {result.run_result.experiments.__len__() if result.run_result else 0}\n"
+        f"  total_seconds: {result.total_seconds:.1f}\n"
+        f"  blocker_path: {result.blocker_path or '(none)'}"
+    )
+
+
+@app.command()
 def mcp():
     """Primary integration -- exposes all tools via MCP for Claude Code.
 

@@ -19,8 +19,12 @@ Requires usd-core: pip install usd-core
 
 from __future__ import annotations
 
+import logging
+import threading
+import time
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 try:
     from pxr import Sdf, Usd
@@ -30,9 +34,37 @@ except ImportError:
 
 from .anchors import check_anchor
 
+_log = logging.getLogger(__name__)
+
 
 class StageError(Exception):
     """Base error for stage operations."""
+
+
+@dataclass(frozen=True)
+class StageEvent:
+    """Typed event emitted by CognitiveWorkflowStage on every observable op.
+
+    External consumers (MCP resources, Moneta adapter, telemetry) subscribe
+    via CognitiveWorkflowStage.subscribe() to receive these.
+    """
+
+    op: str  # one of: "write", "add_delta", "rollback", "flush"
+    prim_path: str | None = None
+    attr_name: str | None = None
+    layer_id: str | None = None
+    timestamp: float = field(default_factory=time.time)
+    payload: dict | None = None  # op-specific extras
+
+    def to_dict(self) -> dict:
+        return {
+            "op": self.op,
+            "prim_path": self.prim_path,
+            "attr_name": self.attr_name,
+            "layer_id": self.layer_id,
+            "timestamp": self.timestamp,
+            "payload": self.payload,
+        }
 
 
 # Top-level hierarchy prims
@@ -97,6 +129,12 @@ class CognitiveWorkflowStage:
         self._root_path = Path(root_path) if root_path else None
         self._agent_deltas: list[Any] = []  # list[Sdf.Layer]
 
+        # W2.1 — subscriber registry. Callbacks fire post-mutation, on a daemon
+        # thread so a slow/throwing subscriber never blocks the writer.
+        self._subscribers: dict[int, Callable[[StageEvent], None]] = {}
+        self._sub_lock = threading.Lock()
+        self._sub_next_id = 0
+
         # Always in-memory. Root layer manages sublayer composition only.
         self._stage = Usd.Stage.CreateInMemory("cognitive_stage.usda")
         self._base_layer = Sdf.Layer.CreateAnonymous("base.usda")
@@ -148,6 +186,51 @@ class CognitiveWorkflowStage:
     def delta_count(self) -> int:
         """Number of active agent delta sublayers."""
         return len(self._agent_deltas)
+
+    # ------------------------------------------------------------------
+    # W2.1/W2.3 — Subscriber registry
+    # ------------------------------------------------------------------
+
+    def subscribe(self, callback: Callable[[StageEvent], None]) -> int:
+        """Register a callback for stage mutation events.
+
+        Returns an integer handle that can be passed to unsubscribe(). The
+        callback is invoked once per write / add_delta / rollback / flush,
+        on a fire-and-forget daemon thread so subscriber failures cannot
+        block the writer or corrupt stage state.
+        """
+        with self._sub_lock:
+            handle = self._sub_next_id
+            self._sub_next_id += 1
+            self._subscribers[handle] = callback
+            return handle
+
+    def unsubscribe(self, handle: int) -> bool:
+        """Remove a subscriber by handle. Returns True if removed."""
+        with self._sub_lock:
+            return self._subscribers.pop(handle, None) is not None
+
+    def _emit(self, event: StageEvent) -> None:
+        """Notify all subscribers of an event. Never raises."""
+        with self._sub_lock:
+            callbacks = list(self._subscribers.values())
+        if not callbacks:
+            return
+
+        def _run():
+            for cb in callbacks:
+                try:
+                    cb(event)
+                except Exception as exc:
+                    _log.warning(
+                        "Stage subscriber %r failed on %s: %s",
+                        cb, event.op, exc,
+                    )
+
+        # Daemon thread so the writer returns immediately even if subscribers
+        # are slow. We don't join — fire-and-forget by design.
+        t = threading.Thread(target=_run, daemon=True)
+        t.start()
 
     # ------------------------------------------------------------------
     # Read / Write
@@ -220,6 +303,12 @@ class CognitiveWorkflowStage:
         finally:
             self._stage.SetEditTarget(self._stage.GetRootLayer())
 
+        self._emit(StageEvent(
+            op="write",
+            prim_path=prim_path,
+            attr_name=attr_name,
+        ))
+
     # ------------------------------------------------------------------
     # Agent Deltas (LIVRPS Local opinion)
     # ------------------------------------------------------------------
@@ -281,6 +370,12 @@ class CognitiveWorkflowStage:
         root.subLayerPaths = paths
 
         self._agent_deltas.append(layer)
+
+        self._emit(StageEvent(
+            op="add_delta",
+            layer_id=layer.identifier,
+            payload={"agent_name": agent_name, "keys": list(delta_dict.keys())},
+        ))
         return layer.identifier
 
     def rollback_to(self, n_deltas: int) -> int:
@@ -307,6 +402,11 @@ class CognitiveWorkflowStage:
         root.subLayerPaths = [
             p for p in root.subLayerPaths if p not in removed_ids
         ]
+
+        self._emit(StageEvent(
+            op="rollback",
+            payload={"removed_count": to_remove},
+        ))
         return to_remove
 
     def list_deltas(self) -> list[str]:
@@ -423,6 +523,11 @@ class CognitiveWorkflowStage:
                 "No output path. Stage is in-memory — provide output_path."
             )
         self._stage.Flatten().Export(path)
+
+        self._emit(StageEvent(
+            op="flush",
+            payload={"path": path},
+        ))
         return path
 
     def export_flat(self, output_path: str | Path) -> str:
