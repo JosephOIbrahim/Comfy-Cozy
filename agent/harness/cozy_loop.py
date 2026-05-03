@@ -156,6 +156,21 @@ class CozyLoop:
         cws: CognitiveWorkflowStage instance — used for checkpointing.
         ratchet: optional pre-built Ratchet (for tests). If None, the inner
             AutoresearchRunner builds one in setup().
+        repair_fn: optional callback invoked on RECOVERABLE classification
+            BEFORE the signature counter increments. Signature:
+            `(error: BaseException, change_context: dict) -> dict | None`.
+            If it returns a new change_context, the harness retries execute
+            once with that context. If it returns None, the iteration is
+            counted as a recoverable failure and the signature counter
+            advances toward TERMINAL promotion. Per Article III, RECOVERABLE
+            errors should route to a specialist for repair; this hook is
+            the in-process embodiment of that route.
+        meta_agent: optional MetaAgent instance for Tier-1 dial adjustments.
+            When the harness sees the SAME RECOVERABLE signature twice in a
+            row, it asks meta_agent for a proposal. Tier-1 (auto-apply)
+            proposals are accepted and a single approved dial is mutated
+            (e.g. `max_transient_retries`); Tier-2/3 are deferred to the
+            Ratchet path per Article VI. None = no MetaAgent integration.
     """
 
     def __init__(
@@ -166,12 +181,18 @@ class CozyLoop:
         propose_fn: Callable[[], dict[str, Any]] | None = None,
         cws: Any | None = None,
         ratchet: Any | None = None,
+        repair_fn: Callable[[BaseException, dict], dict | None] | None = None,
+        meta_agent: Any | None = None,
     ):
         self._config = config
         self._execute_fn = execute_fn
         self._propose_fn = propose_fn
         self._cws = cws
         self._ratchet_override = ratchet
+        self._repair_fn = repair_fn
+        self._meta_agent = meta_agent
+        self._meta_proposals_applied = 0
+        self._last_recoverable_sig: str | None = None
 
         # Self-healing counters
         self._transient_retries_total = 0
@@ -312,40 +333,105 @@ class CozyLoop:
             try:
                 scores = runner._execute(change_context)
             except Exception as exc:
+                # Pre-classification: try in-process repair if this looks
+                # RECOVERABLE and a repair_fn is wired. The repair_fn embodies
+                # the Article-III "route to a specialist" step inside a
+                # single Python process; the Claude Code subagent layer is
+                # the equivalent at the conversational layer.
+                cls = self_healing_ladder(exc)
+                if cls == RECOVERABLE and self._repair_fn is not None:
+                    try:
+                        new_ctx = self._repair_fn(exc, change_context)
+                    except Exception as repair_exc:
+                        log.warning(
+                            "repair_fn raised %s — escalating original error",
+                            type(repair_exc).__name__,
+                        )
+                        new_ctx = None
+                    if new_ctx is not None:
+                        # Retry with the repaired context. If THIS attempt
+                        # raises, we fall through to the ladder below — no
+                        # second repair attempt within one iteration to
+                        # prevent infinite repair loops.
+                        try:
+                            scores = runner._execute(new_ctx)
+                            change_context = new_ctx
+                            exp_elapsed = time.time() - exp_start
+                            self._recoverable_repairs_total += 1
+                            log.info(
+                                "RECOVERABLE %s repaired in-process",
+                                type(exc).__name__,
+                            )
+                            # Skip the ladder and proceed to ratchet decide()
+                            self._post_execute(
+                                runner, scores, change_context, exp_elapsed,
+                            )
+                            self._maybe_checkpoint(runner, last_checkpoint_time)
+                            last_checkpoint_time = time.time()
+                            continue
+                        except Exception as retry_exc:
+                            exc = retry_exc  # re-classify with retry's error
+                # Classification + counter routing
                 cls = self._classify_and_route(exc)
                 if cls == TERMINAL:
                     raise _TerminalHalt(reason="execution failed terminally", error=exc) from exc
-                # TRANSIENT/RECOVERABLE: increment counter and continue
+                # TRANSIENT/RECOVERABLE: try a Tier-1 MetaAgent dial bump
+                # before giving up on this iteration. Article VI says
+                # Tier-1 fixes are auto-applied IFF they don't mutate state
+                # — bumping `max_transient_retries` qualifies.
+                if cls == RECOVERABLE:
+                    self._maybe_apply_meta_agent_dial(exc)
                 self._iterations_completed += 1
                 continue
             exp_elapsed = time.time() - exp_start
 
             # Decide via the ratchet (Article VI: ratchet sovereignty)
-            delta_id = f"exp_{self._iterations_completed}"
-            kept = runner._ratchet.decide(
-                delta_id, scores,
-                change_context=change_context,
+            self._post_execute(runner, scores, change_context, exp_elapsed)
+            last_checkpoint_time = self._maybe_checkpoint(
+                runner, last_checkpoint_time,
             )
-            from ..stage.autoresearch_runner import ExperimentResult
-            runner._result.experiments.append(ExperimentResult(
-                delta_id=delta_id,
-                axis_scores=scores,
-                kept=kept,
-                composite=runner._ratchet.history[-1].composite,
-                change_context=change_context,
-                elapsed_seconds=exp_elapsed,
-            ))
-            self._iterations_completed += 1
 
-            # Checkpoint by iteration count or by time
-            now = time.time()
-            should_checkpoint = (
-                self._iterations_completed % self._config.checkpoint_every_n == 0
-                or (now - last_checkpoint_time) >= self._config.checkpoint_every_seconds
-            )
-            if should_checkpoint:
-                self._checkpoint(runner)
-                last_checkpoint_time = now
+    def _post_execute(
+        self,
+        runner: AutoresearchRunner,
+        scores: dict[str, float],
+        change_context: dict,
+        exp_elapsed: float,
+    ) -> None:
+        """Record the experiment via the ratchet. Extracted so the repair
+        retry path and the happy path use the same record-keeping."""
+        from ..stage.autoresearch_runner import ExperimentResult
+        delta_id = f"exp_{self._iterations_completed}"
+        kept = runner._ratchet.decide(
+            delta_id, scores,
+            change_context=change_context,
+        )
+        runner._result.experiments.append(ExperimentResult(
+            delta_id=delta_id,
+            axis_scores=scores,
+            kept=kept,
+            composite=runner._ratchet.history[-1].composite,
+            change_context=change_context,
+            elapsed_seconds=exp_elapsed,
+        ))
+        self._iterations_completed += 1
+
+    def _maybe_checkpoint(
+        self,
+        runner: AutoresearchRunner,
+        last_checkpoint_time: float,
+    ) -> float:
+        """Checkpoint if iteration-count or time threshold crossed.
+        Returns the (possibly updated) last_checkpoint_time."""
+        now = time.time()
+        should_checkpoint = (
+            self._iterations_completed % self._config.checkpoint_every_n == 0
+            or (now - last_checkpoint_time) >= self._config.checkpoint_every_seconds
+        )
+        if should_checkpoint:
+            self._checkpoint(runner)
+            return now
+        return last_checkpoint_time
 
     # ------------------------------------------------------------------
     # Self-healing ladder (Article III)
@@ -411,6 +497,52 @@ class CozyLoop:
         # TERMINAL
         self._terminal_count += 1
         return TERMINAL
+
+    def _maybe_apply_meta_agent_dial(self, exc: BaseException) -> None:
+        """Optional Article-VI escape: ask MetaAgent for a Tier-1 dial bump
+        when the same RECOVERABLE signature repeats consecutively.
+
+        Tier-1 means non-state-mutating — the only dials we mutate from
+        here are `max_transient_retries` and `transient_backoff_seconds`.
+        Tier-2/3 proposals are NOT applied because they require Ratchet
+        scoring infrastructure for harness state, which we don't have.
+        Such proposals are logged for human review.
+        """
+        if self._meta_agent is None:
+            return
+        sig = type(exc).__name__
+        # Only act if this is the SAME signature as last time — avoids
+        # racing toward dial bumps on every recoverable error.
+        if self._last_recoverable_sig != sig:
+            self._last_recoverable_sig = sig
+            return
+        try:
+            improvement = self._meta_agent.propose_improvement(
+                category="optimization_param",
+                description=f"Repeated {sig} suggests retry budget too low",
+                proposed_change={"dial": "max_transient_retries", "delta": +1},
+                rationale=(
+                    f"Observed {sig} twice consecutively in harness loop; "
+                    f"current max_transient_retries="
+                    f"{self._config.max_transient_retries}"
+                ),
+            )
+        except Exception as meta_exc:
+            log.warning("MetaAgent.propose_improvement raised: %s", meta_exc)
+            return
+        if not self._meta_agent.can_auto_apply(improvement):
+            log.info(
+                "MetaAgent proposal %s requires ratchet/human gate — deferred",
+                getattr(improvement, "improvement_id", "?"),
+            )
+            return
+        # Apply the dial bump
+        self._config.max_transient_retries += 1
+        self._meta_proposals_applied += 1
+        log.info(
+            "MetaAgent Tier-1 applied: max_transient_retries -> %d",
+            self._config.max_transient_retries,
+        )
 
     # ------------------------------------------------------------------
     # Checkpointing (Article IV)

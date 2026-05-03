@@ -357,3 +357,313 @@ class TestCozyLoopHarness:
         assert len(result.health_snapshots) >= 1
         first = result.health_snapshots[0]
         assert first.elapsed_seconds >= 0.0
+
+
+# ---------------------------------------------------------------------------
+# repair_fn — Article III in-process specialist re-route
+# ---------------------------------------------------------------------------
+
+class TestCozyLoopRepairFn:
+    def test_repair_fn_recovers_from_recoverable_error(self, tmp_path):
+        """A repair_fn that returns a new ctx must trigger a successful retry."""
+        from agent.harness import CozyLoop, CozyLoopConfig
+        attempts = {"n": 0}
+
+        def execute(ctx):
+            attempts["n"] += 1
+            if "repaired" not in ctx:
+                # First call: classified as RECOVERABLE
+                raise FileNotFoundError("/missing/model.safetensors")
+            return {"composite": 0.7}
+
+        repair_calls = {"n": 0}
+
+        def repair(error, ctx):
+            repair_calls["n"] += 1
+            return {**ctx, "repaired": True}
+
+        cws = CognitiveWorkflowStage(root_path=tmp_path / "h.usda")
+        cfg = CozyLoopConfig(
+            budget_hours=0.001,
+            max_experiments=1,
+            checkpoint_every_n=1,
+            checkpoint_every_seconds=10,
+            max_transient_retries=0,
+            transient_backoff_seconds=(0.0,),
+            health_check_seconds=0.05,
+            session_name="cozy_repair",
+            checkpoint_path=str(tmp_path / "h.usda"),
+        )
+        loop = CozyLoop(
+            cfg, execute_fn=execute, propose_fn=lambda: {"x": 1},
+            cws=cws, repair_fn=repair,
+        )
+        result = loop.run()
+        assert repair_calls["n"] == 1
+        assert attempts["n"] == 2  # original + repaired retry
+        assert result.run_result is not None
+        assert len(result.run_result.experiments) == 1  # successful experiment
+        # The repaired_repairs counter increments only on a successful repair
+        assert loop._recoverable_repairs_total == 1
+
+    def test_repair_fn_returning_none_falls_through_to_counter(self, tmp_path):
+        """When repair_fn returns None, the harness must NOT retry."""
+        from agent.harness import CozyLoop, CozyLoopConfig
+        attempts = {"n": 0}
+
+        def execute(ctx):
+            attempts["n"] += 1
+            raise FileNotFoundError("/missing")
+
+        def repair(error, ctx):
+            return None  # cannot repair
+
+        cws = CognitiveWorkflowStage(root_path=tmp_path / "h.usda")
+        cfg = CozyLoopConfig(
+            budget_hours=0.001,
+            max_experiments=1,
+            checkpoint_every_n=1,
+            checkpoint_every_seconds=10,
+            max_transient_retries=0,
+            transient_backoff_seconds=(0.0,),
+            max_recoverable_per_signature=10,
+            health_check_seconds=0.05,
+            session_name="cozy_no_repair",
+            checkpoint_path=str(tmp_path / "h.usda"),
+        )
+        loop = CozyLoop(
+            cfg, execute_fn=execute, propose_fn=lambda: {},
+            cws=cws, repair_fn=repair,
+        )
+        loop.run()
+        # exactly one execute call — no retry when repair returns None
+        assert attempts["n"] == 1
+
+
+# ---------------------------------------------------------------------------
+# MetaAgent Tier-1 dial integration
+# ---------------------------------------------------------------------------
+
+class TestCozyLoopMetaAgentDial:
+    def test_repeated_recoverable_triggers_tier1_dial(self, tmp_path):
+        """Same RECOVERABLE signature twice in a row → MetaAgent proposes,
+        Tier-1 auto-applies, max_transient_retries bumped by 1."""
+        from agent.harness import CozyLoop, CozyLoopConfig
+
+        # Stub MetaAgent
+        class StubImprovement:
+            improvement_id = "imp_1"
+
+        class StubMetaAgent:
+            def __init__(self):
+                self.proposals = 0
+
+            def propose_improvement(self, **kwargs):
+                self.proposals += 1
+                return StubImprovement()
+
+            def can_auto_apply(self, imp):
+                return True  # Tier-1 auto-apply
+
+        meta = StubMetaAgent()
+
+        def execute(ctx):
+            raise FileNotFoundError("/missing")
+
+        cws = CognitiveWorkflowStage(root_path=tmp_path / "h.usda")
+        cfg = CozyLoopConfig(
+            budget_hours=0.001,
+            max_experiments=3,
+            checkpoint_every_n=1,
+            checkpoint_every_seconds=10,
+            max_transient_retries=2,
+            transient_backoff_seconds=(0.0,),
+            max_recoverable_per_signature=10,
+            health_check_seconds=0.05,
+            session_name="cozy_meta",
+            checkpoint_path=str(tmp_path / "h.usda"),
+        )
+        loop = CozyLoop(
+            cfg, execute_fn=execute, propose_fn=lambda: {},
+            cws=cws, meta_agent=meta,
+        )
+        loop.run()
+        # 1st recoverable: sets _last_recoverable_sig only.
+        # 2nd recoverable (same sig): proposes + Tier-1 applies.
+        # Across 3 iterations the dial may bump multiple times — assert
+        # bumped, not exactly bumped-by-1.
+        assert meta.proposals >= 1
+        assert loop._meta_proposals_applied >= 1
+        assert cfg.max_transient_retries > 2  # bumped from initial 2
+
+    def test_meta_agent_tier2_proposal_not_auto_applied(self, tmp_path):
+        """can_auto_apply=False (Tier 2/3) must NOT mutate the dial."""
+        from agent.harness import CozyLoop, CozyLoopConfig
+
+        class StubMetaAgent:
+            def __init__(self):
+                self.proposals = 0
+
+            def propose_improvement(self, **kwargs):
+                self.proposals += 1
+                return type("Imp", (), {"improvement_id": "x"})()
+
+            def can_auto_apply(self, imp):
+                return False  # Tier 2/3 — needs ratchet
+
+        meta = StubMetaAgent()
+        original_retries = 2
+
+        def execute(ctx):
+            raise FileNotFoundError("/missing")
+
+        cws = CognitiveWorkflowStage(root_path=tmp_path / "h.usda")
+        cfg = CozyLoopConfig(
+            budget_hours=0.001,
+            max_experiments=3,
+            max_transient_retries=original_retries,
+            transient_backoff_seconds=(0.0,),
+            max_recoverable_per_signature=10,
+            health_check_seconds=0.05,
+            session_name="cozy_meta_t2",
+            checkpoint_path=str(tmp_path / "h.usda"),
+        )
+        loop = CozyLoop(
+            cfg, execute_fn=execute, propose_fn=lambda: {},
+            cws=cws, meta_agent=meta,
+        )
+        loop.run()
+        # Proposal made but NOT applied
+        assert cfg.max_transient_retries == original_retries
+        assert loop._meta_proposals_applied == 0
+
+
+# ---------------------------------------------------------------------------
+# SessionRegistry — daemon timer leak fix
+# ---------------------------------------------------------------------------
+
+class TestSessionRegistryTimerCleanup:
+    def test_destroy_stops_autosave(self, tmp_path):
+        from agent.session_context import SessionRegistry
+        reg = SessionRegistry()
+        ctx = reg.get_or_create("scratch")
+        # Wire a fake stage with a root path so the autosave timer would arm.
+        cws = CognitiveWorkflowStage(root_path=tmp_path / "auto.usda")
+        ctx._stage = cws
+        # Manually start a fast timer so we can see it in flight.
+        import threading as _threading
+        ctx._autosave_timer = _threading.Timer(60.0, lambda: None)
+        ctx._autosave_timer.daemon = True
+        ctx._autosave_timer.start()
+        assert reg.destroy("scratch")
+        # Shutdown event must be set so any future tick exits early.
+        assert ctx._autosave_shutdown.is_set()
+
+    def test_clear_stops_all_autosaves(self, tmp_path):
+        from agent.session_context import SessionRegistry
+        reg = SessionRegistry()
+        ctxs = [reg.get_or_create(f"s{i}") for i in range(3)]
+        # Plant fake timers on each
+        for ctx in ctxs:
+            import threading as _threading
+            ctx._autosave_timer = _threading.Timer(60.0, lambda: None)
+            ctx._autosave_timer.daemon = True
+            ctx._autosave_timer.start()
+        reg.clear()
+        for ctx in ctxs:
+            assert ctx._autosave_shutdown.is_set()
+
+
+# ---------------------------------------------------------------------------
+# Moneta reference adapter
+# ---------------------------------------------------------------------------
+
+class TestMonetaAdapter:
+    def test_outbound_emits_jsonl(self, tmp_path):
+        import json as _json
+        from agent.integrations.moneta import MonetaAdapter, MonetaAdapterConfig
+        cws = CognitiveWorkflowStage()
+        config = MonetaAdapterConfig(
+            outbox_dir=tmp_path / "outbox",
+            inbox_dir=None,
+            poll_interval_seconds=0.01,
+        )
+        adapter = MonetaAdapter(config, cws)
+        adapter.start()
+        try:
+            cws.write("/workflows/m1", "steps", 25)
+            # Subscriber fan-out is on a daemon thread — give it time.
+            for _ in range(50):
+                if adapter.events_emitted >= 1:
+                    break
+                time.sleep(0.02)
+            assert adapter.events_emitted >= 1
+            # Inspect the JSONL file
+            files = list((tmp_path / "outbox").glob("*.jsonl"))
+            assert len(files) == 1
+            lines = files[0].read_text(encoding="utf-8").strip().splitlines()
+            assert len(lines) >= 1
+            rec = _json.loads(lines[0])
+            assert rec["op"] == "write"
+            assert rec["prim_path"] == "/workflows/m1"
+            assert rec["attr_name"] == "steps"
+            assert rec["schema"] == "moneta-v0"
+        finally:
+            adapter.stop()
+
+    def test_inbound_ingests_delta_file(self, tmp_path):
+        import json as _json
+        from agent.integrations.moneta import MonetaAdapter, MonetaAdapterConfig
+        cws = CognitiveWorkflowStage()
+        outbox = tmp_path / "outbox"
+        inbox = tmp_path / "inbox"
+        config = MonetaAdapterConfig(
+            outbox_dir=outbox,
+            inbox_dir=inbox,
+            poll_interval_seconds=0.05,
+        )
+        adapter = MonetaAdapter(config, cws)
+        adapter.start()
+        try:
+            inbox.mkdir(exist_ok=True)
+            delta_file = inbox / "001.delta.json"
+            delta_file.write_text(_json.dumps({
+                "agent_name": "moneta",
+                "delta": {"/workflows/from_moneta:steps": 42},
+            }), encoding="utf-8")
+            # Wait for the watcher to see and ingest
+            for _ in range(50):
+                if adapter.deltas_ingested >= 1:
+                    break
+                time.sleep(0.05)
+            assert adapter.deltas_ingested == 1
+            # File must be marked .applied
+            assert (inbox / "001.delta.json.applied").exists()
+            # And the delta must be visible on the stage
+            assert cws.read("/workflows/from_moneta", "steps") == 42
+        finally:
+            adapter.stop()
+
+    def test_malformed_delta_marked_failed_not_retried(self, tmp_path):
+        from agent.integrations.moneta import MonetaAdapter, MonetaAdapterConfig
+        cws = CognitiveWorkflowStage()
+        config = MonetaAdapterConfig(
+            outbox_dir=tmp_path / "outbox",
+            inbox_dir=tmp_path / "inbox",
+            poll_interval_seconds=0.05,
+        )
+        adapter = MonetaAdapter(config, cws)
+        adapter.start()
+        try:
+            (tmp_path / "inbox").mkdir(exist_ok=True)
+            bad = tmp_path / "inbox" / "broken.delta.json"
+            bad.write_text("{not valid json", encoding="utf-8")
+            for _ in range(50):
+                if adapter.ingest_failures >= 1:
+                    break
+                time.sleep(0.05)
+            assert adapter.ingest_failures >= 1
+            assert (tmp_path / "inbox" / "broken.delta.json.failed").exists()
+            assert not bad.exists()
+        finally:
+            adapter.stop()
