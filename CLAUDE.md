@@ -288,9 +288,9 @@ When a prompt explicitly grants session-level git authorization, the agent may r
 [TEST] Add fixture for SDXL + ControlNet + IP-Adapter workflow
 ```
 
-## Current TODO (Phase 7)
+## Current TODO (Phase 7 / Cozy)
 
-Phase 6 complete. All 8 items verified passing (3579 tests, 30 pipeline tests).
+Phase 6 complete. Cozy persistence + harness shipped (4150+ tests passing).
 
 **Completed (Phase 6 — archived):**
 - ~~test_health.py mock leak~~ — fixed (6/6 passing)
@@ -302,11 +302,44 @@ Phase 6 complete. All 8 items verified passing (3579 tests, 30 pipeline tests).
 - ~~Post-COMPOSE diagnostic~~ — `analyze_workflow` warns on zero-node workflows
 - ~~`create_default_pipeline()`~~ — bootstrap factory in `cognitive/pipeline/__init__.py`
 
+**Completed (Cozy — see `.claude/COZY_CONSTITUTION.md`):**
+- ~~Stage persistence~~ — `STAGE_DEFAULT_PATH` cold-load + autosave timer + MCP atexit
+- ~~Lazy experience-loop wiring~~ — `STAGE_AUTOLOAD_EXPERIENCE` invokes `create_default_pipeline()` on `ensure_stage()`
+- ~~MCP resource support~~ — `stage://workflows`, `stage://experience`, `stage://agents`, `stage://scenes` exposed in `agent/mcp_server.py`
+- ~~Stage event surface~~ — `CognitiveWorkflowStage.subscribe(callback)` registry; daemon-thread fan-out; failures isolated from writers
+- ~~SCRIBE specialist~~ — chain terminator per Article II of the Cozy Constitution
+- ~~Two new commandments~~ — `persistence_durability` (post-check), `self_healing_ladder` (classifier)
+- ~~Long-running harness~~ — `agent/harness/cozy_loop.py` with checkpointing, self-healing ladder, optional `repair_fn` and MetaAgent Tier-1 dial integration
+- ~~Moneta reference adapter~~ — `agent/integrations/moneta.py` bidirectional file-watch transport (placeholder for Moneta API)
+- ~~Cozy MoE subagents~~ — `.claude/agents/cozy-{scout,architect,provisioner,forge,crucible,vision,scribe}.md`
+
 **Phase 7 — Next:**
 1. Vision-based evaluator — replace rule-based 0.7/0.1 with `analyze_image` scoring
 2. Auto-retry loop — re-COMPOSE when `quality.overall < threshold` (stub exists in pipeline)
-3. MCP resource support — expose workflow state as MCP resources
-4. Integration test harness — `@pytest.mark.integration` for live ComfyUI tests
+3. Integration test harness — `@pytest.mark.integration` for live ComfyUI tests
+4. Real Moneta wire format — replace file-watch transport in `agent/integrations/moneta.py` with HTTP/RPC once API contract lands
+
+## Cozy Environment Variables
+
+```bash
+STAGE_DEFAULT_PATH=/path/to/stage.usda     # cold-load + flush target; "" = in-memory
+STAGE_AUTOSAVE_SECONDS=300                 # daemon Timer interval; 0 disables
+STAGE_AUTOLOAD_EXPERIENCE=true             # wires the cognitive ExperienceAccumulator
+MONETA_OUTBOX_DIR=/path/to/moneta/outbox   # enables the Moneta reference adapter
+MONETA_INBOX_DIR=/path/to/moneta/inbox     # optional; enables bidirectional ingest
+MONETA_POLL_SECONDS=2.0                    # inbox poll interval
+```
+
+## Cozy Autonomous Harness
+
+```bash
+agent autonomous --hours 24 --max-experiments 1000 --session cozy_run
+```
+
+Per-iteration checkpoint to `STAGE_DEFAULT_PATH`. Halts only on TERMINAL
+(constitution-violation / disk-full / repeated-RECOVERABLE>3) or budget
+exhaustion. Writes `BLOCKER.md` on TERMINAL halt. See
+`.claude/COZY_CONSTITUTION.md` Article III for the bounded-failure ladder.
 
 ## Non-Goals
 
