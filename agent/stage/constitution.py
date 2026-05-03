@@ -1,4 +1,4 @@
-"""Constitutional Enforcer — 8 commandments as executable pre/post checks.
+"""Constitutional Enforcer — 10 commandments as executable pre/post checks.
 
 Each commandment is a callable check that returns (passed: bool, reason: str).
 Checks can be used as pre-conditions (before action) or post-conditions (after).
@@ -12,6 +12,8 @@ Commandments:
   6. explicit_handoffs       — typed artifacts required between agents
   7. adversarial_verification — builder != breaker
   8. human_gates             — pause at irreversible transitions
+  9. persistence_durability   — every mutation produces a flushable artifact
+ 10. self_healing_ladder      — errors classified TRANSIENT/RECOVERABLE/TERMINAL
 """
 
 from __future__ import annotations
@@ -295,6 +297,126 @@ def human_gates(
 
 
 # ---------------------------------------------------------------------------
+# Commandment 9: persistence_durability
+# ---------------------------------------------------------------------------
+
+def persistence_durability(
+    *,
+    proposed_tool: str,
+    stage_root_path: str | None,
+    autosave_seconds: int,
+    pending_flush: bool = False,
+) -> CheckResult:
+    """Commandment 9: every mutation MUST produce a flushable artifact.
+
+    A mutating tool call is only safe if at least one durability path is wired:
+      - the stage has a default flush target (root_path), OR
+      - an autosave timer is running (autosave_seconds > 0), OR
+      - a pending-flush marker is set by the caller.
+
+    Read-only tools are exempt.
+    """
+    if proposed_tool not in _MUTATION_TOOLS:
+        return CheckResult(
+            passed=True,
+            commandment="persistence_durability",
+            reason="Non-mutating tool — durability check not applicable.",
+        )
+
+    has_root = bool(stage_root_path)
+    has_timer = autosave_seconds > 0
+    if has_root or has_timer or pending_flush:
+        reasons = []
+        if has_root:
+            reasons.append(f"root_path={stage_root_path}")
+        if has_timer:
+            reasons.append(f"autosave={autosave_seconds}s")
+        if pending_flush:
+            reasons.append("pending_flush")
+        return CheckResult(
+            passed=True,
+            commandment="persistence_durability",
+            reason=f"Durability wired ({', '.join(reasons)}).",
+        )
+
+    return CheckResult(
+        passed=False,
+        commandment="persistence_durability",
+        reason=(
+            f"Mutation '{proposed_tool}' has no durability path: "
+            f"set STAGE_DEFAULT_PATH, enable STAGE_AUTOSAVE_SECONDS>0, "
+            f"or mark a pending flush."
+        ),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Commandment 10: self_healing_ladder
+# ---------------------------------------------------------------------------
+
+# Classification labels (stable strings — used by the harness as routing keys)
+TRANSIENT = "TRANSIENT"
+RECOVERABLE = "RECOVERABLE"
+TERMINAL = "TERMINAL"
+
+# Substring matches against the exception's class name or message.
+# Order matters: TERMINAL beats RECOVERABLE beats TRANSIENT.
+_TERMINAL_SIGNALS: tuple[str, ...] = (
+    "AnchorViolationError",        # constitutional anchor write
+    "PermissionError",             # disk-full / read-only filesystem
+    "OSError: [Errno 28]",         # ENOSPC
+    "USD load corruption",         # custom marker
+    "ConstitutionalViolation",     # bounded_failure repeat-recoverable >3
+)
+_RECOVERABLE_SIGNALS: tuple[str, ...] = (
+    "ValidationError",             # workflow validation fail
+    "MissingModelError",
+    "DeprecatedNodeError",
+    "ProvisioningError",
+    "FileNotFoundError",           # missing model / template
+    "validate_before_execute",     # validation tool reported errors
+)
+_TRANSIENT_SIGNALS: tuple[str, ...] = (
+    "TimeoutError",
+    "ConnectionError",
+    "ConnectionResetError",
+    "ReadTimeout",
+    "RateLimitError",
+    "429",                          # HTTP rate limit
+    "500", "502", "503", "504",     # 5xx
+    "TemporaryFailure",
+)
+
+
+def self_healing_ladder(error: BaseException | str) -> str:
+    """Commandment 10: classify an error for the bounded-failure ladder.
+
+    Pure classifier (NOT wired into run_pre/post_checks — used by the harness).
+
+    Returns one of TRANSIENT, RECOVERABLE, TERMINAL. Unknown errors default
+    to RECOVERABLE so the harness can attempt repair before escalating.
+    """
+    if isinstance(error, BaseException):
+        signal = f"{type(error).__name__}: {error}"
+    else:
+        signal = str(error)
+
+    for needle in _TERMINAL_SIGNALS:
+        if needle in signal:
+            return TERMINAL
+    for needle in _TRANSIENT_SIGNALS:
+        if needle in signal:
+            return TRANSIENT
+    for needle in _RECOVERABLE_SIGNALS:
+        if needle in signal:
+            return RECOVERABLE
+
+    # Unknown — assume recoverable (the harness will promote to TERMINAL after
+    # 3 repeats of the same signature, per bounded_failure).
+    return RECOVERABLE
+
+
+# ---------------------------------------------------------------------------
 # Aggregate checks
 # ---------------------------------------------------------------------------
 
@@ -307,6 +429,8 @@ ALL_COMMANDMENTS: tuple[str, ...] = (
     "explicit_handoffs",
     "adversarial_verification",
     "human_gates",
+    "persistence_durability",
+    "self_healing_ladder",
 )
 
 
@@ -346,6 +470,10 @@ def run_post_checks(
     verifier: str | None = None,
     handoff_artifact: dict | None = None,
     expected_artifact_type: str = "",
+    proposed_tool: str | None = None,
+    stage_root_path: str | None = None,
+    autosave_seconds: int = 0,
+    pending_flush: bool = False,
 ) -> list[CheckResult]:
     """Run all post-action constitutional checks.
 
@@ -361,6 +489,14 @@ def run_post_checks(
     if expected_artifact_type:
         results.append(explicit_handoffs(
             handoff_artifact, expected_artifact_type,
+        ))
+
+    if proposed_tool is not None:
+        results.append(persistence_durability(
+            proposed_tool=proposed_tool,
+            stage_root_path=stage_root_path,
+            autosave_seconds=autosave_seconds,
+            pending_flush=pending_flush,
         ))
 
     return results

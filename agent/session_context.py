@@ -43,6 +43,10 @@ class SessionContext:
         self._workflow_signature = None  # Optional WorkflowSignature
         self._dag_state = None  # Optional DAG engine state (lazy)
         self._degradation = None  # Optional DegradationManager (lazy)
+        self._autosave_timer = None  # threading.Timer (W1.3)
+        self._autosave_shutdown = threading.Event()  # signals timer to stop
+        self._experience_accumulator = None  # cognitive ExperienceAccumulator (W1.4)
+        self._pipeline = None  # cognitive AutonomousPipeline (W1.4)
         self._init_lock = threading.Lock()  # Guards all lazy-init ensure_*() methods
         try:
             import logging as _logging
@@ -95,17 +99,126 @@ class SessionContext:
 
         Lazy-initialized: only creates the stage when first requested.
         Returns None if usd-core is not installed.
+
+        Honors STAGE_DEFAULT_PATH from .env: when set, the stage loads from
+        that .usda file on cold start (existing logic in CognitiveWorkflowStage
+        constructor at cognitive_stage.py:109-112) and uses it as the default
+        flush target.
+
+        Honors STAGE_AUTOSAVE_SECONDS from .env: when > 0, a daemon
+        threading.Timer flushes the stage on a periodic interval.
+
+        Honors STAGE_AUTOLOAD_EXPERIENCE from .env: when true, the cognitive
+        ExperienceAccumulator is loaded from EXPERIENCE_FILE so that
+        accumulated experience persists across sessions (closes the README's
+        "Sessions 100+ driven by personal history" claim).
         """
         if self._stage is None:
             with self._init_lock:
                 if self._stage is None:
                     try:
+                        from .config import STAGE_DEFAULT_PATH
                         from .stage import CognitiveWorkflowStage, HAS_USD
                         if HAS_USD:
-                            self._stage = CognitiveWorkflowStage()
+                            root = STAGE_DEFAULT_PATH or None
+                            self._stage = CognitiveWorkflowStage(
+                                root_path=root,
+                            )
+                            self._start_autosave_timer()
+                            self._maybe_autoload_experience()
                     except ImportError:
                         pass
         return self._stage
+
+    # ------------------------------------------------------------------
+    # W1.3 — autosave daemon timer
+    # ------------------------------------------------------------------
+
+    def _start_autosave_timer(self) -> None:
+        """Start a daemon Timer that flushes the stage every N seconds.
+
+        No-op if STAGE_AUTOSAVE_SECONDS <= 0 or the stage has no _root_path
+        (no flush target). Uses a self-rescheduling threading.Timer so we
+        don't introduce asyncio into a thread-only codebase.
+        """
+        try:
+            from .config import STAGE_AUTOSAVE_SECONDS
+        except ImportError:
+            return
+        if STAGE_AUTOSAVE_SECONDS <= 0:
+            return
+        if self._stage is None or self._stage._root_path is None:
+            return  # nothing to flush to
+
+        import logging as _logging
+        _log = _logging.getLogger(__name__)
+
+        def _tick():
+            if self._autosave_shutdown.is_set():
+                return
+            try:
+                if self._stage is not None and self._stage._root_path is not None:
+                    self._stage.flush()
+            except Exception as exc:
+                _log.warning("Autosave flush failed: %s", exc)
+            finally:
+                # Reschedule
+                if not self._autosave_shutdown.is_set():
+                    t = threading.Timer(STAGE_AUTOSAVE_SECONDS, _tick)
+                    t.daemon = True
+                    self._autosave_timer = t
+                    t.start()
+
+        t = threading.Timer(STAGE_AUTOSAVE_SECONDS, _tick)
+        t.daemon = True
+        self._autosave_timer = t
+        t.start()
+
+    def stop_autosave(self) -> None:
+        """Cancel the autosave timer (used by atexit / shutdown)."""
+        self._autosave_shutdown.set()
+        if self._autosave_timer is not None:
+            try:
+                self._autosave_timer.cancel()
+            except Exception:
+                pass
+
+    # ------------------------------------------------------------------
+    # W1.4 — lazy experience accumulator
+    # ------------------------------------------------------------------
+
+    def _maybe_autoload_experience(self) -> None:
+        """If STAGE_AUTOLOAD_EXPERIENCE=true, load the cognitive accumulator.
+
+        Wires the dormant create_default_pipeline() into the live runtime so
+        comfy-cozy-experience.jsonl is read on first stage init and saved
+        after each generation (handled inside cognitive/pipeline/autonomous.py).
+        """
+        try:
+            from .config import STAGE_AUTOLOAD_EXPERIENCE
+        except ImportError:
+            return
+        if not STAGE_AUTOLOAD_EXPERIENCE:
+            return
+        try:
+            from cognitive.pipeline import create_default_pipeline
+            self._pipeline = create_default_pipeline()
+            self._experience_accumulator = self._pipeline._accumulator
+        except Exception as exc:
+            import logging as _logging
+            _logging.getLogger(__name__).warning(
+                "Experience autoload failed: %s", exc
+            )
+
+    @property
+    def experience_accumulator(self):
+        """Cognitive ExperienceAccumulator for this session, or None."""
+        return self._experience_accumulator
+
+    @property
+    def pipeline(self):
+        """Cognitive AutonomousPipeline for this session, or None."""
+        return self._pipeline
 
     @property
     def ratchet(self):
@@ -348,6 +461,17 @@ def get_session_context(session_id: str = "default") -> SessionContext:
             )
 
     return ctx
+
+
+def iter_sessions() -> list[SessionContext]:
+    """Snapshot every live SessionContext.
+
+    Returns a list (not a generator) so the caller can iterate without holding
+    the registry lock — useful from atexit handlers where the registry may be
+    torn down during iteration.
+    """
+    with _registry._lock:
+        return list(_registry._sessions.values())
 
 
 def get_registry() -> SessionRegistry:

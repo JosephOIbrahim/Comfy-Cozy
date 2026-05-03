@@ -154,6 +154,17 @@ AUTO_SCAN_WORKFLOWS = os.getenv("AUTO_SCAN_WORKFLOWS", "false").lower() == "true
 AUTO_LOAD_WORKFLOW = os.getenv("AUTO_LOAD_WORKFLOW", "")
 AUTO_LOAD_SESSION = os.getenv("AUTO_LOAD_SESSION", "")
 
+# Stage persistence — durable USD checkpoint across sessions.
+# STAGE_DEFAULT_PATH: if set, ensure_stage() loads from this .usda file on cold
+# start and uses it as the default flush target. Empty string = in-memory only.
+STAGE_DEFAULT_PATH = os.getenv("STAGE_DEFAULT_PATH", "")
+# STAGE_AUTOSAVE_SECONDS: interval for the daemon flush timer. 0 disables.
+STAGE_AUTOSAVE_SECONDS = int(os.getenv("STAGE_AUTOSAVE_SECONDS", "300"))
+# STAGE_AUTOLOAD_EXPERIENCE: when "true", the cognitive ExperienceAccumulator
+# is loaded from EXPERIENCE_FILE on first ensure_stage(). Wires the dormant
+# create_default_pipeline() into the live runtime.
+STAGE_AUTOLOAD_EXPERIENCE = os.getenv("STAGE_AUTOLOAD_EXPERIENCE", "false").lower() == "true"
+
 # Project paths
 PROJECT_DIR = Path(__file__).parent.parent
 KNOWLEDGE_DIR = Path(__file__).parent / "knowledge"

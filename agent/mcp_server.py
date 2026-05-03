@@ -15,8 +15,11 @@ Usage:
 """
 
 import asyncio
+import atexit
 import functools
 import logging
+import signal
+import threading
 import uuid
 
 import httpx
@@ -27,6 +30,9 @@ import mcp.types as types
 from .progress import ProgressReporter
 
 log = logging.getLogger(__name__)
+
+# Idempotency guard for the shutdown flush (atexit + SIGTERM both fire).
+_shutdown_flushed = threading.Event()
 
 # One stable session namespace per MCP server process.  Each ``agent mcp``
 # launch gets its own UUID so multiple Claude Code instances don't share
@@ -161,6 +167,85 @@ def create_mcp_server() -> "Server":
                 inputSchema=_convert_schema(tool_def),
             ))
         return mcp_tools
+
+    # ------------------------------------------------------------------
+    # W2.2 — MCP resources for the USD stage
+    # ------------------------------------------------------------------
+    # Expose the four top-level prim trees in the cognitive stage as MCP
+    # resources so external consumers (e.g., Moneta) can read and subscribe
+    # to stage state without polling tools. URIs use the stage:// scheme
+    # with the prim path as the path component.
+    _STAGE_RESOURCE_PRIMS = ("/workflows", "/experience", "/agents", "/scenes")
+
+    try:
+        @server.list_resources()
+        async def list_resources() -> list:
+            """Advertise the four stage prim trees as MCP resources."""
+            try:
+                resources = []
+                for prim_path in _STAGE_RESOURCE_PRIMS:
+                    resources.append(types.Resource(
+                        uri=f"stage://{prim_path.lstrip('/')}",
+                        name=f"Stage {prim_path}",
+                        description=(
+                            f"USD prim subtree at {prim_path} from the "
+                            f"CognitiveWorkflowStage. Returns a JSON snapshot "
+                            f"of all attributes; updates are pushed to "
+                            f"subscribers when stage state changes."
+                        ),
+                        mimeType="application/json",
+                    ))
+                return resources
+            except Exception as exc:
+                log.warning("list_resources failed: %s", exc)
+                return []
+
+        @server.read_resource()
+        async def read_resource(uri) -> str:
+            """Return a JSON snapshot of the requested stage subtree."""
+            from .session_context import get_session_context
+            from .tools._util import to_json
+            uri_str = str(uri)
+            if not uri_str.startswith("stage://"):
+                raise ValueError(f"Unknown resource URI: {uri_str}")
+            prim_path = "/" + uri_str[len("stage://"):].lstrip("/")
+
+            ctx = get_session_context(_SERVER_SESSION_ID)
+            stage = ctx.ensure_stage()
+            if stage is None:
+                return to_json({"error": "stage unavailable (usd-core missing)"})
+
+            # Walk the subtree under prim_path collecting attributes.
+            result: dict = {}
+            try:
+                root_prim = stage.stage.GetPrimAtPath(prim_path)
+                if not root_prim.IsValid():
+                    return to_json({"prim_path": prim_path, "exists": False})
+                for prim in root_prim.GetAllChildren():
+                    attrs = {}
+                    for attr in prim.GetAttributes():
+                        val = attr.Get()
+                        if val is None:
+                            continue
+                        if isinstance(val, (bool, int, float, str)):
+                            attrs[attr.GetName()] = val
+                        else:
+                            attrs[attr.GetName()] = str(val)
+                    if attrs:
+                        result[str(prim.GetPath())] = attrs
+                return to_json({
+                    "prim_path": prim_path,
+                    "exists": True,
+                    "children": result,
+                })
+            except Exception as exc:
+                return to_json({"error": str(exc), "prim_path": prim_path})
+    except (AttributeError, TypeError) as exc:
+        # MCP SDK version may not expose @list_resources / @read_resource.
+        # Don't fail server creation — just log and continue with tools only.
+        log.warning(
+            "MCP resources not registered (SDK lacks decorators): %s", exc
+        )
 
     @server.call_tool()
     async def call_tool(name: str, arguments: dict | None) -> list | types.CallToolResult:
@@ -319,6 +404,46 @@ async def run_stdio():
         await server.run(read_stream, write_stream, init_options)
 
 
+def _flush_all_sessions() -> None:
+    """Flush every session's stage to disk on shutdown.
+
+    Unlike cli.py's atexit which only fires when --session NAME was set, this
+    runs unconditionally for every active session. Each session flushes to its
+    stage's _root_path (set from STAGE_DEFAULT_PATH at ensure_stage time) so
+    callers without an explicit session name still get crash-safety.
+    """
+    if _shutdown_flushed.is_set():
+        return
+    _shutdown_flushed.set()
+    try:
+        from .session_context import iter_sessions
+    except ImportError:
+        # iter_sessions added below; if missing fall back to no-op.
+        return
+    for ctx in iter_sessions():
+        try:
+            ctx.stop_autosave()
+        except Exception:
+            pass
+        stage = getattr(ctx, "_stage", None)
+        if stage is None:
+            continue
+        root_path = getattr(stage, "_root_path", None)
+        if root_path is None:
+            continue
+        try:
+            stage.flush()
+            log.info("Stage flushed to %s on shutdown", root_path)
+        except Exception as exc:
+            log.warning("Stage flush on shutdown failed: %s", exc)
+
+
+def _sigterm_handler(_signum, _frame):
+    """SIGTERM handler — flush stages then exit cleanly."""
+    _flush_all_sessions()
+    # Don't call sys.exit here; let the asyncio loop unwind naturally.
+
+
 def main():
     """Entry point for running the MCP server."""
     # Configure logging to stderr (stdio transport uses stdout for JSON-RPC)
@@ -329,6 +454,19 @@ def main():
         log_file=LOG_DIR / "mcp.log",
         json_format=True,
     )
+
+    # Register shutdown hooks for stage flush. These fire on:
+    #   - normal interpreter exit (atexit)
+    #   - SIGTERM from MCP client / OS
+    # Note: SIGINT (Ctrl-C) is handled by asyncio's KeyboardInterrupt path,
+    # which in turn triggers atexit during normal unwind.
+    atexit.register(_flush_all_sessions)
+    try:
+        signal.signal(signal.SIGTERM, _sigterm_handler)
+    except ValueError:
+        # signal.signal() can only be called from the main thread; in test
+        # harnesses or embedded contexts this may not be possible.
+        log.debug("SIGTERM handler not registered (non-main thread)")
 
     asyncio.run(run_stdio())
 
