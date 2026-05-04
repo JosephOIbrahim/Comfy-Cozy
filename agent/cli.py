@@ -80,7 +80,13 @@ def run(
         help="Show debug logging (API timing, tool execution, context management)",
     ),
 ):
-    """Start an interactive agent session."""
+    """Start an interactive agent session.
+
+    Examples:
+      agent run                       # ephemeral session, no memory
+      agent run --session portrait    # named session, remembers across calls
+      agent run -v                    # verbose: API timing + tool tracing
+    """
     # Configure logging
     setup_logging(
         level=logging.DEBUG if verbose else logging.WARNING,
@@ -215,7 +221,14 @@ def run(
 
 @app.command()
 def inspect():
-    """Quick summary of the local ComfyUI installation."""
+    """Quick summary of the local ComfyUI installation.
+
+    Reports installed models (counts by family), custom node packs, and
+    a check for whether ComfyUI itself is reachable. No API key needed.
+
+    Examples:
+      agent inspect                   # full summary
+    """
     console.print("[bold]ComfyUI Installation Summary[/bold]\n")
 
     # Models summary
@@ -253,7 +266,16 @@ def inspect():
 def parse(
     workflow: str = typer.Argument(..., help="Path to workflow JSON file"),
 ):
-    """Analyze a ComfyUI workflow file."""
+    """Analyze a ComfyUI workflow file.
+
+    Reports node count, format detection (API / UI+API / UI-only),
+    sampler parameters, and any deprecation warnings. Read-only —
+    never modifies the file.
+
+    Examples:
+      agent parse my_workflow.json
+      agent parse ~/Downloads/sdxl_portrait.json
+    """
     from pathlib import Path
 
     path = Path(workflow)
@@ -346,7 +368,15 @@ def parse(
 
 @app.command()
 def sessions():
-    """List saved agent sessions."""
+    """List saved agent sessions.
+
+    Sessions are created when you pass `--session NAME` to
+    `agent run`. They persist memory, ratchet history, and learned
+    parameter preferences across invocations.
+
+    Examples:
+      agent sessions                  # list all saved sessions
+    """
     result = json.loads(session_tools.handle("list_sessions", {}))
     if result["count"] == 0:
         console.print("[dim]No saved sessions. Use --session NAME with 'run' to create one.[/dim]")
@@ -385,7 +415,19 @@ def search(
         help="Filter models by type (checkpoint, lora, vae, controlnet)",
     ),
 ):
-    """Search for custom nodes or models."""
+    """Search for custom nodes or models.
+
+    Searches the local ComfyUI Manager registry by default. Use --hf to
+    search HuggingFace, --type to filter by model kind. No API key needed
+    for local registry.
+
+    Examples:
+      agent search "flux dev"                  # local registry, all categories
+      agent search "ipadapter" --nodes         # only custom node packs
+      agent search "sdxl" --models             # only models
+      agent search "lora" --models --type lora # only LoRA models
+      agent search "flux" --hf                 # HuggingFace search
+    """
     # Build discover params
     params: dict = {"query": query}
 
@@ -457,6 +499,12 @@ def orchestrate(
 
     Loads a workflow, validates it against ComfyUI, executes it, and
     verifies the output. Results are saved to the session if provided.
+
+    Examples:
+      agent orchestrate workflow.json
+      agent orchestrate workflow.json --session daily_render
+      agent orchestrate workflow.json --auto-repair       # install missing nodes
+      agent orchestrate workflow.json -v                  # verbose tracing
     """
     from pathlib import Path
 
@@ -639,6 +687,12 @@ def autoresearch(
     With --program: runs the FORESIGHT autoresearch pipeline — loads the
     program spec, initializes the ratchet with CWM+experience+arbiter,
     runs experiments, generates counterfactuals, and produces a morning report.
+
+    Examples:
+      agent autoresearch "flux dev"                       # discovery search
+      agent autoresearch "sdxl realistic" --provision     # discover + queue downloads
+      agent autoresearch --program research.md            # FORESIGHT pipeline run
+      agent autoresearch --program research.md --hours 8  # bounded experiment budget
     """
     setup_logging(
         level=logging.DEBUG if verbose else logging.WARNING,
@@ -771,6 +825,21 @@ def mcp():
     Starts the MCP server using stdio transport. Configure in your
     Claude Code settings (.claude/settings.json) to use these tools
     directly from Claude Code conversations.
+
+    Examples:
+      agent mcp                       # start MCP server (stdio transport)
+
+    Typical Claude Code config to wire this up (.claude/settings.json):
+
+      {
+        "mcpServers": {
+          "comfyui-agent": {
+            "command": "agent",
+            "args": ["mcp"],
+            "cwd": "/path/to/Comfy-Cozy"
+          }
+        }
+      }
     """
     from .mcp_server import main as mcp_main
     mcp_main()
