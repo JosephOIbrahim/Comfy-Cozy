@@ -355,37 +355,41 @@ class TestFallbackYAMLProfiles:
     """
 
     def test_default_dit_fallback_loads(self):
-        from agent.profiles.loader import PROFILES_DIR
         from agent.profiles import load_profile
-        path = PROFILES_DIR / "default_dit.yaml"
-        if not path.is_file():
-            pytest.skip("default_dit.yaml not yet created")
+        # default_dit.yaml is required infrastructure (lives at
+        # agent/profiles/default_dit.yaml). Earlier this test had a
+        # `pytest.skip` guard from when the file didn't exist; deleted
+        # because the guard is now unreachable AND silently weakened the
+        # signal if someone later removed the file.
         profile = load_profile("some_unknown_dit_model")
         assert profile["meta"]["_is_fallback"] is True
         assert profile["meta"]["model_id"] == "some_unknown_dit_model"
 
     def test_default_unet_fallback_loads(self):
-        from agent.profiles.loader import PROFILES_DIR
         from agent.profiles import load_profile
-        path = PROFILES_DIR / "default_unet.yaml"
-        if not path.is_file():
-            pytest.skip("default_unet.yaml not yet created")
+        # default_unet.yaml is required infrastructure; see comment on
+        # test_default_dit_fallback_loads above.
         profile = load_profile("some_unknown_unet_model")
         assert profile["meta"]["_is_fallback"] is True
         assert profile["meta"]["model_id"] == "some_unknown_unet_model"
 
     def test_fallback_profiles_have_all_consumer_sections(self):
-        """Any fallback YAML that exists must have all three consumer sections."""
+        """All three fallback YAMLs must have all three consumer sections.
+
+        Earlier this test had `if not path.is_file(): continue` plus a
+        `pytest.skip("No fallback YAML files exist yet")` fallback to
+        accommodate partial completion. All three files now exist as
+        required infrastructure; the conditional `continue` would
+        silently weaken the assertion if someone removed one. Strict
+        check is correct.
+        """
         from agent.profiles.loader import PROFILES_DIR, _load_yaml
-        found_any = False
         for name in ("default_dit", "default_unet", "default_video"):
             path = PROFILES_DIR / f"{name}.yaml"
-            if not path.is_file():
-                continue
-            found_any = True
+            assert path.is_file(), (
+                f"required fallback profile {name}.yaml is missing"
+            )
             data = _load_yaml(path)
             assert "prompt_engineering" in data, f"{name}.yaml missing prompt_engineering"
             assert "parameter_space" in data, f"{name}.yaml missing parameter_space"
             assert "quality_signatures" in data, f"{name}.yaml missing quality_signatures"
-        if not found_any:
-            pytest.skip("No fallback YAML files exist yet")
