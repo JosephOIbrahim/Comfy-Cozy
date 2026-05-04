@@ -54,7 +54,8 @@ class TestWorkflowSessionAccess:
         s = WorkflowSession("test")
         items = dict(s.items())
         assert items["loaded_path"] is None
-        assert items["history"] == []
+        # Post-MoE-R2: history is a deque, not a list. Length-based check.
+        assert len(items["history"]) == 0
 
     def test_getitem_keyerror(self):
         s = WorkflowSession("test")
