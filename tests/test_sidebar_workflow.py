@@ -92,7 +92,9 @@ class TestLoadWorkflowFromData:
         workflow_patch.load_workflow_from_data(SAMPLE_API_WORKFLOW)
         workflow_patch._get_state()["history"].append({"fake": "entry"})
         workflow_patch.load_workflow_from_data(SAMPLE_API_WORKFLOW)
-        assert workflow_patch._get_state()["history"] == []
+        # Post-MoE-R2 history is a deque(maxlen=50), not a list. Use
+        # length-zero check for empty instead of `== []`.
+        assert len(workflow_patch._get_state()["history"]) == 0
 
 
 # -- State populated correctly ------------------------------------------------
