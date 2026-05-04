@@ -18,7 +18,6 @@ lookups within a single session are effectively free.
 
 from __future__ import annotations
 
-import copy
 import threading
 from pathlib import Path
 from typing import Any
