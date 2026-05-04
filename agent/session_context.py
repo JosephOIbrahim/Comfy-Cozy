@@ -7,12 +7,15 @@ isolated workflow state, brain config, and circuit breakers.
 The SessionRegistry manages lifecycle: create, get, destroy, GC.
 """
 
+import logging
 import threading
 import time
 from dataclasses import dataclass, field
 from typing import Any
 
 from .workflow_session import WorkflowSession
+
+log = logging.getLogger(__name__)
 
 
 @dataclass
@@ -185,8 +188,15 @@ class SessionContext:
         if self._autosave_timer is not None:
             try:
                 self._autosave_timer.cancel()
-            except Exception:
-                pass
+            except Exception as e:
+                # MoE-R3: signal preservation. The Timer may already be
+                # in a state where cancel() raises; we don't escalate
+                # because shutdown is in progress, but the symptom must
+                # be visible in logs to debug Timer-thread leaks.
+                log.warning(
+                    "session %s: autosave Timer.cancel() failed: %s "
+                    "(Timer may leak)", self.session_id, e,
+                )
 
     # ------------------------------------------------------------------
     # W1.4 — lazy experience accumulator
@@ -409,8 +419,14 @@ class SessionRegistry:
         if ctx is not None:
             try:
                 ctx.stop_autosave()
-            except Exception:
-                pass
+            except Exception as e:
+                # MoE-R3: signal preservation. session destroy/gc/clear
+                # paths must not block on this, but a Timer leak is
+                # diagnostically important.
+                log.warning(
+                    "stop_autosave() failed during session teardown: %s "
+                    "(Timer may leak)", e,
+                )
             return True
         return False
 
@@ -441,8 +457,14 @@ class SessionRegistry:
         for ctx in evicted:
             try:
                 ctx.stop_autosave()
-            except Exception:
-                pass
+            except Exception as e:
+                # MoE-R3: signal preservation. session destroy/gc/clear
+                # paths must not block on this, but a Timer leak is
+                # diagnostically important.
+                log.warning(
+                    "stop_autosave() failed during session teardown: %s "
+                    "(Timer may leak)", e,
+                )
         return len(to_remove)
 
     @property
@@ -463,8 +485,14 @@ class SessionRegistry:
         for ctx in ctxs:
             try:
                 ctx.stop_autosave()
-            except Exception:
-                pass
+            except Exception as e:
+                # MoE-R3: signal preservation. session destroy/gc/clear
+                # paths must not block on this, but a Timer leak is
+                # diagnostically important.
+                log.warning(
+                    "stop_autosave() failed during session teardown: %s "
+                    "(Timer may leak)", e,
+                )
 
 
 # ---------------------------------------------------------------------------
