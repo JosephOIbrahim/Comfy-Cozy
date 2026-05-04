@@ -58,10 +58,23 @@ class TestDefaultHelpers:
     def test_default_validate_path_valid(self):
         assert _default_validate_path(".") is None
 
-    def test_default_validate_path_must_exist_missing(self):
+    def test_default_validate_path_rejects_unsandboxed(self):
+        """Post-MoE-R4: brain SDK uses the canonical validate_path from
+        agent.tools._util — same security perimeter as the rest of the
+        codebase. The previous brain-local validator was permissive
+        (just resolved + checked existence). The canonical one enforces
+        sandbox membership first, so an absolute path outside allowed
+        dirs gets rejected with 'access denied' before the must_exist
+        check would have fired.
+        """
         result = _default_validate_path("/nonexistent/path/xyz123", must_exist=True)
         assert result is not None
-        assert "not found" in result.lower() or "invalid" in result.lower()
+        # Canonical error mentions sandbox / allowed directories
+        assert (
+            "outside allowed" in result.lower()
+            or "denied" in result.lower()
+            or "not found" in result.lower()
+        )
 
     def test_null_limiter(self):
         limiter = _NullLimiter()
