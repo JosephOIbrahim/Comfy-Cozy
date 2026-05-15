@@ -27,6 +27,13 @@ graph LR
 > **Session 1** is a capable tool.<br/>
 > **Session 100** is a capable tool that knows your style.
 
+> **TL;DR**
+> - Plain-English co-pilot for ComfyUI. You describe the change; the agent loads workflows, swaps models, patches parameters, runs generations, evaluates output.
+> - **113 MCP tools** across **4 LLM providers** — Claude, GPT-4o, Gemini, Ollama. Swap providers with one env var.
+> - Every mutation is a **reversible delta layer** (LIVRPS). Full undo stack. Nothing destructive lands without your say-so.
+> - **Experience persists.** Session 1 ships with built-in knowledge. After ~30 runs the agent starts biasing toward what's actually worked for you.
+> - Ships three ways: **inside Claude Code/Desktop (MCP)**, **standalone CLI**, **native ComfyUI sidebar**. Pick one.
+
 ---
 
 ## See It In Action
@@ -157,14 +164,6 @@ COMFYUI_DATABASE=C:/path/to/your/ComfyUI
 ```
 
 </details>
-
-### 4. Go
-
-```bash
-agent run
-```
-
-Type what you want. The agent does the rest.
 
 ### Step 4 of 4 -- Go
 
