@@ -133,34 +133,26 @@ class TestAnthropicThinkingBudgetStream:
             # min(20000, max(16384-1024, 1024)) = min(20000, 15360) = 15360
             assert kwargs["thinking"]["budget_tokens"] == 15360
 
-    @pytest.mark.skip(
-        reason=(
-            "Known issue (Action 2, deferred): the clamp formula "
-            "min(budget, max(max_tokens-1024, 1024)) yields "
-            "budget_tokens == max_tokens when max_tokens <= 1024. "
-            "Anthropic API requires budget_tokens strictly less than "
-            "max_tokens, so any caller that lowers max_tokens to <=1024 "
-            "would hit a 400 at request time. Unreachable at the current "
-            "MAX_TOKENS=16384 / _VISION_MAX_TOKENS=4096 defaults; pinned "
-            "here so any future fix is deliberate."
-        )
-    )
-    def test_thinking_budget_strictly_less_than_max_tokens_at_small_max_tokens(
-        self,
-    ):
+    def test_thinking_budget_raises_when_max_tokens_too_small(self):
+        """When thinking is requested with max_tokens <= 1024, the call
+        raises ValueError before reaching the SDK (review action C3,
+        formerly deferred). Previously the clamp formula yielded
+        budget_tokens == max_tokens and the Anthropic API would 400
+        at request time."""
         with patch("agent.llm._anthropic.anthropic") as mock_sdk:
             provider = _make_anthropic(mock_sdk)
             _wire_anthropic_stream(provider)
-            provider.stream(
-                model="claude-test",
-                max_tokens=1024,
-                system="sys",
-                tools=[],
-                messages=[{"role": "user", "content": "hi"}],
-                thinking_budget=4000,
-            )
-            kwargs = provider._client.messages.stream.call_args.kwargs
-            assert kwargs["thinking"]["budget_tokens"] < 1024
+            with pytest.raises(ValueError, match=r"max_tokens"):
+                provider.stream(
+                    model="claude-test",
+                    max_tokens=1024,
+                    system="sys",
+                    tools=[],
+                    messages=[{"role": "user", "content": "hi"}],
+                    thinking_budget=4000,
+                )
+            # SDK must not have been called past the validation
+            provider._client.messages.stream.assert_not_called()
 
 
 class TestAnthropicThinkingBudgetCreate:
@@ -227,13 +219,14 @@ class TestAnthropicThinkingBlockReplay:
             }
             assert assistant_content[1]["type"] == "tool_use"
 
-    def test_signatureless_thinking_block_dropped_silently(self):
-        """A ThinkingBlock with signature=None is dropped during replay.
-
-        This is the silent-drop path called out as S1 in the review. The
-        test pins current behavior; a future hardening pass may instead
-        raise or log when this happens with thinking enabled.
+    def test_signatureless_thinking_block_dropped_with_warning(self, caplog):
+        """Signature-less ThinkingBlock is dropped during replay AND a
+        warning is logged (review action S1, formerly deferred). The drop
+        itself is preserved — the API rejects unsigned thinking blocks
+        when extended thinking is active, so dropping is correct; the
+        warning makes the loss diagnosable instead of invisible.
         """
+        import logging
         with patch("agent.llm._anthropic.anthropic") as mock_sdk:
             provider = _make_anthropic(mock_sdk)
             history = [
@@ -245,10 +238,18 @@ class TestAnthropicThinkingBlockReplay:
                     ],
                 },
             ]
-            converted = provider.convert_messages(history)
+            with caplog.at_level(logging.WARNING, logger="agent.llm._anthropic"):
+                converted = provider.convert_messages(history)
             assistant_content = converted[0]["content"]
             assert len(assistant_content) == 1
             assert assistant_content[0] == {"type": "text", "text": "hello"}
+            warning_messages = [
+                r.getMessage() for r in caplog.records
+                if r.levelno == logging.WARNING
+            ]
+            assert any("ThinkingBlock" in m for m in warning_messages), (
+                f"expected a warning naming ThinkingBlock; got: {warning_messages}"
+            )
 
 
 # ============================================================================

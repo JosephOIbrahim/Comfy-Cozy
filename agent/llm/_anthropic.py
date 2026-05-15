@@ -65,15 +65,11 @@ class AnthropicProvider(LLMProvider):
             "tools": native_tools,
             "messages": native_messages,
         }
-        if thinking_budget and thinking_budget > 0:
-            # Extended thinking. budget_tokens must be < max_tokens. The
-            # provider chunks visible text vs. thinking blocks; our streaming
-            # loop already routes delta.thinking to on_thinking and emits
-            # signature-bearing ThinkingBlocks in the final response.
-            stream_kwargs["thinking"] = {
-                "type": "enabled",
-                "budget_tokens": min(thinking_budget, max(max_tokens - 1024, 1024)),
-            }
+        # Streaming loop routes delta.thinking -> on_thinking;
+        # ThinkingBlocks with signature emitted in final response.
+        thinking_kwarg = _build_thinking_kwarg(thinking_budget, max_tokens)
+        if thinking_kwarg is not None:
+            stream_kwargs["thinking"] = thinking_kwarg
 
         try:
             with self._client.messages.stream(**stream_kwargs) as stream:
@@ -141,11 +137,9 @@ class AnthropicProvider(LLMProvider):
             "system": system,
             "messages": native_messages,
         }
-        if thinking_budget and thinking_budget > 0:
-            kwargs["thinking"] = {
-                "type": "enabled",
-                "budget_tokens": min(thinking_budget, max(max_tokens - 1024, 1024)),
-            }
+        thinking_kwarg = _build_thinking_kwarg(thinking_budget, max_tokens)
+        if thinking_kwarg is not None:
+            kwargs["thinking"] = thinking_kwarg
         start = time.monotonic()
 
         try:
@@ -216,19 +210,30 @@ class AnthropicProvider(LLMProvider):
                         # Extended thinking + tool use: the API requires the
                         # prior assistant turn's thinking block (with its
                         # signature) to be replayed verbatim before any
-                        # tool_use block from the same turn. We capture
-                        # `signature` in _to_response below and pass it
-                        # back here. Blocks without a signature came from
-                        # legacy paths and are dropped (the API rejects
-                        # signature-less thinking blocks when thinking is
-                        # active anyway).
+                        # tool_use block from the same turn.
                         if block.signature:
                             native_content.append({
                                 "type": "thinking",
                                 "thinking": block.thinking,
                                 "signature": block.signature,
                             })
-                        # else: silently drop — see docstring.
+                        else:
+                            # Drop signature-less ThinkingBlock. The API
+                            # rejects unsigned thinking blocks when extended
+                            # thinking is active, so replaying would 400.
+                            # Warn so the drop is diagnosable instead of
+                            # invisible (review action S1).
+                            log.warning(
+                                "Dropped signature-less ThinkingBlock during "
+                                "multi-turn replay (thinking content len=%d). "
+                                "Anthropic requires the prior thinking block's "
+                                "signature alongside any following tool_use; "
+                                "signature-less blocks indicate a legacy code "
+                                "path or manually-constructed message. If "
+                                "extended thinking is enabled, the next turn "
+                                "may 400.",
+                                len(block.thinking) if block.thinking else 0,
+                            )
                     elif isinstance(block, dict):
                         native_content.append(block)
                     else:
@@ -275,6 +280,33 @@ class AnthropicProvider(LLMProvider):
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+def _build_thinking_kwarg(thinking_budget: int, max_tokens: int) -> dict | None:
+    """Compute the `thinking` kwarg for Anthropic stream/create.
+
+    Returns None when extended thinking is disabled (thinking_budget <= 0).
+    Returns {"type": "enabled", "budget_tokens": N} otherwise, with N
+    clamped to fit within max_tokens.
+
+    Raises ValueError when thinking is requested but max_tokens is too
+    small to satisfy Anthropic's `budget_tokens < max_tokens` constraint.
+    The clamp floor is 1024, so max_tokens must be strictly greater than
+    1024 for any positive budget to be valid (review action C3).
+    """
+    if not thinking_budget or thinking_budget <= 0:
+        return None
+    if max_tokens <= 1024:
+        raise ValueError(
+            f"thinking_budget={thinking_budget} cannot be enabled with "
+            f"max_tokens={max_tokens}: Anthropic requires budget_tokens "
+            f"< max_tokens, and the budget floor is 1024. Raise "
+            f"max_tokens above 1024 or pass thinking_budget=0."
+        )
+    return {
+        "type": "enabled",
+        "budget_tokens": min(thinking_budget, max(max_tokens - 1024, 1024)),
+    }
+
 
 def _cached_system(system) -> list[dict]:
     """Wrap system prompt for prompt-caching.
