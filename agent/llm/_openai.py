@@ -16,7 +16,7 @@ try:
 except ImportError:
     openai = None  # type: ignore
 
-from ._base import LLMProvider, _record_llm_metric
+from ._base import LLMProvider, _record_llm_metric, flatten_system as _flatten_system
 from ._types import (
     ImageBlock,
     LLMAuthError,
@@ -56,19 +56,23 @@ class OpenAIProvider(LLMProvider):
         *,
         model: str,
         max_tokens: int,
-        system: str,
+        system,                                # str | list[dict]
         tools: list[dict],
         messages: list[dict],
         on_text: Callable[[str], None] | None = None,
         on_thinking: Callable[[str], None] | None = None,
+        thinking_budget: int = 0,              # unused; honored only by Anthropic
     ) -> LLMResponse:
         import time
 
         native_tools = self.convert_tools(tools)
         native_messages = self.convert_messages(messages)
 
-        # Prepend system message
-        all_messages = [{"role": "system", "content": system}] + native_messages
+        # Prepend system message. OpenAI's chat-completions API takes a single
+        # system string, so collapse a structured block list (used for
+        # Anthropic prompt caching) into plain text.
+        system_str = _flatten_system(system)
+        all_messages = [{"role": "system", "content": system_str}] + native_messages
 
         kwargs: dict[str, Any] = {
             "model": model,
@@ -171,14 +175,16 @@ class OpenAIProvider(LLMProvider):
         *,
         model: str,
         max_tokens: int,
-        system: str,
+        system,                                # str | list[dict]
         messages: list[dict],
         timeout: float | None = None,
+        thinking_budget: int = 0,              # unused; honored only by Anthropic
     ) -> LLMResponse:
         import time
 
         native_messages = self._convert_vision_messages(messages)
-        all_messages = [{"role": "system", "content": system}] + native_messages
+        system_str = _flatten_system(system)
+        all_messages = [{"role": "system", "content": system_str}] + native_messages
 
         kwargs: dict[str, Any] = {
             "model": model,

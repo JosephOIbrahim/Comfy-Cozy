@@ -13,16 +13,27 @@
 You describe what you want in plain English. The agent loads workflows, swaps models, tweaks parameters, installs missing nodes, runs generations, analyzes outputs, and learns what works for you -- all without you touching JSON or hunting through menus. It doesn't ask permission -- it makes the change, reports what it did, and every change is undoable.
 
 ```mermaid
-%%{init: {'theme':'base','themeVariables': {'primaryColor':'#0066FF','primaryTextColor':'#ffffff','primaryBorderColor':'#003eaa','lineColor':'#374151','secondaryColor':'#374151','tertiaryColor':'#1f2937','fontFamily':'monospace'}}}%%
 graph LR
     You([You]) -->|"make it dreamier"| Agent[Comfy Cozy]
     Agent -->|loads, patches, runs| ComfyUI[ComfyUI]
     ComfyUI -->|image| Agent
     Agent -->|"Done. Lowered CFG to 5,<br/>switched to DPM++ 2M Karras.<br/>Here's your render."| You
+
+    classDef orange fill:#d99458,color:#1a1a1a,stroke:#1a1a1a
+    classDef yellow fill:#d9c958,color:#1a1a1a,stroke:#1a1a1a
+    class You,ComfyUI orange
+    class Agent yellow
 ```
 
 > **Session 1** is a capable tool.<br/>
 > **Session 100** is a capable tool that knows your style.
+
+> **TL;DR**
+> - Plain-English co-pilot for ComfyUI. You describe the change; the agent loads workflows, swaps models, patches parameters, runs generations, evaluates output.
+> - **113 MCP tools** across **4 LLM providers** — Claude, GPT-4o, Gemini, Ollama. Swap providers with one env var.
+> - Every mutation is a **reversible delta layer** (LIVRPS). Full undo stack. Nothing destructive lands without your say-so.
+> - **Experience persists.** Session 1 ships with built-in knowledge. After ~30 runs the agent starts biasing toward what's actually worked for you.
+> - Ships three ways: **inside Claude Code/Desktop (MCP)**, **standalone CLI**, **native ComfyUI sidebar**. Pick one.
 
 ---
 
@@ -62,11 +73,15 @@ A separate Pro tier with additional offerings is planned. Details when it's read
 ## Get Running
 
 ```mermaid
-%%{init: {'theme':'base','themeVariables': {'primaryColor':'#0066FF','primaryTextColor':'#ffffff','primaryBorderColor':'#003eaa','lineColor':'#374151','secondaryColor':'#374151','tertiaryColor':'#1f2937','fontFamily':'monospace'}}}%%
 flowchart LR
     A["Clone"] -->|30 sec| B["Install"]
     B -->|10 sec| C["Paste key"]
     C -->|done| D(["agent run"])
+
+    classDef orange fill:#d99458,color:#1a1a1a,stroke:#1a1a1a
+    classDef yellow fill:#d9c958,color:#1a1a1a,stroke:#1a1a1a
+    class D orange
+    class A,B,C yellow
 ```
 
 **Three prerequisites, four copy-paste steps. Under 2 minutes start to finish.**
@@ -98,7 +113,7 @@ One command. No build step. No Docker. No conda. Just pip.
 <summary>Want the test suite too? (optional, click to expand)</summary>
 
 ```bash
-pip install -e ".[dev]"           # + 3902 passing tests
+pip install -e ".[dev]"           # + 4,100+ passing tests
 pip install -e ".[dev,stage]"     # + USD stage subsystem (~200MB, most users skip)
 ```
 
@@ -151,14 +166,6 @@ COMFYUI_DATABASE=C:/path/to/your/ComfyUI
 
 </details>
 
-### 4. Go
-
-```bash
-agent run
-```
-
-Type what you want. The agent does the rest.
-
 ### Step 4 of 4 -- Go
 
 ```bash
@@ -192,12 +199,16 @@ ln -s /path/to/Comfy-Cozy/ui comfy-cozy-ui
 Restart ComfyUI. The Comfy Cozy chat panel appears in the **left sidebar**.
 
 ```mermaid
-%%{init: {'theme':'base','themeVariables': {'primaryColor':'#0066FF','primaryTextColor':'#ffffff','primaryBorderColor':'#003eaa','lineColor':'#374151','secondaryColor':'#374151','tertiaryColor':'#1f2937','fontFamily':'monospace'}}}%%
 graph LR
     CN["ComfyUI/custom_nodes/"] --> P["comfy-cozy-panel/ (symlink)"]
     CN --> U["comfy-cozy-ui/ (symlink)"]
     P -->|"canvas sync (headless)"| Panel["panel/__init__.py"]
     U -->|"sidebar + chat"| UI["ui/__init__.py"]
+
+    classDef orange fill:#d99458,color:#1a1a1a,stroke:#1a1a1a
+    classDef yellow fill:#d9c958,color:#1a1a1a,stroke:#1a1a1a
+    class CN,U orange
+    class P,sync,Panel,UI yellow
 ```
 
 **Both symlinks are required:**
@@ -216,11 +227,21 @@ Comfy Cozy is **provider-agnostic**. Same 113 tools, same streaming, same vision
 # .env
 ANTHROPIC_API_KEY=sk-ant-your-key-here
 
+# Optional overrides (defaults shown):
+#   AGENT_MODEL=claude-opus-4-7                  -- main loop
+#   FAST_MODEL=claude-haiku-4-5-20251001         -- low-stakes triage
+#   VISION_MODEL=claude-opus-4-7                 -- analyze/compare images
+#   THINKING_BUDGET=4000                         -- agent reasoning budget (tokens)
+#   VISION_THINKING_BUDGET=2000                  -- vision reasoning budget
+
 # Run
 agent run
 ```
 
-Ships as the default. No extra install. Supports prompt caching for lower costs on long sessions.
+Ships as the default with **Opus 4.7 + extended thinking + three-tier prompt caching**.
+The agent runs on Opus 4.7 with a 4K reasoning budget; vision analysis (`analyze_image`,
+`compare_outputs`, `suggest_improvements`) runs the same model with its own budget. Set
+`FAST_MODEL` if you want to route triage / classification tools to Haiku 4.5.
 
 ### OpenAI
 
@@ -278,16 +299,81 @@ Uses Ollama's OpenAI-compatible endpoint at `localhost:11434`. Override with `OL
 All four providers share the same abstraction layer (`agent/llm/`):
 
 ```mermaid
-%%{init: {'theme':'base','themeVariables': {'primaryColor':'#0066FF','primaryTextColor':'#ffffff','primaryBorderColor':'#003eaa','lineColor':'#374151','secondaryColor':'#374151','tertiaryColor':'#1f2937','fontFamily':'monospace'}}}%%
 graph LR
     Agent[Agent Loop<br/>113 tools] --> LLM{LLM_PROVIDER}
     LLM -->|anthropic| A["Claude<br/>Streaming + Cache"]
     LLM -->|openai| B["GPT-4o<br/>Tool Calls"]
     LLM -->|gemini| C["Gemini<br/>Function Decl."]
     LLM -->|ollama| D["Ollama<br/>Local + Private"]
+
+    classDef orange fill:#d99458,color:#1a1a1a,stroke:#1a1a1a
+    classDef yellow fill:#d9c958,color:#1a1a1a,stroke:#1a1a1a
+    class B,D orange
+    class Agent,A,C,LLM yellow
 ```
 
 Common types (`TextBlock`, `ToolUseBlock`, `LLMResponse`), unified error hierarchy, provider-specific format conversion handled internally. Switch providers with one env var -- no code changes. All 4 providers have dedicated test suites (132 tests) plus a parameterized conformance suite that verifies protocol compliance across providers. Every `stream()` and `create()` call is instrumented with `llm_call_total` and `llm_call_duration_seconds` metrics (per-provider labels).
+
+### Reasoning + caching (Opus 4.7)
+
+The Anthropic path uses two Opus-4.7-specific features the other providers ignore:
+
+1. **Extended thinking.** Every agent turn ships `thinking={"type": "enabled",
+   "budget_tokens": THINKING_BUDGET}`. The streamed `ThinkingBlock`s include a
+   cryptographic `signature`; we capture it and replay it on the next turn so
+   tool-use loops stay valid (without the signature, Anthropic 400s the next
+   request).
+2. **Three-tier system prompt.** `system_prompt.build_system_prompt_blocks()`
+   returns a list of cache blocks instead of one big string. Two blocks are
+   marked `cache_control: ephemeral`; the third (volatile session context) is
+   deliberately not cached. Combined with the last-tool cache pin, three of
+   Anthropic's four cache breakpoints stay hot across a session.
+
+```mermaid
+flowchart TB
+    classDef stable   fill:#d99458,stroke:#1a1a1a,color:#1a1a1a,stroke-width:1.2px
+    classDef volatile fill:#d9c958,stroke:#d99458,color:#1a1a1a,stroke-width:1.2px
+
+    subgraph SYS[" system prompt blocks "]
+        b1["<b>Block 1 · stable prefix</b><br/>identity · paths · RULES<br/>+ comfyui_core.md<br/><i>cache_control: ephemeral</i>"]
+        b2["<b>Block 2 · topical knowledge</b><br/>3d / flux / controlnet / video / ...<br/><i>cache_control: ephemeral</i>"]
+        b3["<b>Block 3 · session tail</b><br/>notes · recommendations<br/>last-output context<br/><i>uncached</i>"]
+    end
+
+    subgraph TOOLS[" tools[] "]
+        t1[tool 1]
+        t2[tool 2]
+        tN[... 100+ tools]
+        tL["<b>last tool</b><br/><i>cache_control: ephemeral</i>"]
+    end
+
+    subgraph LOOP[" agent turn loop "]
+        m1[messages · user input]
+        think["<b>ThinkingBlock</b><br/>thinking text<br/>+ signature ✓"]
+        tu[ToolUseBlock]
+        tr[ToolResultBlock]
+        api[(claude-opus-4-7<br/>thinking enabled)]
+    end
+
+    b1 --> api
+    b2 --> api
+    b3 --> api
+    t1 --> api
+    t2 --> api
+    tN --> api
+    tL --> api
+    m1 --> api
+    api --> think --> tu --> tr --> m1
+
+    class b1,b2,tL stable
+    class b3,t1,t2,tN,m1,think,tu,tr,api volatile
+```
+
+**Tone key.** Blue = blocks pinned in the prompt cache (the stable prefix, the
+topical knowledge, and the last-tool breakpoint). Amber = the per-turn volatile
+tail: session context, the message log, and the streaming agent loop itself.
+Signature-bearing `ThinkingBlock`s are replayed verbatim on each turn so the
+API accepts the next request.
 
 ---
 
@@ -376,7 +462,6 @@ The agent ships with built-in knowledge about how each model family actually beh
 ## How It Works
 
 ```mermaid
-%%{init: {'theme':'base','themeVariables': {'primaryColor':'#0066FF','primaryTextColor':'#ffffff','primaryBorderColor':'#003eaa','lineColor':'#374151','secondaryColor':'#374151','tertiaryColor':'#1f2937','fontFamily':'monospace'}}}%%
 graph TB
     subgraph Browser ["ComfyUI Browser"]
         Sidebar["Comfy Cozy Sidebar<br/>Native left panel -- Chat -- Quick Actions"]
@@ -402,10 +487,18 @@ graph TB
     Tools -->|httpx| API
     Cog --> EXP
     Tools --> Sessions
+
+    style Browser fill:#d9c958,color:#1a1a1a,stroke:#d99458
+    style Backend fill:#d9c958,color:#1a1a1a,stroke:#d99458
+    style ComfyUI fill:#d9c958,color:#1a1a1a,stroke:#d99458
+    style Disk fill:#d9c958,color:#1a1a1a,stroke:#d99458
+
+    classDef orange fill:#d99458,color:#1a1a1a,stroke:#1a1a1a
+    classDef yellow fill:#d9c958,color:#1a1a1a,stroke:#1a1a1a
+    class Sidebar,Routes,Tools,Cog,API,Canvas,EXP,Sessions yellow
 ```
 
 ```mermaid
-%%{init: {'theme':'base','themeVariables': {'primaryColor':'#0066FF','primaryTextColor':'#ffffff','primaryBorderColor':'#003eaa','lineColor':'#374151','secondaryColor':'#374151','tertiaryColor':'#1f2937','fontFamily':'monospace'}}}%%
 graph LR
     You([You]) --> Agent[113 Tools]
     Agent --> Understand[UNDERSTAND<br/>What do you have?]
@@ -413,6 +506,11 @@ graph LR
     Discover --> Pilot[PILOT<br/>Make the changes]
     Pilot --> Verify[VERIFY<br/>Did it work?]
     Verify -->|learn| Agent
+
+    classDef orange fill:#d99458,color:#1a1a1a,stroke:#1a1a1a
+    classDef yellow fill:#d9c958,color:#1a1a1a,stroke:#1a1a1a
+    class You,Verify orange
+    class Understand,Discover,Pilot,Agent yellow
 ```
 
 **Four phases, always in order:**
@@ -425,7 +523,6 @@ graph LR
 When validation finds errors, the agent **auto-repairs**. One continuous flow, no stopping to ask:
 
 ```mermaid
-%%{init: {'theme':'base','themeVariables': {'primaryColor':'#0066FF','primaryTextColor':'#ffffff','primaryBorderColor':'#003eaa','lineColor':'#374151','secondaryColor':'#374151','tertiaryColor':'#1f2937','fontFamily':'monospace'}}}%%
 flowchart TD
     Run(["You: 'run this'"]) --> Validate["validate_before_execute"]
     Validate --> Check{"Errors?"}
@@ -440,6 +537,11 @@ flowchart TD
     Check2 -->|No| Execute
     Check2 -->|Yes| Report["Report unfixable<br/>issue + ask"]
     Execute --> Done(["Done — image ready"])
+
+    classDef orange fill:#d99458,color:#1a1a1a,stroke:#1a1a1a
+    classDef yellow fill:#d9c958,color:#1a1a1a,stroke:#1a1a1a
+    class Run,Execute,Done,Report orange
+    class Validate,Repair,SetInput,Discover,Check,Revalidate,Check2 yellow
 ```
 
 Every change is undoable. Every generation teaches the agent something. The agent is a doer, not a describer -- say "wire the model" and it wires the model. Say "repair this" and it finds the missing nodes, installs them, and validates. Say "run it" and it validates, fixes anything broken, then executes. No confirmation dialogs, no "would you like me to..." -- it acts, then tells you what it did.
@@ -449,7 +551,6 @@ Every change is undoable. Every generation teaches the agent something. The agen
 Register callbacks (or webhooks) that fire automatically when ComfyUI events happen. Built into the execution pipeline -- no polling.
 
 ```mermaid
-%%{init: {'theme':'base','themeVariables': {'primaryColor':'#0066FF','primaryTextColor':'#ffffff','primaryBorderColor':'#003eaa','lineColor':'#374151','secondaryColor':'#374151','tertiaryColor':'#1f2937','fontFamily':'monospace'}}}%%
 flowchart LR
     WS["ComfyUI<br/>WebSocket"] -->|event| Parse["ExecutionEvent<br/>.from_ws_message()"]
     Parse --> Dispatch["TriggerRegistry<br/>.dispatch()"]
@@ -457,6 +558,11 @@ flowchart LR
     Dispatch --> CB2["on_error<br/>→ log to session"]
     Dispatch --> CB3["on_progress<br/>→ custom callback"]
     Dispatch --> WH["Webhook<br/>→ POST JSON to URL"]
+
+    classDef orange fill:#d99458,color:#1a1a1a,stroke:#1a1a1a
+    classDef yellow fill:#d9c958,color:#1a1a1a,stroke:#1a1a1a
+    class WS,CB1,CB3,WH orange
+    class Parse,Dispatch,CB2,from_ws_message,dispatch yellow
 ```
 
 ```python
@@ -476,7 +582,6 @@ register_webhook("https://your-server.com/hook", ["execution_complete", "executi
 Write a creative intent. Hit go. No workflow file needed, no parameters to tune -- the agent composes a workflow, runs it on ComfyUI, scores the result, and learns from it automatically.
 
 ```mermaid
-%%{init: {'theme':'base','themeVariables': {'primaryColor':'#0066FF','primaryTextColor':'#ffffff','primaryBorderColor':'#003eaa','lineColor':'#374151','secondaryColor':'#374151','tertiaryColor':'#1f2937','fontFamily':'monospace'}}}%%
 flowchart TD
     You(["Creative Intent<br/>'cinematic portrait, golden hour'"]) --> INTENT["INTENT<br/>Parse + validate"]
     INTENT --> COMPOSE["COMPOSE<br/>Load template<br/>Blend with experience"]
@@ -493,6 +598,11 @@ flowchart TD
     EVALUATE --> LEARN["LEARN<br/>Record to accumulator<br/>Recalibrate CWM"]
     LEARN --> DONE(["Complete<br/>Experience recorded"])
     EVALUATE -->|"score < threshold<br/>retries remaining"| CB
+
+    classDef orange fill:#d99458,color:#1a1a1a,stroke:#1a1a1a
+    classDef yellow fill:#d9c958,color:#1a1a1a,stroke:#1a1a1a
+    class You,CB,EXECUTE,DONE orange
+    class GATE,EVALUATE,LEARN,STOP,FAIL,PROVISION,INTENT,COMPOSE,WARN,PREDICT yellow
 ```
 
 **Use from Python:**
@@ -520,7 +630,6 @@ if result.warnings:
 - **Pipeline failures are graceful.** Circuit breaker, CWM exceptions, and template mismatches all produce clean `PipelineStage.FAILED` with `result.warnings`.
 
 ```mermaid
-%%{init: {'theme':'base','themeVariables': {'primaryColor':'#0066FF','primaryTextColor':'#ffffff','primaryBorderColor':'#003eaa','lineColor':'#374151','secondaryColor':'#374151','tertiaryColor':'#1f2937','fontFamily':'monospace'}}}%%
 graph LR
     subgraph Session1 ["Session 1"]
         I1["Intent"] --> C1["Compose"] --> E1["Execute"] --> S1["Score"]
@@ -531,6 +640,11 @@ graph LR
     S1 -->|"atomic save"| JSONL[("experience.jsonl<br/>crash-safe")]
     JSONL -->|"load on startup"| C2
     S2 -->|"atomic save -- cumulative"| JSONL
+
+    classDef orange fill:#d99458,color:#1a1a1a,stroke:#1a1a1a
+    classDef yellow fill:#d9c958,color:#1a1a1a,stroke:#1a1a1a
+    class C2 orange
+    class JSONL,Session1,I1,C1,E1,S1,Session2,I2,E2,S2 yellow
 ```
 
 ### Cozy Constitution + MoE Chain
@@ -540,7 +654,6 @@ The pipeline above runs as one shot per intent. For long-running, self-healing a
 **MoE chain** -- Article II of the constitution mandates that every state-mutating chain ends in **Scribe**. Each specialist owns one concern and produces one typed handoff artifact. The chain dispatcher (`agent/stage/moe_dispatcher.py`) routes by `TASK_CHAINS`; the default chain shown below is the full build-execute-judge-persist sequence.
 
 ```mermaid
-%%{init: {'theme':'base','themeVariables': {'primaryColor':'#0066FF','primaryTextColor':'#ffffff','primaryBorderColor':'#003eaa','lineColor':'#374151','secondaryColor':'#374151','tertiaryColor':'#1f2937','fontFamily':'monospace'}}}%%
 flowchart LR
     Intent(["Intent<br/>'cinematic portrait'"]) --> Scout
     Scout["Scout<br/>recon: nodes,<br/>models, interfaces"] -->|recon_report| Architect
@@ -550,12 +663,15 @@ flowchart LR
     Crucible["Crucible<br/>execute + verify<br/>(comfy_execute)"] -->|execution_result| Vision
     Vision["Vision<br/>judge quality<br/>(analyze_image)"] -->|quality_report| Scribe
     Scribe["Scribe<br/>save_session +<br/>record_experience"] -->|persistence_receipt| Done(["Stage flushed"])
+
+    classDef orange fill:#d99458,color:#1a1a1a,stroke:#1a1a1a
+    classDef yellow fill:#d9c958,color:#1a1a1a,stroke:#1a1a1a
+    class Intent,Scout,Architect,Provisioner,Forge,Crucible,Vision,Scribe,Done yellow
 ```
 
 **Self-healing ladder** -- Article III mandates that every error gets classified once by `self_healing_ladder()` and routed to one of three policies. **TERMINAL is the only path that halts**; everything else burns iteration budget and continues. This is what makes a 24-hour autonomous run survivable: ComfyUI hiccups, missing assets, and rate-limit blips never stop the loop.
 
 ```mermaid
-%%{init: {'theme':'base','themeVariables': {'primaryColor':'#0066FF','primaryTextColor':'#ffffff','primaryBorderColor':'#003eaa','lineColor':'#374151','secondaryColor':'#374151','tertiaryColor':'#1f2937','fontFamily':'monospace'}}}%%
 flowchart TD
     Try["execute_fn(change_context)"] -->|success| Ratchet[Ratchet decides keep/reject]
     Try -->|exception| Class["self_healing_ladder<br/>classify(error)"]
@@ -565,6 +681,10 @@ flowchart TD
     Repair -->|yes, returns ctx| Try
     Repair -->|no / returns None| Counter["Signature counter +1<br/>(>3 same sig →<br/>promote to TERMINAL)"]
     Class -->|"TERMINAL<br/>AnchorViolation,<br/>disk-full,<br/>repeated-recoverable"| Halt["Final checkpoint<br/>+ BLOCKER.md<br/>+ Halt"]
+
+    classDef orange fill:#d99458,color:#1a1a1a,stroke:#1a1a1a
+    classDef yellow fill:#d9c958,color:#1a1a1a,stroke:#1a1a1a
+    class Try,execute_fn,Ratchet,Class,classify,Backoff,Repair,Counter,Halt yellow
 ```
 
 Run it: `agent autonomous --execute-mode real --workflow path/to/wf.json --hours 24`. Per-iteration checkpoint to `STAGE_DEFAULT_PATH` (atomic via `.tmp` + `os.replace`). On TERMINAL halt, `BLOCKER.md` is written with the full classification trail. See `CLAUDE.md` "Cozy Autonomous Harness" for the full CLI surface.
@@ -576,7 +696,6 @@ Run it: `agent autonomous --execute-mode real --workflow path/to/wf.json --hours
 A typography-forward chat panel in ComfyUI's native left sidebar. No floating buttons, no separate windows. Uses ComfyUI's own CSS variables -- adapts to any theme automatically.
 
 ```mermaid
-%%{init: {'theme':'base','themeVariables': {'primaryColor':'#0066FF','primaryTextColor':'#ffffff','primaryBorderColor':'#003eaa','lineColor':'#374151','secondaryColor':'#374151','tertiaryColor':'#1f2937','fontFamily':'monospace'}}}%%
 graph TB
     subgraph ComfyUI_App ["ComfyUI"]
         subgraph Sidebar ["Left Sidebar"]
@@ -596,6 +715,14 @@ graph TB
     Tab --> QA
     Sidebar <--> Bridge
     Bridge <--> Canvas
+
+    style ComfyUI_App fill:#d9c958,color:#1a1a1a,stroke:#d99458
+    style Sidebar fill:#d9c958,color:#1a1a1a,stroke:#d99458
+    style Bridge fill:#d9c958,color:#1a1a1a,stroke:#d99458
+
+    classDef orange fill:#d99458,color:#1a1a1a,stroke:#1a1a1a
+    classDef yellow fill:#d9c958,color:#1a1a1a,stroke:#1a1a1a
+    class Tab,registerSidebarTab,Chat,QA,Canvas,C2A,A2C yellow
 ```
 
 **What you get:**
@@ -612,7 +739,6 @@ graph TB
 Every request passes through a three-layer security chain:
 
 ```mermaid
-%%{init: {'theme':'base','themeVariables': {'primaryColor':'#0066FF','primaryTextColor':'#ffffff','primaryBorderColor':'#003eaa','lineColor':'#374151','secondaryColor':'#374151','tertiaryColor':'#1f2937','fontFamily':'monospace'}}}%%
 flowchart TD
     REST([REST Request]) --> Guard["_guard(request, category)"]
     WS([WebSocket /ws]) --> Guard
@@ -625,6 +751,11 @@ flowchart TD
     Size -->|"Content-Length OK"| Handler(["Route handler"])
     Size -->|"> 10 MB"| R413(["413 Too Large"])
     Size -->|"chunked -- no length"| R411(["411 Length Required"])
+
+    classDef orange fill:#d99458,color:#1a1a1a,stroke:#1a1a1a
+    classDef yellow fill:#d9c958,color:#1a1a1a,stroke:#1a1a1a
+    class R401,R413,Handler orange
+    class R429,R411,Guard,REST,_guard,WS,Auth,Rate,Size yellow
 ```
 
 ---
@@ -634,12 +765,16 @@ flowchart TD
 The agent handles the entire pipeline from "I want Flux" to a wired workflow:
 
 ```mermaid
-%%{init: {'theme':'base','themeVariables': {'primaryColor':'#0066FF','primaryTextColor':'#ffffff','primaryBorderColor':'#003eaa','lineColor':'#374151','secondaryColor':'#374151','tertiaryColor':'#1f2937','fontFamily':'monospace'}}}%%
 flowchart LR
     Search["Search<br/>CivitAI + HF + Registry"] --> Download["Download<br/>to correct folder"]
     Download --> Verify["Verify<br/>family + compat"]
     Verify --> Wire["Auto-Wire<br/>find loader -- set input"]
     Wire --> Ready["Ready to<br/>Queue"]
+
+    classDef orange fill:#d99458,color:#1a1a1a,stroke:#1a1a1a
+    classDef yellow fill:#d9c958,color:#1a1a1a,stroke:#1a1a1a
+    class Verify,Ready orange
+    class Search,Download,Wire yellow
 ```
 
 **`provision_model`** -- one tool call that discovers, downloads, verifies compatibility, finds the right loader node in your workflow, and wires the model in.
@@ -654,7 +789,6 @@ flowchart LR
 The agent is built on seven architectural subsystems. Each one degrades independently -- if one breaks, the rest keep working.
 
 ```mermaid
-%%{init: {'theme':'base','themeVariables': {'primaryColor':'#0066FF','primaryTextColor':'#ffffff','primaryBorderColor':'#003eaa','lineColor':'#374151','secondaryColor':'#374151','tertiaryColor':'#1f2937','fontFamily':'monospace'}}}%%
 graph TB
     subgraph Foundation ["Foundation Layer"]
         DAG["Workflow Intelligence DAG<br/>6 pure computation nodes"]
@@ -673,6 +807,14 @@ graph TB
     end
 
     Foundation --> Safety --> Integration
+
+    style Foundation fill:#d9c958,color:#1a1a1a,stroke:#d99458
+    style Safety fill:#d9c958,color:#1a1a1a,stroke:#d99458
+    style Integration fill:#d9c958,color:#1a1a1a,stroke:#d99458
+
+    classDef orange fill:#d99458,color:#1a1a1a,stroke:#1a1a1a
+    classDef yellow fill:#d9c958,color:#1a1a1a,stroke:#1a1a1a
+    class DAG,OBS,CAP,GATE,BRIDGE,ADAPT,DEGRADE yellow
 ```
 
 ### Workflow Intelligence DAG
@@ -680,12 +822,16 @@ graph TB
 Before any workflow runs, a DAG of pure functions analyzes it:
 
 ```mermaid
-%%{init: {'theme':'base','themeVariables': {'primaryColor':'#0066FF','primaryTextColor':'#ffffff','primaryBorderColor':'#003eaa','lineColor':'#374151','secondaryColor':'#374151','tertiaryColor':'#1f2937','fontFamily':'monospace'}}}%%
 graph LR
     C[Complexity<br/>TRIVIAL to EXTREME] --> M[Model Requirements<br/>VRAM, family, LoRAs]
     M --> O[Optimization<br/>TensorRT, batching]
     O --> R[Risk<br/>SAFE to BLOCKED]
     R --> RD[Readiness<br/>go / no-go]
+
+    classDef orange fill:#d99458,color:#1a1a1a,stroke:#1a1a1a
+    classDef yellow fill:#d9c958,color:#1a1a1a,stroke:#1a1a1a
+    class R,RD orange
+    class C,M,O yellow
 ```
 
 ### Pre-Dispatch Safety Gate
@@ -693,7 +839,6 @@ graph LR
 Every tool call passes through a default-deny gate. Read-only tools bypass it (zero overhead). Destructive tools are always locked. The gate auto-detects loaded workflows AND USD stages: if either kind of workspace state exists for the current connection, mutation tools are allowed without explicit session context. Stage tools (`stage_write`, `stage_add_delta`) are recognized separately from workflow tools — a USD stage can exist independently of any loaded workflow.
 
 ```mermaid
-%%{init: {'theme':'base','themeVariables': {'primaryColor':'#0066FF','primaryTextColor':'#ffffff','primaryBorderColor':'#003eaa','lineColor':'#374151','secondaryColor':'#374151','tertiaryColor':'#1f2937','fontFamily':'monospace'}}}%%
 flowchart LR
     Tool([Tool Call]) --> Type{"Stage\ntool?"}
     Type -->|No| WF{"Workflow\nloaded?"}
@@ -710,6 +855,11 @@ flowchart LR
     Checks --> OK{All pass?}
     OK -->|Yes| Go[Execute]
     OK -->|No| Stop[Denied + reason]
+
+    classDef orange fill:#d99458,color:#1a1a1a,stroke:#1a1a1a
+    classDef yellow fill:#d9c958,color:#1a1a1a,stroke:#1a1a1a
+    class Pass,Go,Stop,Block,Deny orange
+    class Escalate,Tool,Type,WF,ST,Risk,Checks,OK yellow
 ```
 
 ### Per-Connection Session Isolation (all 4 transports)
@@ -717,7 +867,6 @@ flowchart LR
 Every sidebar conversation, every panel chat, every MCP client connection, and every `agent run --session foo` invocation gets its own isolated `WorkflowSession` + `CognitiveWorkflowStage`. State never leaks across tabs, clients, or named sessions. Isolation is propagated via a single `_conn_session` `ContextVar` set at every entry point — and by the per-session dicts inside the four stage modules (`provision`, `foresight`, `compositor`, `hyperagent`).
 
 ```mermaid
-%%{init: {'theme':'base','themeVariables': {'primaryColor':'#0066FF','primaryTextColor':'#ffffff','primaryBorderColor':'#003eaa','lineColor':'#374151','secondaryColor':'#374151','tertiaryColor':'#1f2937','fontFamily':'monospace'}}}%%
 flowchart LR
     SB["Sidebar tabs<br/>conv.id"] --> H1["_spawn_with_session<br/>(shared helper)"]
     PNL["Panel chats<br/>conv.id"] --> H1
@@ -738,6 +887,11 @@ flowchart LR
     PV --> WS
     CT --> WS
     HY --> WS
+
+    classDef orange fill:#d99458,color:#1a1a1a,stroke:#1a1a1a
+    classDef yellow fill:#d9c958,color:#1a1a1a,stroke:#1a1a1a
+    class WS orange
+    class CV,WP,ST,FT,PV,CT,HY,SB,H1,PNL,MCP,H2,CLI,H3,_get_state,_get_stage,_get_provisioner,_scenes,_meta_agents yellow
 ```
 
 The same connection id is also installed as the per-thread correlation ID via `set_correlation_id`, so every log entry from a single conversation is greppable end-to-end. Parallel tool calls inside a single turn inherit the contextvar via `contextvars.copy_context()` per `ThreadPoolExecutor.submit()`. And `_save_and_exit()` (called on normal exit, atexit, or SIGTERM) self-sets the contextvar before saving so the user's named session never gets corrupted with empty default workflow state.
@@ -764,19 +918,22 @@ This is an intentional inversion of USD's native LIVRPS (where Specializes is we
 LIVRPS is no longer a table on a slide. Since Phase 0.5 the engine is a real top-level package (`cognitive/`) installed alongside `agent/`, and `agent/tools/workflow_patch.py` imports it directly at module load -- no try/except, no silent fallback. Every PILOT mutation is recorded as a delta layer with SHA-256 tamper detection, then resolved on demand. The engine is session-scoped via the `_conn_session` ContextVar described above, so each sidebar tab and MCP connection mutates its own delta stack.
 
 ```mermaid
-%%{init: {'theme':'base','themeVariables': {'primaryColor':'#0066FF','primaryTextColor':'#ffffff','primaryBorderColor':'#003eaa','lineColor':'#374151','secondaryColor':'#374151','tertiaryColor':'#1f2937','fontFamily':'monospace'}}}%%
 graph LR
     User([Tool Call<br/>via MCP]) --> WP["agent/tools/<br/>workflow_patch.py"]
     WP -->|"_get_state() reads<br/>_conn_session ContextVar"| CGE["CognitiveGraphEngine<br/>(per-session)"]
     CGE --> Stack["Delta Stack<br/>P -- R -- V -- I -- L -- S"]
     Stack -->|"sort weakest to strongest<br/>apply, preserve link arrays"| Resolved["Resolved WorkflowGraph"]
     Resolved -->|"to_api_json()"| Comfy["ComfyUI /prompt"]
+
+    classDef orange fill:#d99458,color:#1a1a1a,stroke:#1a1a1a
+    classDef yellow fill:#d9c958,color:#1a1a1a,stroke:#1a1a1a
+    class User,Resolved,Comfy orange
+    class WP,CGE,Stack,_get_state,to_api_json yellow
 ```
 
 The `cognitive/` package is layered by phase -- the core engine (Phase 1) is fully tested at 54/54 adversarial cases. Phase 6 is complete: the autonomous pipeline is fully wired with real executor, template loading, rule-based evaluator, and experience persistence.
 
 ```mermaid
-%%{init: {'theme':'base','themeVariables': {'primaryColor':'#0066FF','primaryTextColor':'#ffffff','primaryBorderColor':'#003eaa','lineColor':'#374151','secondaryColor':'#374151','tertiaryColor':'#1f2937','fontFamily':'monospace'}}}%%
 graph TB
     Cognitive["cognitive/<br/>(installed top-level package)"]
     Cognitive --> Core["core/<br/>graph -- delta -- models<br/>54/54 tests passing"]
@@ -785,41 +942,60 @@ graph TB
     Cognitive --> Trans["transport/<br/>schema_cache -- events -- interrupt"]
     Cognitive --> Pipe["pipeline/<br/>autonomous -- create_default_pipeline<br/>Phase 6 complete"]
     Cognitive --> CogTools["tools/<br/>analyze -- compose -- execute<br/>(cycle 9 deleted 5 dead modules)"]
+
+    classDef orange fill:#d99458,color:#1a1a1a,stroke:#1a1a1a
+    classDef yellow fill:#d9c958,color:#1a1a1a,stroke:#1a1a1a
+    class Core,Trans,Pipe orange
+    class Cognitive,Exp,Pred,CogTools yellow
 ```
 
 Each delta layer carries its `creation_hash` (SHA-256 of `opinion + sorted-JSON mutations`). `verify_stack_integrity()` walks the stack and flags any layer whose `layer_hash` no longer matches its `creation_hash` -- making post-hoc tampering detectable. Link arrays (`["node_id", output_index]`) are preserved through every parse/mutate/serialize round-trip, which is the #1 failure mode in ComfyUI agents.
 
 ### LLM Provider Hardening
 
-The agent supports four LLM providers (Anthropic, OpenAI, Gemini, Ollama). Cycles 7+18+20 closed six real bugs in the streaming, retry, and multi-turn paths. After this work, every provider correctly: extracts streaming token usage, doesn't duplicate text on retry, doesn't drop thinking blocks, doesn't fire callbacks with empty content, doesn't leak reasoning into the user-visible text, and correctly strips ThinkingBlock on multi-turn round-trips.
+The agent supports four LLM providers (Anthropic, OpenAI, Gemini, Ollama). Cycles 7+18+20 closed six real bugs in the streaming, retry, and multi-turn paths, and the Opus 4.7 upgrade (commit `c61c65f`) refined the multi-turn `ThinkingBlock` policy on Anthropic. After this work, every provider correctly: extracts streaming token usage, doesn't duplicate text on retry, doesn't fire callbacks with empty content, doesn't leak reasoning into user-visible text, and handles `ThinkingBlock` correctly on multi-turn replay — Anthropic re-sends signature-bearing thinking blocks (required by the API when extended thinking runs alongside tool use), while OpenAI / Gemini / Ollama drop them (those APIs don't model replayable thinking).
 
 ```mermaid
-%%{init: {'theme':'base','themeVariables': {'primaryColor':'#0066FF','primaryTextColor':'#ffffff','primaryBorderColor':'#003eaa','lineColor':'#374151','secondaryColor':'#374151','tertiaryColor':'#1f2937','fontFamily':'monospace'}}}%%
 graph TB
     Stream["_stream_with_retry<br/>(agent/main.py)"] --> Track["content_emitted = [False]<br/>per attempt — closure-captured"]
     Track --> Wrap["_wrap_safe + tracking<br/>on_text / on_thinking"]
     Wrap --> Provider{Which provider?}
 
-    Provider -->|Anthropic| A["✓ thinking blocks preserved<br/>in _to_response<br/>✓ empty deltas filtered<br/>✓ ThinkingBlock skipped in<br/>convert_messages (cycle 20)"]
+    Provider -->|Anthropic| A["✓ thinking blocks preserved<br/>in _to_response (with signature)<br/>✓ empty deltas filtered<br/>✓ signature-bearing ThinkingBlock<br/>replayed verbatim in convert_messages<br/>(c61c65f — supersedes cycle 20)"]
     Provider -->|OpenAI| O["✓ stream_options=<br/>{include_usage: true}<br/>✓ ThinkingBlock skipped<br/>in convert_messages (cycle 20)"]
     Provider -->|Gemini| G["✓ thinking / text branches<br/>mutually exclusive (if/elif)<br/>✓ ThinkingBlock skipped<br/>(was sending repr as text)"]
     Provider -->|Ollama| OL["✓ stream_options=<br/>{include_usage: true}<br/>✓ ThinkingBlock pre-filtered<br/>from content list (cycle 20)"]
 
     Track -->|content emitted + transient error| NoRetry["RAISE — don't retry<br/>(would duplicate text in UI)"]
     Track -->|no content + transient error| Retry["Retry with backoff<br/>RateLimit / Connection / 5xx"]
+
+    classDef orange fill:#d99458,color:#1a1a1a,stroke:#1a1a1a
+    classDef yellow fill:#d9c958,color:#1a1a1a,stroke:#1a1a1a
+    class A,O,G,OL,NoRetry,Retry orange
+    class Stream,Track,Wrap,Provider,_to_response,convert_messages,exclusive,list yellow
 ```
 
 **Cycle 20 — ThinkingBlock multi-turn bug.** When Claude 3.7+ or Claude 4 returns a `ThinkingBlock` in its response, the agent stores it in message history. On the next turn, `convert_messages` must translate that block back to the provider's native format. Before cycle 20, all 4 providers mishandled it: Anthropic sent the raw Python dataclass to the API (400 error), OpenAI silently dropped it, Gemini converted `str(ThinkingBlock(...))` to user-visible text, and Ollama sent raw objects. Fix: all providers now skip ThinkingBlock in convert_messages (the API requires a signature field we don't capture; thinking content is already delivered via the streaming `on_thinking` callback).
 
+**Opus 4.7 evolution (c61c65f → 3261318).** The cycle-20 fix above strips `ThinkingBlock` across the board. The Opus 4.7 upgrade refined Anthropic's branch: extended-thinking responses now include a cryptographic `signature` on each thinking block, and the API requires the signature on the next turn whenever a `tool_use` block follows. `agent/llm/_anthropic.py:convert_messages` now replays signature-bearing blocks verbatim; signature-less blocks (legacy paths, manually-constructed test fixtures) are dropped — and `3261318` made that drop loud: a WARNING-level log now names the dropped content, the API constraint, and the next-turn 400 risk. The same commit extracted a `_build_thinking_kwarg` helper and made the clamp formula raise `ValueError` early when `thinking_budget > 0` and `max_tokens <= 1024` (the prior clamp produced `budget_tokens == max_tokens`, which the API rejects). OpenAI, Gemini, and Ollama retain the cycle-20 behavior; their APIs don't model replayable thinking, so the strip remains correct.
+
 ```mermaid
-%%{init: {'theme':'base','themeVariables': {'primaryColor':'#0066FF','primaryTextColor':'#ffffff','primaryBorderColor':'#003eaa','lineColor':'#374151','secondaryColor':'#374151','tertiaryColor':'#1f2937','fontFamily':'monospace'}}}%%
 graph LR
     LLM["LLM Response<br/>[TextBlock, ThinkingBlock]"] --> Store["main.py:293<br/>messages.append(content)"]
     Store --> NextTurn["Next turn<br/>convert_messages()"]
-    NextTurn --> Skip["ThinkingBlock?<br/>→ skip (continue)"]
+    NextTurn -->|"Anthropic, signature ✓"| Replay["ThinkingBlock<br/>→ replay verbatim"]
+    NextTurn -->|"Anthropic, no signature"| WarnDrop["ThinkingBlock<br/>→ drop + log.warning"]
+    NextTurn -->|"OpenAI / Gemini / Ollama"| Skip["ThinkingBlock<br/>→ skip (continue)"]
     NextTurn --> Keep["TextBlock / ToolUseBlock<br/>→ convert to native format"]
+    Replay --> Safe
+    WarnDrop --> Safe
     Skip --> Safe["API receives only<br/>valid native blocks"]
     Keep --> Safe
+
+    classDef orange fill:#d99458,color:#1a1a1a,stroke:#1a1a1a
+    classDef yellow fill:#d9c958,color:#1a1a1a,stroke:#1a1a1a
+    class Replay,WarnDrop,Skip,Keep,Safe orange
+    class LLM,Store,append,NextTurn,convert_messages,skip yellow
 ```
 
 The retry tracker pattern is the key insight: an `on_text("Hello ")` followed by a transient `LLMRateLimitError` USED TO retry from scratch, calling `on_text("Hello ")` again, then `on_text("world!")` — the user saw `"Hello Hello world!"` in the UI. After cycle 7, any error fired AFTER content was emitted raises immediately instead of retrying. Tested across all 4 providers via `tests/test_main.py::TestStreamRetryDuplication` + provider-specific regression tests.
@@ -845,13 +1021,17 @@ Every generation is an experiment. The agent tracks what worked:
 The agent ships with 12 knowledge files (1,300+ lines) covering ControlNet preprocessor selection and strength scheduling (174 lines), Flux guidance and T5 encoder tuning (172 lines), multi-pass compositing for Nuke/AE/Fusion (119 lines), video workflows, 3D pipelines, and more. Retrieval is hybrid: keyword triggers fire first (fast path), then TF-IDF semantic search fills gaps when keywords miss. Pure Python, zero external dependencies -- no vector DB required.
 
 ```mermaid
-%%{init: {'theme':'base','themeVariables': {'primaryColor':'#0066FF','primaryTextColor':'#ffffff','primaryBorderColor':'#003eaa','lineColor':'#374151','secondaryColor':'#374151','tertiaryColor':'#1f2937','fontFamily':'monospace'}}}%%
 flowchart LR
     Context["Workflow context<br/>+ session notes"] --> KW{"Keyword<br/>triggers"}
     KW -->|"≥ 2 files"| Done["Load knowledge"]
     KW -->|"< 2 files"| TFIDF["TF-IDF<br/>cosine similarity"]
     TFIDF --> Merge["Union results"]
     Merge --> Done
+
+    classDef orange fill:#d99458,color:#1a1a1a,stroke:#1a1a1a
+    classDef yellow fill:#d9c958,color:#1a1a1a,stroke:#1a1a1a
+    class Done orange
+    class KW,TFIDF,Context,Merge yellow
 ```
 
 ### Tool Inventory
@@ -878,7 +1058,6 @@ print(len(_HANDLERS) + len(_BRAIN_TOOL_NAMES))
 ### Workflow Lifecycle
 
 ```mermaid
-%%{init: {'theme':'base','themeVariables': {'primaryColor':'#0066FF','primaryTextColor':'#ffffff','primaryBorderColor':'#003eaa','lineColor':'#374151','secondaryColor':'#374151','tertiaryColor':'#1f2937','fontFamily':'monospace'}}}%%
 flowchart LR
     Load[Load] --> Validate[Validate]
     Validate --> Errors{"Errors?"}
@@ -895,6 +1074,11 @@ flowchart LR
 
     Patch -->|Undo| Validate
     Check -->|Iterate| Patch
+
+    classDef orange fill:#d99458,color:#1a1a1a,stroke:#1a1a1a
+    classDef yellow fill:#d9c958,color:#1a1a1a,stroke:#1a1a1a
+    class Gate,Run,Check orange
+    class Load,Repair,Fix,Analyze,Learn,Validate,Errors,Patch yellow
 ```
 
 ### Project Structure
@@ -929,7 +1113,7 @@ panel/
   __init__.py         WEB_DIRECTORY + route registration + sys.path injection
   server/routes.py    49 REST routes -- full tool surface
   web/js/             Headless canvas↔agent bridge (no visible UI -- sidebar is primary)
-tests/                3902 passing tests, all mocked, ~60s
+tests/                4,100+ passing tests, all mocked, ~60s
   integration/        Skips cleanly when ComfyUI not running
 ```
 
@@ -946,7 +1130,6 @@ tests/                3902 passing tests, all mocked, ~60s
 | **Bounded Resources** | Intent history (100), iteration steps (200), demo checkpoints (100). No unbounded growth. |
 
 ```mermaid
-%%{init: {'theme':'base','themeVariables': {'primaryColor':'#0066FF','primaryTextColor':'#ffffff','primaryBorderColor':'#003eaa','lineColor':'#374151','secondaryColor':'#374151','tertiaryColor':'#1f2937','fontFamily':'monospace'}}}%%
 graph TB
     subgraph Sec ["Security"]
         A1["Auth -- Bearer token<br/>(REST + WebSocket)"]
@@ -971,6 +1154,15 @@ graph TB
         D3["get_metrics() -- JSON<br/>get_metrics_prometheus() -- text"]
         D1 --> D2 --> D3
     end
+
+    style Sec fill:#d9c958,color:#1a1a1a,stroke:#d99458
+    style Atom fill:#d9c958,color:#1a1a1a,stroke:#d99458
+    style Resil fill:#d9c958,color:#1a1a1a,stroke:#d99458
+    style Obs fill:#d9c958,color:#1a1a1a,stroke:#d99458
+
+    classDef orange fill:#d99458,color:#1a1a1a,stroke:#1a1a1a
+    classDef yellow fill:#d9c958,color:#1a1a1a,stroke:#1a1a1a
+    class A1,A2,A3,A4,B1,B2,B3,replace,C1,C2,C3,D1,D2,D3,get_metrics,get_metrics_prometheus yellow
 ```
 
 </details>
@@ -988,6 +1180,10 @@ All settings live in your `.env` file:
 | `GEMINI_API_KEY` | | Your Google Gemini API key |
 | `LLM_PROVIDER` | `anthropic` | Which LLM to use: `anthropic`, `openai`, `gemini`, `ollama` |
 | `AGENT_MODEL` | *(auto per provider)* | Override the model name |
+| `FAST_MODEL` | *(auto per provider)* | Model for short triage / classification (Haiku 4.5 default on Anthropic) |
+| `VISION_MODEL` | *(same as `AGENT_MODEL`)* | Model for vision tools (`analyze_image`, `compare_outputs`) |
+| `THINKING_BUDGET` | `4000` | Extended-thinking budget per agent turn (Anthropic Claude 4.x+ only; `0` disables; requires `max_tokens > 1024` or the call raises `ValueError`) |
+| `VISION_THINKING_BUDGET` | `2000` | Extended-thinking budget for vision-tool calls (`0` disables) |
 | `OLLAMA_BASE_URL` | `http://localhost:11434/v1` | Ollama server URL |
 | `COMFYUI_HOST` | `127.0.0.1` | Where ComfyUI runs |
 | `COMFYUI_PORT` | `8188` | ComfyUI port |
@@ -1000,7 +1196,7 @@ All settings live in your `.env` file:
 No ComfyUI needed -- everything is mocked:
 
 ```bash
-python -m pytest tests/ -v        # 3902 passing tests, ~70s
+python -m pytest tests/ -v        # 4,100+ passing tests, ~70s
 
 # Skip tests that require a real ComfyUI server or API keys
 python -m pytest tests/ -v -m "not integration"

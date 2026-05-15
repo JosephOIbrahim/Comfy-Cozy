@@ -62,20 +62,53 @@ CIVITAI_API_KEY = os.getenv("CIVITAI_API_KEY")    # Optional — improves CivitA
 GITHUB_API_TOKEN = os.getenv("GITHUB_API_TOKEN")   # Optional — improves GitHub API rate limits
 HF_TOKEN = os.getenv("HF_TOKEN")                  # Cycle 58: required for gated HF models (Flux, SD3, etc.)
 
-# Model selection — if not set, uses the default for the active LLM_PROVIDER.
-# Defaults per provider: anthropic=claude-sonnet-4-20250514, openai=gpt-4o,
-# gemini=gemini-2.5-flash, ollama=llama3.1
-_DEFAULT_MODELS = {
-    "anthropic": "claude-sonnet-4-20250514",
+# Model selection — three tiers, each independently overridable.
+#
+#   AGENT_MODEL     — main agent loop (planner, tool use, multi-turn dialogue).
+#                     Default: claude-opus-4-7 (strongest reasoning + tool use).
+#   FAST_MODEL      — short classifications / triage / low-stakes one-shots.
+#                     Default: claude-haiku-4-5-20251001 (fast + cheap).
+#   VISION_MODEL    — brain/vision.py image analysis (analyze_image, compare_outputs).
+#                     Default: same as AGENT_MODEL — Opus 4.7 vision is strong enough
+#                     that a separate tier is rarely worth the extra cost.
+#
+# Override any of these in .env, e.g.:
+#   AGENT_MODEL=claude-sonnet-4-20250514
+#   FAST_MODEL=claude-haiku-4-5-20251001
+#   VISION_MODEL=claude-opus-4-7
+_DEFAULT_AGENT_MODELS = {
+    "anthropic": "claude-opus-4-7",
     "openai": "gpt-4o",
     "gemini": "gemini-2.5-flash",
     "ollama": "llama3.1",
 }
-AGENT_MODEL = os.getenv("AGENT_MODEL", _DEFAULT_MODELS.get(LLM_PROVIDER, "claude-sonnet-4-20250514"))
-# ^ Only affects CLI mode (agent run). MCP mode inherits the model from Claude Code.
-# Override in .env: AGENT_MODEL=gpt-4o or AGENT_MODEL=claude-opus-4-6-20250929
+_DEFAULT_FAST_MODELS = {
+    "anthropic": "claude-haiku-4-5-20251001",
+    "openai": "gpt-4o-mini",
+    "gemini": "gemini-2.5-flash",
+    "ollama": "llama3.1",
+}
+AGENT_MODEL = os.getenv(
+    "AGENT_MODEL",
+    _DEFAULT_AGENT_MODELS.get(LLM_PROVIDER, "claude-opus-4-7"),
+)
+FAST_MODEL = os.getenv(
+    "FAST_MODEL",
+    _DEFAULT_FAST_MODELS.get(LLM_PROVIDER, "claude-haiku-4-5-20251001"),
+)
+VISION_MODEL = os.getenv("VISION_MODEL", AGENT_MODEL)
+# ^ AGENT_MODEL only affects CLI mode (agent run). MCP mode inherits the model
+# from the host (e.g., Claude Code).
+
 MAX_TOKENS = 16384
 MAX_AGENT_TURNS = 30
+
+# Extended thinking — request a reasoning budget on every agent stream.
+# 0 disables; non-zero enables interleaved thinking (requires Claude 4.x+).
+# Tuned for the agent loop's multi-turn tool use; vision/fast paths read
+# their own budgets below.
+THINKING_BUDGET = int(os.getenv("THINKING_BUDGET", "4000"))
+VISION_THINKING_BUDGET = int(os.getenv("VISION_THINKING_BUDGET", "2000"))
 
 # Context management
 COMPACT_THRESHOLD = 120_000  # tokens — start compacting at this level

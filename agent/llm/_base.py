@@ -16,6 +16,29 @@ from typing import Any, Callable
 from ._types import LLMResponse
 
 
+def flatten_system(system) -> str:
+    """Collapse a structured Anthropic-style system list into one string.
+
+    Providers without prompt-cache breakpoints (OpenAI / Gemini / Ollama)
+    receive a single system string; this helper preserves the call site's
+    ability to pass a list of cache blocks without forcing each non-Anthropic
+    provider to know about cache_control.
+    """
+    if isinstance(system, str):
+        return system
+    if isinstance(system, list):
+        parts: list[str] = []
+        for block in system:
+            if isinstance(block, str):
+                parts.append(block)
+            elif isinstance(block, dict):
+                text = block.get("text")
+                if isinstance(text, str):
+                    parts.append(text)
+        return "".join(parts)
+    return str(system)
+
+
 def _record_llm_metric(provider: str, status: str, elapsed: float) -> None:
     """Record LLM call metrics (counter + histogram).
 
@@ -39,22 +62,30 @@ class LLMProvider(ABC):
         *,
         model: str,
         max_tokens: int,
-        system: str,
+        system,                                # str | list[dict] of cache blocks
         tools: list[dict],
         messages: list[dict],
         on_text: Callable[[str], None] | None = None,
         on_thinking: Callable[[str], None] | None = None,
+        thinking_budget: int = 0,
     ) -> LLMResponse:
         """Stream a message with tool use, calling callbacks for deltas.
 
         Args:
-            model: Model identifier (e.g., "claude-sonnet-4-20250514", "gpt-4o").
+            model: Model identifier (e.g., "claude-opus-4-7", "gpt-4o").
             max_tokens: Maximum tokens in the response.
-            system: System prompt (plain text).
+            system: System prompt. Either a plain string (legacy path; the
+                provider applies its own caching) OR a list of structured
+                content blocks the caller has already split for multi-tier
+                prompt caching (Anthropic supports up to 4 cache breakpoints
+                across system + tools).
             tools: Tool definitions in MCP format (name, description, input_schema).
             messages: Conversation history using common types.
             on_text: Called with each text delta during streaming.
             on_thinking: Called with each thinking delta (if supported).
+            thinking_budget: If > 0, request extended thinking with this many
+                budget tokens. Requires the provider/model to support it
+                (Anthropic Claude 4.x+); ignored by providers that don't.
 
         Returns:
             LLMResponse with content blocks (TextBlock / ToolUseBlock).
@@ -73,18 +104,21 @@ class LLMProvider(ABC):
         *,
         model: str,
         max_tokens: int,
-        system: str,
+        system,                                # str | list[dict] of cache blocks
         messages: list[dict],
         timeout: float | None = None,
+        thinking_budget: int = 0,
     ) -> LLMResponse:
         """Non-streaming message (used for vision, one-shot calls).
 
         Args:
             model: Model identifier.
             max_tokens: Maximum tokens.
-            system: System prompt.
+            system: System prompt. str or list of structured cache blocks.
             messages: Messages (may contain ImageBlock in content).
             timeout: Optional request timeout in seconds.
+            thinking_budget: If > 0, request extended thinking with this many
+                budget tokens. Ignored by providers that don't support it.
 
         Returns:
             LLMResponse with content blocks.

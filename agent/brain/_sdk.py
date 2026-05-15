@@ -53,6 +53,19 @@ def _null_limiter_factory() -> _NullLimiter:
     return _NULL_LIMITER
 
 
+def _default_agent_model() -> str:
+    """Read AGENT_MODEL from agent.config when available; fall back to the
+    Anthropic-tier literal for true standalone construction (no agent.*
+    import path). The literal is the only place outside agent.config
+    that hard-codes the model name — kept here because pure-standalone
+    BrainConfig() has no canonical source to read from."""
+    try:
+        from ..config import AGENT_MODEL
+        return AGENT_MODEL
+    except ImportError:
+        return "claude-opus-4-7"
+
+
 # ---------------------------------------------------------------------------
 # BrainConfig — dependency injection container
 # ---------------------------------------------------------------------------
@@ -72,7 +85,12 @@ class BrainConfig:
     comfyui_url: str = "http://127.0.0.1:8188"
     custom_nodes_dir: Path = field(default_factory=lambda: Path("./Custom_Nodes"))
     models_dir: Path = field(default_factory=lambda: Path("./models"))
-    agent_model: str = "claude-sonnet-4-20250514"
+    agent_model: str = field(default_factory=_default_agent_model)
+    # Optional separate model for image analysis. If None, vision tools fall back
+    # to agent_model. Wired from VISION_MODEL env (see config.py).
+    vision_model: str | None = None
+    # Optional reasoning budget for vision-tool calls. 0 disables.
+    vision_thinking_budget: int = 0
     vision_limiter: Callable = field(default_factory=lambda: _null_limiter_factory)
     tool_dispatcher: Callable | None = None
     get_workflow_state: Callable | None = None
@@ -201,6 +219,7 @@ def get_integrated_config() -> BrainConfig:
 
         from ..config import (
             AGENT_MODEL, COMFYUI_URL, CUSTOM_NODES_DIR, MODELS_DIR, SESSIONS_DIR,
+            VISION_MODEL, VISION_THINKING_BUDGET,
         )
         from ..rate_limiter import VISION_LIMITER
         from ..tools._util import to_json, validate_path
@@ -213,6 +232,8 @@ def get_integrated_config() -> BrainConfig:
             custom_nodes_dir=CUSTOM_NODES_DIR,
             models_dir=MODELS_DIR,
             agent_model=AGENT_MODEL,
+            vision_model=VISION_MODEL,
+            vision_thinking_budget=VISION_THINKING_BUDGET,
             vision_limiter=VISION_LIMITER,
             tool_dispatcher=_lazy_tool_dispatcher,
             get_workflow_state=_lazy_get_workflow_state,

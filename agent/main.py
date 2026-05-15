@@ -16,6 +16,7 @@ import time
 from .config import (
     AGENT_MODEL, MAX_TOKENS, MAX_AGENT_TURNS,
     COMPACT_THRESHOLD, API_MAX_RETRIES, API_RETRY_DELAY,
+    THINKING_BUDGET,
 )
 from .context import compact, mask_processed_results
 from .llm import (
@@ -30,7 +31,7 @@ from .llm import (
 )
 from .logging_config import set_correlation_id
 from .streaming import StreamHandler, NullHandler
-from .system_prompt import build_system_prompt
+from .system_prompt import build_system_prompt_blocks
 from . import tools as _tools
 from .tools import ALL_TOOLS
 
@@ -89,6 +90,7 @@ def _stream_with_retry(
     tools,
     messages,
     handler: StreamHandler | None = None,
+    thinking_budget: int = 0,
 ):
     """Stream a message with retry on transient failures.
 
@@ -122,6 +124,7 @@ def _stream_with_retry(
                 messages=messages,
                 on_text=_wrap_safe(_tracking_on_text),
                 on_thinking=_wrap_safe(_tracking_on_thinking),
+                thinking_budget=thinking_budget,
             )
 
         except LLMRateLimitError as e:
@@ -182,7 +185,7 @@ def _stream_with_retry(
 def run_agent_turn(
     client,
     messages: list[dict],
-    system: str,
+    system,                                    # str | list[dict] (cache blocks)
     *,
     handler: StreamHandler | None = None,
     progress=None,
@@ -217,6 +220,7 @@ def run_agent_turn(
         tools=ALL_TOOLS,
         messages=messages,
         handler=handler,
+        thinking_budget=THINKING_BUDGET,
     )
 
     elapsed = time.monotonic() - t0
@@ -321,7 +325,11 @@ def run_interactive(
     from .logging_config import get_correlation_id
     if get_correlation_id() is None:
         set_correlation_id()  # Unique ID for this session's log entries
-    system = build_system_prompt(session_context=session_context)
+    # Structured system blocks let the Anthropic provider keep the stable
+    # prefix (rules + core knowledge) and topical knowledge in two long-lived
+    # cache breakpoints; the volatile session-context tail stays uncached.
+    # Non-Anthropic providers flatten this to a single string internally.
+    system = build_system_prompt_blocks(session_context=session_context)
     messages = []
 
     while True:

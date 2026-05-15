@@ -31,14 +31,63 @@ def check_health() -> dict:
 
 
 def _check_comfyui() -> dict:
-    """Check ComfyUI reachability via /system_stats.
+    """Check ComfyUI reachability — in-process when possible, HTTP otherwise.
 
-    Uses httpx so that the mock target is stable and testable.  The prior
-    in-process PromptServer path was removed because it silently broke all
-    four health tests: sys.modules["server"] is never present in test
-    contexts, causing an immediate "PromptServer not initialized" error
-    regardless of any httpx mocks.  Panel callers that need to avoid the
-    self-HTTP deadlock should call a panel-specific health endpoint instead.
+    Priority is inverted from the previous httpx-only design that
+    deadlocked when the /comfy-cozy/health panel route called this from
+    inside PromptServer's own aiohttp event loop (the recursive httpx
+    GET to /system_stats could not be serviced because the loop was
+    blocked on the original health request, so it timed out at 5s and
+    returned 503).
+
+    1. **In-process branch (production):** when the ComfyUI ``server``
+       module is loaded *and* ``PromptServer.instance`` exists, read
+       GPU/VRAM straight from ``comfy.model_management``. No HTTP, no
+       event-loop deadlock. Used by panel routes running in-process
+       inside PromptServer.
+
+    2. **HTTP fallback (tests, external CLI/MCP callers):** httpx GET
+       ``/system_stats``. Tests patch ``agent.health.httpx.Client`` and
+       never import ComfyUI's ``server.py``, so ``"server" not in
+       sys.modules`` keeps them on this path — preserving every
+       existing health test verbatim.
+
+    The ``server`` and ``comfy.model_management`` imports are lazy and
+    live inside the in-process branch only, so the test path never
+    touches them.
+    """
+    import sys
+    server_mod = sys.modules.get("server")
+    if server_mod is not None:
+        PromptServer = getattr(server_mod, "PromptServer", None)
+        if PromptServer is not None and getattr(PromptServer, "instance", None) is not None:
+            return _check_comfyui_in_process()
+    return _check_comfyui_via_http()
+
+
+def _check_comfyui_in_process() -> dict:
+    """Read GPU/VRAM directly from comfy.model_management. No HTTP call."""
+    try:
+        import comfy.model_management as mm
+        device = mm.get_torch_device()
+        device_name = mm.get_torch_device_name(device)
+        total = mm.get_total_memory(device)
+        free = mm.get_free_memory(device)
+        gpu_info = {
+            "name": device_name,
+            "vram_total_gb": round(total / 1e9, 1),
+            "vram_free_gb": round(free / 1e9, 1),
+        }
+        return {"status": "ok", "url": COMFYUI_URL, "gpu": gpu_info}
+    except Exception as e:
+        return {"status": "error", "url": COMFYUI_URL, "error": str(e)}
+
+
+def _check_comfyui_via_http() -> dict:
+    """HTTP fallback: GET /system_stats with a 5s budget.
+
+    Test target — patches against ``agent.health.httpx.Client`` exercise
+    this branch.
     """
     try:
         with httpx.Client(timeout=5.0) as client:

@@ -195,14 +195,26 @@ class VisionAgent(BrainAgent):
         if not self.cfg.vision_limiter().acquire(timeout=10.0):
             return self.to_json({"error": "Rate limited — too many Vision API calls. Try again shortly."})
 
+        # Wrap the static vision system prompt in an ephemeral cache block.
+        # Each vision tool ships a fixed system string per call site, so the
+        # same prompt is reused across every analyze/compare/suggest call —
+        # caching pays off after the first hit. Non-Anthropic providers
+        # flatten this list back to a string in _flatten_system.
+        cached_system = [
+            {"type": "text", "text": system_prompt, "cache_control": {"type": "ephemeral"}}
+        ]
+        vision_model = self.cfg.vision_model or self.cfg.agent_model
+        vision_budget = getattr(self.cfg, "vision_thinking_budget", 0) or 0
+
         try:
             provider = get_provider()
             response = provider.create(
-                model=self.cfg.agent_model,
+                model=vision_model,
                 max_tokens=_VISION_MAX_TOKENS,
-                system=system_prompt,
+                system=cached_system,
                 messages=[{"role": "user", "content": user_content}],
                 timeout=_VISION_TIMEOUT,
+                thinking_budget=vision_budget,
             )
             # Cycle 18: walk all blocks; skip ThinkingBlock (reasoning that
             # the vision pipeline doesn't surface to the user) and return the

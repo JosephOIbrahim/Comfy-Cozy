@@ -36,6 +36,7 @@ log = logging.getLogger(__name__)
 
 __all__ = [
     "get_provider",
+    "DEFAULT_MODELS",
     "LLMProvider",
     "LLMResponse",
     "TextBlock",
@@ -50,13 +51,10 @@ __all__ = [
     "LLMAuthError",
 ]
 
-# Default models per provider — used when AGENT_MODEL is not explicitly set
-DEFAULT_MODELS: dict[str, str] = {
-    "anthropic": "claude-sonnet-4-20250514",
-    "openai": "gpt-4o",
-    "gemini": "gemini-2.5-flash",
-    "ollama": "llama3.1",
-}
+# Default models per provider. Single-sourced from agent.config — this
+# module re-exports the canonical table so callers that import it from
+# the LLM layer (e.g. tests, downstream tooling) hit the same dict.
+from ..config import _DEFAULT_AGENT_MODELS as DEFAULT_MODELS
 
 _provider_cache: dict[str, LLMProvider] = {}
 _provider_lock = threading.Lock()
