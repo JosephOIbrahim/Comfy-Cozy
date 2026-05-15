@@ -951,22 +951,25 @@ graph TB
 
 **Cycle 20 — ThinkingBlock multi-turn bug.** When Claude 3.7+ or Claude 4 returns a `ThinkingBlock` in its response, the agent stores it in message history. On the next turn, `convert_messages` must translate that block back to the provider's native format. Before cycle 20, all 4 providers mishandled it: Anthropic sent the raw Python dataclass to the API (400 error), OpenAI silently dropped it, Gemini converted `str(ThinkingBlock(...))` to user-visible text, and Ollama sent raw objects. Fix: all providers now skip ThinkingBlock in convert_messages (the API requires a signature field we don't capture; thinking content is already delivered via the streaming `on_thinking` callback).
 
-**Opus 4.7 evolution (c61c65f).** The cycle-20 fix above strips `ThinkingBlock` across the board. The Opus 4.7 upgrade refined Anthropic's branch: extended-thinking responses now include a cryptographic `signature` on each thinking block, and the API requires the signature on the next turn whenever a `tool_use` block follows. `agent/llm/_anthropic.py:convert_messages` now replays signature-bearing blocks verbatim; signature-less blocks (legacy paths, manually-constructed test fixtures) are dropped silently — a known-fragile path; a future cleanup commit will replace the silent drop with an explicit warning. OpenAI, Gemini, and Ollama retain the cycle-20 behavior; their APIs don't model replayable thinking, so the strip remains correct.
+**Opus 4.7 evolution (c61c65f → 3261318).** The cycle-20 fix above strips `ThinkingBlock` across the board. The Opus 4.7 upgrade refined Anthropic's branch: extended-thinking responses now include a cryptographic `signature` on each thinking block, and the API requires the signature on the next turn whenever a `tool_use` block follows. `agent/llm/_anthropic.py:convert_messages` now replays signature-bearing blocks verbatim; signature-less blocks (legacy paths, manually-constructed test fixtures) are dropped — and `3261318` made that drop loud: a WARNING-level log now names the dropped content, the API constraint, and the next-turn 400 risk. The same commit extracted a `_build_thinking_kwarg` helper and made the clamp formula raise `ValueError` early when `thinking_budget > 0` and `max_tokens <= 1024` (the prior clamp produced `budget_tokens == max_tokens`, which the API rejects). OpenAI, Gemini, and Ollama retain the cycle-20 behavior; their APIs don't model replayable thinking, so the strip remains correct.
 
 ```mermaid
 graph LR
     LLM["LLM Response<br/>[TextBlock, ThinkingBlock]"] --> Store["main.py:293<br/>messages.append(content)"]
     Store --> NextTurn["Next turn<br/>convert_messages()"]
     NextTurn -->|"Anthropic, signature ✓"| Replay["ThinkingBlock<br/>→ replay verbatim"]
-    NextTurn -->|"Anthropic no-sig / other providers"| Skip["ThinkingBlock<br/>→ skip (continue)"]
+    NextTurn -->|"Anthropic, no signature"| WarnDrop["ThinkingBlock<br/>→ drop + log.warning"]
+    NextTurn -->|"OpenAI / Gemini / Ollama"| Skip["ThinkingBlock<br/>→ skip (continue)"]
     NextTurn --> Keep["TextBlock / ToolUseBlock<br/>→ convert to native format"]
     Replay --> Safe
+    WarnDrop --> Safe
     Skip --> Safe["API receives only<br/>valid native blocks"]
     Keep --> Safe
 
     style LLM fill:#d9c958,color:#1a1a1a
     style Store fill:#d9c958,color:#1a1a1a
     style Replay fill:#d99458,color:#1a1a1a
+    style WarnDrop fill:#d99458,color:#1a1a1a
     style Skip fill:#d99458,color:#1a1a1a
     style Keep fill:#d99458,color:#1a1a1a
     style Safe fill:#d99458,color:#1a1a1a
@@ -1144,7 +1147,7 @@ All settings live in your `.env` file:
 | `AGENT_MODEL` | *(auto per provider)* | Override the model name |
 | `FAST_MODEL` | *(auto per provider)* | Model for short triage / classification (Haiku 4.5 default on Anthropic) |
 | `VISION_MODEL` | *(same as `AGENT_MODEL`)* | Model for vision tools (`analyze_image`, `compare_outputs`) |
-| `THINKING_BUDGET` | `4000` | Extended-thinking budget per agent turn (Anthropic Claude 4.x+ only; `0` disables) |
+| `THINKING_BUDGET` | `4000` | Extended-thinking budget per agent turn (Anthropic Claude 4.x+ only; `0` disables; requires `max_tokens > 1024` or the call raises `ValueError`) |
 | `VISION_THINKING_BUDGET` | `2000` | Extended-thinking budget for vision-tool calls (`0` disables) |
 | `OLLAMA_BASE_URL` | `http://localhost:11434/v1` | Ollama server URL |
 | `COMFYUI_HOST` | `127.0.0.1` | Where ComfyUI runs |

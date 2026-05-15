@@ -33,6 +33,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Concurrent session integration test bypasses gate (uses workflow_patch.handle directly)
 - Provision check test covers all model variants the compose step references
+- **Anthropic provider — multi-turn `ThinkingBlock` reliability**: signature-less drops now emit a WARNING-level log instead of being silent (was a known-fragile path documented in the README Cycle-20/Opus 4.7 evolution paragraph). Extracted `_build_thinking_kwarg` helper; raises `ValueError` early when `thinking_budget > 0` and `max_tokens <= 1024` (the prior clamp formula produced `budget_tokens == max_tokens`, which the Anthropic API rejects).
 
 ## [3.1.0] - 2026-04-03
 
