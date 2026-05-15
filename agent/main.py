@@ -31,7 +31,7 @@ from .llm import (
 )
 from .logging_config import set_correlation_id
 from .streaming import StreamHandler, NullHandler
-from .system_prompt import build_system_prompt, build_system_prompt_blocks
+from .system_prompt import build_system_prompt_blocks
 from . import tools as _tools
 from .tools import ALL_TOOLS
 
