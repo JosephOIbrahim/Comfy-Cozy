@@ -46,7 +46,7 @@ graph LR
 
 ## Sponsor This Project
 
-Comfy Cozy is production software. 3,902 tests (all mocked, runnable in under a minute) cover the 113 MCP tools that drive the workflow lifecycle end-to-end. Four LLM providers — Anthropic, OpenAI, Gemini, Ollama — sit behind a single abstraction with parity across all four. The [CHANGELOG](CHANGELOG.md) tracks active hardening and new work.
+Comfy Cozy is production software. 4,100+ tests (all mocked, runnable in under a minute) cover the 113 MCP tools that drive the workflow lifecycle end-to-end. Four LLM providers — Anthropic, OpenAI, Gemini, Ollama — sit behind a single abstraction with parity across all four. The [CHANGELOG](CHANGELOG.md) tracks active hardening and new work.
 
 If Comfy Cozy saves you time inside ComfyUI, sponsorship is the most direct way to keep it moving.
 
@@ -105,7 +105,7 @@ One command. No build step. No Docker. No conda. Just pip.
 <summary>Want the test suite too? (optional, click to expand)</summary>
 
 ```bash
-pip install -e ".[dev]"           # + 3902 passing tests
+pip install -e ".[dev]"           # + 4,100+ passing tests
 pip install -e ".[dev,stage]"     # + USD stage subsystem (~200MB, most users skip)
 ```
 
@@ -924,7 +924,7 @@ Each delta layer carries its `creation_hash` (SHA-256 of `opinion + sorted-JSON 
 
 ### LLM Provider Hardening
 
-The agent supports four LLM providers (Anthropic, OpenAI, Gemini, Ollama). Cycles 7+18+20 closed six real bugs in the streaming, retry, and multi-turn paths. After this work, every provider correctly: extracts streaming token usage, doesn't duplicate text on retry, doesn't drop thinking blocks, doesn't fire callbacks with empty content, doesn't leak reasoning into the user-visible text, and correctly strips ThinkingBlock on multi-turn round-trips.
+The agent supports four LLM providers (Anthropic, OpenAI, Gemini, Ollama). Cycles 7+18+20 closed six real bugs in the streaming, retry, and multi-turn paths, and the Opus 4.7 upgrade (commit `c61c65f`) refined the multi-turn `ThinkingBlock` policy on Anthropic. After this work, every provider correctly: extracts streaming token usage, doesn't duplicate text on retry, doesn't fire callbacks with empty content, doesn't leak reasoning into user-visible text, and handles `ThinkingBlock` correctly on multi-turn replay — Anthropic re-sends signature-bearing thinking blocks (required by the API when extended thinking runs alongside tool use), while OpenAI / Gemini / Ollama drop them (those APIs don't model replayable thinking).
 
 ```mermaid
 graph TB
@@ -932,7 +932,7 @@ graph TB
     Track --> Wrap["_wrap_safe + tracking<br/>on_text / on_thinking"]
     Wrap --> Provider{Which provider?}
 
-    Provider -->|Anthropic| A["✓ thinking blocks preserved<br/>in _to_response<br/>✓ empty deltas filtered<br/>✓ ThinkingBlock skipped in<br/>convert_messages (cycle 20)"]
+    Provider -->|Anthropic| A["✓ thinking blocks preserved<br/>in _to_response (with signature)<br/>✓ empty deltas filtered<br/>✓ signature-bearing ThinkingBlock<br/>replayed verbatim in convert_messages<br/>(c61c65f — supersedes cycle 20)"]
     Provider -->|OpenAI| O["✓ stream_options=<br/>{include_usage: true}<br/>✓ ThinkingBlock skipped<br/>in convert_messages (cycle 20)"]
     Provider -->|Gemini| G["✓ thinking / text branches<br/>mutually exclusive (if/elif)<br/>✓ ThinkingBlock skipped<br/>(was sending repr as text)"]
     Provider -->|Ollama| OL["✓ stream_options=<br/>{include_usage: true}<br/>✓ ThinkingBlock pre-filtered<br/>from content list (cycle 20)"]
@@ -952,17 +952,22 @@ graph TB
 
 **Cycle 20 — ThinkingBlock multi-turn bug.** When Claude 3.7+ or Claude 4 returns a `ThinkingBlock` in its response, the agent stores it in message history. On the next turn, `convert_messages` must translate that block back to the provider's native format. Before cycle 20, all 4 providers mishandled it: Anthropic sent the raw Python dataclass to the API (400 error), OpenAI silently dropped it, Gemini converted `str(ThinkingBlock(...))` to user-visible text, and Ollama sent raw objects. Fix: all providers now skip ThinkingBlock in convert_messages (the API requires a signature field we don't capture; thinking content is already delivered via the streaming `on_thinking` callback).
 
+**Opus 4.7 evolution (c61c65f).** The cycle-20 fix above strips `ThinkingBlock` across the board. The Opus 4.7 upgrade refined Anthropic's branch: extended-thinking responses now include a cryptographic `signature` on each thinking block, and the API requires the signature on the next turn whenever a `tool_use` block follows. `agent/llm/_anthropic.py:convert_messages` now replays signature-bearing blocks verbatim; signature-less blocks (legacy paths, manually-constructed test fixtures) are dropped silently — a known-fragile path; a future cleanup commit will replace the silent drop with an explicit warning. OpenAI, Gemini, and Ollama retain the cycle-20 behavior; their APIs don't model replayable thinking, so the strip remains correct.
+
 ```mermaid
 graph LR
     LLM["LLM Response<br/>[TextBlock, ThinkingBlock]"] --> Store["main.py:293<br/>messages.append(content)"]
     Store --> NextTurn["Next turn<br/>convert_messages()"]
-    NextTurn --> Skip["ThinkingBlock?<br/>→ skip (continue)"]
+    NextTurn -->|"Anthropic, signature ✓"| Replay["ThinkingBlock<br/>→ replay verbatim"]
+    NextTurn -->|"Anthropic no-sig / other providers"| Skip["ThinkingBlock<br/>→ skip (continue)"]
     NextTurn --> Keep["TextBlock / ToolUseBlock<br/>→ convert to native format"]
+    Replay --> Safe
     Skip --> Safe["API receives only<br/>valid native blocks"]
     Keep --> Safe
 
     style LLM fill:#1e293b,color:#fff
     style Store fill:#1e293b,color:#fff
+    style Replay fill:#0066FF,color:#fff
     style Skip fill:#0066FF,color:#fff
     style Keep fill:#0066FF,color:#fff
     style Safe fill:#0066FF,color:#fff
@@ -1075,7 +1080,7 @@ panel/
   __init__.py         WEB_DIRECTORY + route registration + sys.path injection
   server/routes.py    49 REST routes -- full tool surface
   web/js/             Headless canvas↔agent bridge (no visible UI -- sidebar is primary)
-tests/                3902 passing tests, all mocked, ~60s
+tests/                4,100+ passing tests, all mocked, ~60s
   integration/        Skips cleanly when ComfyUI not running
 ```
 
@@ -1138,6 +1143,10 @@ All settings live in your `.env` file:
 | `GEMINI_API_KEY` | | Your Google Gemini API key |
 | `LLM_PROVIDER` | `anthropic` | Which LLM to use: `anthropic`, `openai`, `gemini`, `ollama` |
 | `AGENT_MODEL` | *(auto per provider)* | Override the model name |
+| `FAST_MODEL` | *(auto per provider)* | Model for short triage / classification (Haiku 4.5 default on Anthropic) |
+| `VISION_MODEL` | *(same as `AGENT_MODEL`)* | Model for vision tools (`analyze_image`, `compare_outputs`) |
+| `THINKING_BUDGET` | `4000` | Extended-thinking budget per agent turn (Anthropic Claude 4.x+ only; `0` disables) |
+| `VISION_THINKING_BUDGET` | `2000` | Extended-thinking budget for vision-tool calls (`0` disables) |
 | `OLLAMA_BASE_URL` | `http://localhost:11434/v1` | Ollama server URL |
 | `COMFYUI_HOST` | `127.0.0.1` | Where ComfyUI runs |
 | `COMFYUI_PORT` | `8188` | ComfyUI port |
@@ -1150,7 +1159,7 @@ All settings live in your `.env` file:
 No ComfyUI needed -- everything is mocked:
 
 ```bash
-python -m pytest tests/ -v        # 3902 passing tests, ~70s
+python -m pytest tests/ -v        # 4,100+ passing tests, ~70s
 
 # Skip tests that require a real ComfyUI server or API keys
 python -m pytest tests/ -v -m "not integration"
