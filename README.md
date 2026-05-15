@@ -210,6 +210,9 @@ graph LR
     style CN fill:#d99458,color:#1a1a1a
     style P fill:#d9c958,color:#1a1a1a
     style U fill:#d99458,color:#1a1a1a
+    style sync fill:#d9c958,color:#1a1a1a
+    style Panel fill:#d9c958,color:#1a1a1a
+    style UI fill:#d9c958,color:#1a1a1a
 ```
 
 **Both symlinks are required:**
@@ -313,6 +316,7 @@ graph LR
     style B fill:#d99458,color:#1a1a1a
     style C fill:#d9c958,color:#1a1a1a
     style D fill:#d99458,color:#1a1a1a
+    style LLM fill:#d9c958,color:#1a1a1a
 ```
 
 Common types (`TextBlock`, `ToolUseBlock`, `LLMResponse`), unified error hierarchy, provider-specific format conversion handled internally. Switch providers with one env var -- no code changes. All 4 providers have dedicated test suites (132 tests) plus a parameterized conformance suite that verifies protocol compliance across providers. Every `stream()` and `create()` call is instrumented with `llm_call_total` and `llm_call_duration_seconds` metrics (per-provider labels).
@@ -496,6 +500,14 @@ graph TB
     style Backend fill:#d9c958,color:#1a1a1a,stroke:#d99458
     style ComfyUI fill:#d9c958,color:#1a1a1a,stroke:#d99458
     style Disk fill:#d9c958,color:#1a1a1a,stroke:#d99458
+    style Sidebar fill:#d9c958,color:#1a1a1a
+    style Routes fill:#d9c958,color:#1a1a1a
+    style Tools fill:#d9c958,color:#1a1a1a
+    style Cog fill:#d9c958,color:#1a1a1a
+    style API fill:#d9c958,color:#1a1a1a
+    style Canvas fill:#d9c958,color:#1a1a1a
+    style EXP fill:#d9c958,color:#1a1a1a
+    style Sessions fill:#d9c958,color:#1a1a1a
 ```
 
 ```mermaid
@@ -513,6 +525,7 @@ graph LR
     style Discover fill:#d9c958,color:#1a1a1a
     style Pilot fill:#d9c958,color:#1a1a1a
     style Verify fill:#d99458,color:#1a1a1a
+    style Agent fill:#d9c958,color:#1a1a1a
 ```
 
 **Four phases, always in order:**
@@ -549,6 +562,9 @@ flowchart TD
     style Execute fill:#d99458,color:#1a1a1a
     style Done fill:#d99458,color:#1a1a1a
     style Report fill:#d99458,color:#1a1a1a
+    style Check fill:#d9c958,color:#1a1a1a
+    style Revalidate fill:#d9c958,color:#1a1a1a
+    style Check2 fill:#d9c958,color:#1a1a1a
 ```
 
 Every change is undoable. Every generation teaches the agent something. The agent is a doer, not a describer -- say "wire the model" and it wires the model. Say "repair this" and it finds the missing nodes, installs them, and validates. Say "run it" and it validates, fixes anything broken, then executes. No confirmation dialogs, no "would you like me to..." -- it acts, then tells you what it did.
@@ -574,6 +590,8 @@ flowchart LR
     style CB2 fill:#d9c958,color:#1a1a1a
     style CB3 fill:#d99458,color:#1a1a1a
     style WH fill:#d99458,color:#1a1a1a
+    style from_ws_message fill:#d9c958,color:#1a1a1a
+    style dispatch fill:#d9c958,color:#1a1a1a
 ```
 
 ```python
@@ -621,6 +639,10 @@ flowchart TD
     style STOP fill:#d9c958,color:#1a1a1a
     style FAIL fill:#d9c958,color:#1a1a1a
     style PROVISION fill:#d9c958,color:#1a1a1a
+    style INTENT fill:#d9c958,color:#1a1a1a
+    style COMPOSE fill:#d9c958,color:#1a1a1a
+    style WARN fill:#d9c958,color:#1a1a1a
+    style PREDICT fill:#d9c958,color:#1a1a1a
 ```
 
 **Use from Python:**
@@ -662,6 +684,15 @@ graph LR
 
     style JSONL fill:#d9c958,color:#1a1a1a
     style C2 fill:#d99458,color:#1a1a1a
+    style Session1 fill:#d9c958,color:#1a1a1a
+    style I1 fill:#d9c958,color:#1a1a1a
+    style C1 fill:#d9c958,color:#1a1a1a
+    style E1 fill:#d9c958,color:#1a1a1a
+    style S1 fill:#d9c958,color:#1a1a1a
+    style Session2 fill:#d9c958,color:#1a1a1a
+    style I2 fill:#d9c958,color:#1a1a1a
+    style E2 fill:#d9c958,color:#1a1a1a
+    style S2 fill:#d9c958,color:#1a1a1a
 ```
 
 ### Cozy Constitution + MoE Chain
@@ -681,6 +712,15 @@ flowchart LR
     Crucible["Crucible<br/>execute + verify<br/>(comfy_execute)"] -->|execution_result| Vision
     Vision["Vision<br/>judge quality<br/>(analyze_image)"] -->|quality_report| Scribe
     Scribe["Scribe<br/>save_session +<br/>record_experience"] -->|persistence_receipt| Done(["Stage flushed"])
+    style Intent fill:#d9c958,color:#1a1a1a
+    style Scout fill:#d9c958,color:#1a1a1a
+    style Architect fill:#d9c958,color:#1a1a1a
+    style Provisioner fill:#d9c958,color:#1a1a1a
+    style Forge fill:#d9c958,color:#1a1a1a
+    style Crucible fill:#d9c958,color:#1a1a1a
+    style Vision fill:#d9c958,color:#1a1a1a
+    style Scribe fill:#d9c958,color:#1a1a1a
+    style Done fill:#d9c958,color:#1a1a1a
 ```
 
 **Self-healing ladder** -- Article III mandates that every error gets classified once by `self_healing_ladder()` and routed to one of three policies. **TERMINAL is the only path that halts**; everything else burns iteration budget and continues. This is what makes a 24-hour autonomous run survivable: ComfyUI hiccups, missing assets, and rate-limit blips never stop the loop.
@@ -696,6 +736,15 @@ flowchart TD
     Repair -->|yes, returns ctx| Try
     Repair -->|no / returns None| Counter["Signature counter +1<br/>(>3 same sig →<br/>promote to TERMINAL)"]
     Class -->|"TERMINAL<br/>AnchorViolation,<br/>disk-full,<br/>repeated-recoverable"| Halt["Final checkpoint<br/>+ BLOCKER.md<br/>+ Halt"]
+    style Try fill:#d9c958,color:#1a1a1a
+    style execute_fn fill:#d9c958,color:#1a1a1a
+    style Ratchet fill:#d9c958,color:#1a1a1a
+    style Class fill:#d9c958,color:#1a1a1a
+    style classify fill:#d9c958,color:#1a1a1a
+    style Backoff fill:#d9c958,color:#1a1a1a
+    style Repair fill:#d9c958,color:#1a1a1a
+    style Counter fill:#d9c958,color:#1a1a1a
+    style Halt fill:#d9c958,color:#1a1a1a
 ```
 
 Run it: `agent autonomous --execute-mode real --workflow path/to/wf.json --hours 24`. Per-iteration checkpoint to `STAGE_DEFAULT_PATH` (atomic via `.tmp` + `os.replace`). On TERMINAL halt, `BLOCKER.md` is written with the full classification trail. See `CLAUDE.md` "Cozy Autonomous Harness" for the full CLI surface.
@@ -731,6 +780,13 @@ graph TB
     style ComfyUI_App fill:#d9c958,color:#1a1a1a,stroke:#d99458
     style Sidebar fill:#d9c958,color:#1a1a1a,stroke:#d99458
     style Bridge fill:#d9c958,color:#1a1a1a,stroke:#d99458
+    style Tab fill:#d9c958,color:#1a1a1a
+    style registerSidebarTab fill:#d9c958,color:#1a1a1a
+    style Chat fill:#d9c958,color:#1a1a1a
+    style QA fill:#d9c958,color:#1a1a1a
+    style Canvas fill:#d9c958,color:#1a1a1a
+    style C2A fill:#d9c958,color:#1a1a1a
+    style A2C fill:#d9c958,color:#1a1a1a
 ```
 
 **What you get:**
@@ -767,6 +823,12 @@ flowchart TD
     style R411 fill:#d9c958,color:#1a1a1a
     style Handler fill:#d99458,color:#1a1a1a
     style Guard fill:#d9c958,color:#1a1a1a
+    style REST fill:#d9c958,color:#1a1a1a
+    style _guard fill:#d9c958,color:#1a1a1a
+    style WS fill:#d9c958,color:#1a1a1a
+    style Auth fill:#d9c958,color:#1a1a1a
+    style Rate fill:#d9c958,color:#1a1a1a
+    style Size fill:#d9c958,color:#1a1a1a
 ```
 
 ---
@@ -825,6 +887,13 @@ graph TB
     style Foundation fill:#d9c958,color:#1a1a1a,stroke:#d99458
     style Safety fill:#d9c958,color:#1a1a1a,stroke:#d99458
     style Integration fill:#d9c958,color:#1a1a1a,stroke:#d99458
+    style DAG fill:#d9c958,color:#1a1a1a
+    style OBS fill:#d9c958,color:#1a1a1a
+    style CAP fill:#d9c958,color:#1a1a1a
+    style GATE fill:#d9c958,color:#1a1a1a
+    style BRIDGE fill:#d9c958,color:#1a1a1a
+    style ADAPT fill:#d9c958,color:#1a1a1a
+    style DEGRADE fill:#d9c958,color:#1a1a1a
 ```
 
 ### Workflow Intelligence DAG
@@ -842,6 +911,8 @@ graph LR
     style C fill:#d9c958,color:#1a1a1a
     style R fill:#d99458,color:#1a1a1a
     style RD fill:#d99458,color:#1a1a1a
+    style M fill:#d9c958,color:#1a1a1a
+    style O fill:#d9c958,color:#1a1a1a
 ```
 
 ### Pre-Dispatch Safety Gate
@@ -873,6 +944,13 @@ flowchart LR
     style Block fill:#d99458,color:#1a1a1a
     style Deny fill:#d99458,color:#1a1a1a
     style Escalate fill:#d9c958,color:#1a1a1a
+    style Tool fill:#d9c958,color:#1a1a1a
+    style Type fill:#d9c958,color:#1a1a1a
+    style WF fill:#d9c958,color:#1a1a1a
+    style ST fill:#d9c958,color:#1a1a1a
+    style Risk fill:#d9c958,color:#1a1a1a
+    style Checks fill:#d9c958,color:#1a1a1a
+    style OK fill:#d9c958,color:#1a1a1a
 ```
 
 ### Per-Connection Session Isolation (all 4 transports)
@@ -910,6 +988,18 @@ flowchart LR
     style CT fill:#d9c958,color:#1a1a1a
     style HY fill:#d9c958,color:#1a1a1a
     style WS fill:#d99458,color:#1a1a1a
+    style SB fill:#d9c958,color:#1a1a1a
+    style H1 fill:#d9c958,color:#1a1a1a
+    style PNL fill:#d9c958,color:#1a1a1a
+    style MCP fill:#d9c958,color:#1a1a1a
+    style H2 fill:#d9c958,color:#1a1a1a
+    style CLI fill:#d9c958,color:#1a1a1a
+    style H3 fill:#d9c958,color:#1a1a1a
+    style _get_state fill:#d9c958,color:#1a1a1a
+    style _get_stage fill:#d9c958,color:#1a1a1a
+    style _get_provisioner fill:#d9c958,color:#1a1a1a
+    style _scenes fill:#d9c958,color:#1a1a1a
+    style _meta_agents fill:#d9c958,color:#1a1a1a
 ```
 
 The same connection id is also installed as the per-thread correlation ID via `set_correlation_id`, so every log entry from a single conversation is greppable end-to-end. Parallel tool calls inside a single turn inherit the contextvar via `contextvars.copy_context()` per `ThreadPoolExecutor.submit()`. And `_save_and_exit()` (called on normal exit, atexit, or SIGTERM) self-sets the contextvar before saving so the user's named session never gets corrupted with empty default workflow state.
@@ -950,6 +1040,8 @@ graph LR
     style Stack fill:#d9c958,color:#1a1a1a
     style Resolved fill:#d99458,color:#1a1a1a
     style Comfy fill:#d99458,color:#1a1a1a
+    style _get_state fill:#d9c958,color:#1a1a1a
+    style to_api_json fill:#d9c958,color:#1a1a1a
 ```
 
 The `cognitive/` package is layered by phase -- the core engine (Phase 1) is fully tested at 54/54 adversarial cases. Phase 6 is complete: the autonomous pipeline is fully wired with real executor, template loading, rule-based evaluator, and experience persistence.
@@ -1003,6 +1095,12 @@ graph TB
     style OL fill:#d99458,color:#1a1a1a
     style NoRetry fill:#d99458,color:#1a1a1a
     style Retry fill:#d99458,color:#1a1a1a
+    style Wrap fill:#d9c958,color:#1a1a1a
+    style Provider fill:#d9c958,color:#1a1a1a
+    style _to_response fill:#d9c958,color:#1a1a1a
+    style convert_messages fill:#d9c958,color:#1a1a1a
+    style exclusive fill:#d9c958,color:#1a1a1a
+    style list fill:#d9c958,color:#1a1a1a
 ```
 
 **Cycle 20 — ThinkingBlock multi-turn bug.** When Claude 3.7+ or Claude 4 returns a `ThinkingBlock` in its response, the agent stores it in message history. On the next turn, `convert_messages` must translate that block back to the provider's native format. Before cycle 20, all 4 providers mishandled it: Anthropic sent the raw Python dataclass to the API (400 error), OpenAI silently dropped it, Gemini converted `str(ThinkingBlock(...))` to user-visible text, and Ollama sent raw objects. Fix: all providers now skip ThinkingBlock in convert_messages (the API requires a signature field we don't capture; thinking content is already delivered via the streaming `on_thinking` callback).
@@ -1030,6 +1128,10 @@ graph LR
     style Skip fill:#d99458,color:#1a1a1a
     style Keep fill:#d99458,color:#1a1a1a
     style Safe fill:#d99458,color:#1a1a1a
+    style append fill:#d9c958,color:#1a1a1a
+    style NextTurn fill:#d9c958,color:#1a1a1a
+    style convert_messages fill:#d9c958,color:#1a1a1a
+    style skip fill:#d9c958,color:#1a1a1a
 ```
 
 The retry tracker pattern is the key insight: an `on_text("Hello ")` followed by a transient `LLMRateLimitError` USED TO retry from scratch, calling `on_text("Hello ")` again, then `on_text("world!")` — the user saw `"Hello Hello world!"` in the UI. After cycle 7, any error fired AFTER content was emitted raises immediately instead of retrying. Tested across all 4 providers via `tests/test_main.py::TestStreamRetryDuplication` + provider-specific regression tests.
@@ -1066,6 +1168,8 @@ flowchart LR
     style KW fill:#d9c958,color:#1a1a1a
     style TFIDF fill:#d9c958,color:#1a1a1a
     style Done fill:#d99458,color:#1a1a1a
+    style Context fill:#d9c958,color:#1a1a1a
+    style Merge fill:#d9c958,color:#1a1a1a
 ```
 
 ### Tool Inventory
@@ -1118,6 +1222,9 @@ flowchart LR
     style Run fill:#d99458,color:#1a1a1a
     style Check fill:#d99458,color:#1a1a1a
     style Learn fill:#d9c958,color:#1a1a1a
+    style Validate fill:#d9c958,color:#1a1a1a
+    style Errors fill:#d9c958,color:#1a1a1a
+    style Patch fill:#d9c958,color:#1a1a1a
 ```
 
 ### Project Structure
@@ -1199,6 +1306,22 @@ graph TB
     style Atom fill:#d9c958,color:#1a1a1a,stroke:#d99458
     style Resil fill:#d9c958,color:#1a1a1a,stroke:#d99458
     style Obs fill:#d9c958,color:#1a1a1a,stroke:#d99458
+    style A1 fill:#d9c958,color:#1a1a1a
+    style A2 fill:#d9c958,color:#1a1a1a
+    style A3 fill:#d9c958,color:#1a1a1a
+    style A4 fill:#d9c958,color:#1a1a1a
+    style B1 fill:#d9c958,color:#1a1a1a
+    style B2 fill:#d9c958,color:#1a1a1a
+    style B3 fill:#d9c958,color:#1a1a1a
+    style replace fill:#d9c958,color:#1a1a1a
+    style C1 fill:#d9c958,color:#1a1a1a
+    style C2 fill:#d9c958,color:#1a1a1a
+    style C3 fill:#d9c958,color:#1a1a1a
+    style D1 fill:#d9c958,color:#1a1a1a
+    style D2 fill:#d9c958,color:#1a1a1a
+    style D3 fill:#d9c958,color:#1a1a1a
+    style get_metrics fill:#d9c958,color:#1a1a1a
+    style get_metrics_prometheus fill:#d9c958,color:#1a1a1a
 ```
 
 </details>
