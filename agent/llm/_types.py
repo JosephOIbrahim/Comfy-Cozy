@@ -59,8 +59,16 @@ class ThinkingBlock:
     the stream loop, but the FINAL response object also needs to include it
     so downstream consumers that walk response.content can reconstruct the
     full conversation.
+
+    `signature` is the cryptographic signature Anthropic returns for each
+    thinking block. When extended thinking is enabled together with tool use,
+    the API requires the prior turn's thinking blocks (with signatures) to be
+    sent back verbatim — otherwise the next request 400s. None means the block
+    came from a model/path that doesn't supply a signature (older clients, or
+    response paths that strip it), and the multi-turn replay omits it.
     """
     thinking: str
+    signature: str | None = None
     type: str = "thinking"
 
 

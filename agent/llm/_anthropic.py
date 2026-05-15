@@ -44,11 +44,12 @@ class AnthropicProvider(LLMProvider):
         *,
         model: str,
         max_tokens: int,
-        system: str,
+        system,                               # str | list[dict]
         tools: list[dict],
         messages: list[dict],
         on_text: Callable[[str], None] | None = None,
         on_thinking: Callable[[str], None] | None = None,
+        thinking_budget: int = 0,
     ) -> LLMResponse:
         import time
 
@@ -57,14 +58,25 @@ class AnthropicProvider(LLMProvider):
         cached_system = _cached_system(system)
         start = time.monotonic()
 
+        stream_kwargs: dict[str, Any] = {
+            "model": model,
+            "max_tokens": max_tokens,
+            "system": cached_system,
+            "tools": native_tools,
+            "messages": native_messages,
+        }
+        if thinking_budget and thinking_budget > 0:
+            # Extended thinking. budget_tokens must be < max_tokens. The
+            # provider chunks visible text vs. thinking blocks; our streaming
+            # loop already routes delta.thinking to on_thinking and emits
+            # signature-bearing ThinkingBlocks in the final response.
+            stream_kwargs["thinking"] = {
+                "type": "enabled",
+                "budget_tokens": min(thinking_budget, max(max_tokens - 1024, 1024)),
+            }
+
         try:
-            with self._client.messages.stream(
-                model=model,
-                max_tokens=max_tokens,
-                system=cached_system,
-                tools=native_tools,
-                messages=native_messages,
-            ) as stream:
+            with self._client.messages.stream(**stream_kwargs) as stream:
                 for event in stream:
                     if event.type == "content_block_delta":
                         delta = event.delta
@@ -110,9 +122,10 @@ class AnthropicProvider(LLMProvider):
         *,
         model: str,
         max_tokens: int,
-        system: str,
+        system,                               # str | list[dict]
         messages: list[dict],
         timeout: float | None = None,
+        thinking_budget: int = 0,
     ) -> LLMResponse:
         import time
 
@@ -121,9 +134,18 @@ class AnthropicProvider(LLMProvider):
         kwargs: dict[str, Any] = {
             "model": model,
             "max_tokens": max_tokens,
+            # If `system` is a plain str (most existing callers), pass it
+            # through unchanged so old tests / providers stay compatible.
+            # Structured callers (vision pipeline post-upgrade) pass a list
+            # of cache blocks directly — those go straight to the API.
             "system": system,
             "messages": native_messages,
         }
+        if thinking_budget and thinking_budget > 0:
+            kwargs["thinking"] = {
+                "type": "enabled",
+                "budget_tokens": min(thinking_budget, max(max_tokens - 1024, 1024)),
+            }
         start = time.monotonic()
 
         try:
@@ -191,11 +213,22 @@ class AnthropicProvider(LLMProvider):
                             "content": block.content,
                         })
                     elif isinstance(block, ThinkingBlock):
-                        # Cycle 20: skip thinking blocks in multi-turn messages.
-                        # The Anthropic API requires a signature field we don't
-                        # capture, so sending it back would cause a 400 error.
-                        # Thinking content is already streamed via on_thinking.
-                        continue
+                        # Extended thinking + tool use: the API requires the
+                        # prior assistant turn's thinking block (with its
+                        # signature) to be replayed verbatim before any
+                        # tool_use block from the same turn. We capture
+                        # `signature` in _to_response below and pass it
+                        # back here. Blocks without a signature came from
+                        # legacy paths and are dropped (the API rejects
+                        # signature-less thinking blocks when thinking is
+                        # active anyway).
+                        if block.signature:
+                            native_content.append({
+                                "type": "thinking",
+                                "thinking": block.thinking,
+                                "signature": block.signature,
+                            })
+                        # else: silently drop — see docstring.
                     elif isinstance(block, dict):
                         native_content.append(block)
                     else:
@@ -243,8 +276,22 @@ class AnthropicProvider(LLMProvider):
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _cached_system(system: str) -> list[dict]:
-    """Wrap system prompt in a cacheable text block."""
+def _cached_system(system) -> list[dict]:
+    """Wrap system prompt for prompt-caching.
+
+    Accepts either:
+      - str: wraps the whole prompt in one ephemeral cache block (legacy path
+        — preserves the prior behavior for tests and providers that still
+        pass plain strings).
+      - list[dict]: assumed to already be a list of Anthropic system blocks,
+        each optionally carrying its own ``cache_control``. The caller is
+        responsible for marking cache breakpoints. We pass it through so the
+        agent loop can hit multi-tier caching (e.g. stable rules+tools as
+        one cached block, conditional knowledge as a second cached block,
+        volatile session context as an uncached tail).
+    """
+    if isinstance(system, list):
+        return system
     return [{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}]
 
 
@@ -266,10 +313,13 @@ def _to_response(msg) -> LLMResponse:
             content.append(ToolUseBlock(id=block.id, name=block.name, input=block.input))
         elif block.type == "thinking":
             # `block.thinking` holds the reasoning text for Anthropic
-            # extended-thinking. Defensive getattr in case the SDK ever
-            # renames the field.
+            # extended-thinking. `block.signature` is the cryptographic
+            # signature the API requires us to replay on the next turn
+            # whenever a tool_use block follows the thinking block.
+            # Defensive getattr in case the SDK ever renames the field.
             content.append(ThinkingBlock(
                 thinking=getattr(block, "thinking", "") or "",
+                signature=getattr(block, "signature", None),
             ))
     return LLMResponse(
         content=content,

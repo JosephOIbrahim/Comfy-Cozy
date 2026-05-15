@@ -14,7 +14,7 @@ import os
 import uuid
 from typing import Any, Callable
 
-from ._base import LLMProvider, _record_llm_metric
+from ._base import LLMProvider, _record_llm_metric, flatten_system as _flatten_system
 from ._types import (
     ImageBlock,
     LLMAuthError,
@@ -74,11 +74,12 @@ class GeminiProvider(LLMProvider):
         *,
         model: str,
         max_tokens: int,
-        system: str,
+        system,                                # str | list[dict]
         tools: list[dict],
         messages: list[dict],
         on_text: Callable[[str], None] | None = None,
         on_thinking: Callable[[str], None] | None = None,
+        thinking_budget: int = 0,              # unused; honored only by Anthropic
     ) -> LLMResponse:
         import time as _time
 
@@ -86,7 +87,7 @@ class GeminiProvider(LLMProvider):
         native_messages = self.convert_messages(messages)
 
         config = genai_types.GenerateContentConfig(
-            system_instruction=system,
+            system_instruction=_flatten_system(system),
             max_output_tokens=max_tokens,
             tools=native_tools or None,
         )
@@ -168,16 +169,17 @@ class GeminiProvider(LLMProvider):
         *,
         model: str,
         max_tokens: int,
-        system: str,
+        system,                                # str | list[dict]
         messages: list[dict],
         timeout: float | None = None,
+        thinking_budget: int = 0,              # unused; honored only by Anthropic
     ) -> LLMResponse:
         import time as _time
 
         native_messages = self.convert_messages(messages)
 
         config = genai_types.GenerateContentConfig(
-            system_instruction=system,
+            system_instruction=_flatten_system(system),
             max_output_tokens=max_tokens,
         )
 

@@ -292,3 +292,166 @@ def build_system_prompt(session_context: dict | None = None) -> str:
     parts.append(f"\n{_RULES}")
 
     return "\n".join(parts)
+
+
+def build_system_prompt_blocks(session_context: dict | None = None) -> list[dict]:
+    """Build the system prompt as a list of Anthropic system blocks with
+    explicit cache breakpoints.
+
+    Returns up to three blocks so the Anthropic provider can hit multi-tier
+    prompt caching:
+
+      Block 1 (cached, ephemeral): the *stable prefix* — identity, install
+        paths, always-loaded core knowledge (`comfyui_core.md`), and the
+        RULES + tool overview. These never change within a session; once
+        cached, every subsequent turn reads them from the cache.
+
+      Block 2 (cached, ephemeral): the *topical knowledge* — conditionally
+        loaded knowledge files matched by keyword/semantic triggers. Stable
+        as long as the user keeps working on the same topic; invalidated
+        cheaply when triggers shift.
+
+      Block 3 (uncached): the *volatile suffix* — session context, notes,
+        recommendations, last-output metadata. Changes turn-to-turn.
+
+    Returning a flat list means non-Anthropic providers can still flatten
+    this to a plain string (see agent/llm/_base.py::flatten_system).
+    """
+    # --- Block 1: stable prefix --------------------------------------------
+    stable_parts = [
+        "You are a ComfyUI co-pilot -- an expert that works alongside artists "
+        "to inspect, modify, and execute ComfyUI workflows. You are a doer, "
+        "not a describer. When an artist asks for a change, make the change -- "
+        "don't explain how they could make it themselves.\n",
+        "You have tools to query the live ComfyUI API, scan the local filesystem, "
+        "search for custom node packs and models in the ComfyUI Manager registry, "
+        "and search HuggingFace Hub for broader model discovery.\n",
+        f"ComfyUI installation: {COMFYUI_INSTALL_DIR}\n"
+        f"ComfyUI database: {COMFYUI_DATABASE}\n"
+        f"Custom nodes: {CUSTOM_NODES_DIR}\n"
+        f"Models: {MODELS_DIR}\n"
+        f"User workflows: {WORKFLOWS_DIR}\n"
+        f"ComfyUI blueprints: {COMFYUI_BLUEPRINTS_DIR}\n",
+    ]
+    if KNOWLEDGE_DIR.exists():
+        core_path = KNOWLEDGE_DIR / "comfyui_core.md"
+        if core_path.exists():
+            try:
+                stable_parts.append(
+                    f"\n--- comfyui_core ---\n{core_path.read_text(encoding='utf-8')}\n"
+                )
+            except Exception as _e:
+                log.debug("Could not read core knowledge: %s", _e)
+    stable_parts.append(f"\n{_RULES}")
+    stable_text = "\n".join(stable_parts)
+
+    blocks: list[dict] = [
+        {"type": "text", "text": stable_text, "cache_control": {"type": "ephemeral"}},
+    ]
+
+    # --- Block 2: topical knowledge (cached when present) ------------------
+    relevant_extras = _detect_relevant_knowledge(session_context)
+    if relevant_extras and KNOWLEDGE_DIR.exists():
+        topical_parts: list[str] = []
+        for md_file in sorted(KNOWLEDGE_DIR.glob("*.md")):
+            stem = md_file.stem
+            if stem == "comfyui_core" or stem not in relevant_extras:
+                continue
+            try:
+                topical_parts.append(
+                    f"\n--- {stem} ---\n{md_file.read_text(encoding='utf-8')}\n"
+                )
+            except Exception as _e:
+                log.debug("Could not read knowledge file %s: %s", md_file.name, _e)
+        if topical_parts:
+            blocks.append({
+                "type": "text",
+                "text": "\n".join(topical_parts),
+                "cache_control": {"type": "ephemeral"},
+            })
+
+    # --- Block 3: volatile suffix (uncached) -------------------------------
+    volatile_parts: list[str] = []
+    if session_context:
+        volatile_parts.append("\n--- Session Context ---")
+        session_name = session_context.get("name", "")
+        if session_name:
+            volatile_parts.append(f"Active session: {session_name}")
+
+        wf = session_context.get("workflow", {})
+        if wf.get("loaded_path"):
+            volatile_parts.append(
+                f"Loaded workflow: {wf['loaded_path']} "
+                f"(format: {wf.get('format', '?')})"
+            )
+            if wf.get("history_depth", 0) > 0:
+                volatile_parts.append(f"  Patches applied: {wf['history_depth']}")
+
+        notes = session_context.get("notes", [])
+        if notes:
+            volatile_parts.append("User preferences and notes from previous sessions:")
+            for note in notes[-10:]:
+                text = note.get("text", "") if isinstance(note, dict) else str(note)
+                volatile_parts.append(f"  - {text}")
+        volatile_parts.append("")
+
+    if session_context and session_context.get("name"):
+        try:
+            from .brain.memory import MemoryAgent
+            import json as _json
+            _mem = MemoryAgent()
+            recs_raw = _mem.handle("get_recommendations", {
+                "session": session_context["name"],
+            })
+            recs = _json.loads(recs_raw)
+            top_recs = [
+                r for r in recs.get("recommendations", [])
+                if r.get("confidence", 0) >= 0.7
+            ][:3]
+            if top_recs:
+                volatile_parts.append("\n--- Recommendations from Past Sessions ---")
+                for rec in top_recs:
+                    volatile_parts.append(
+                        f"  - [{rec.get('category', '?')}] "
+                        f"{rec.get('recommendation', '')}"
+                    )
+                volatile_parts.append("")
+        except Exception:
+            pass
+
+    if session_context and session_context.get("last_output_path"):
+        try:
+            from .tools import handle as _tools_handle
+            import json as _json
+            meta_raw = _tools_handle("reconstruct_context", {
+                "image_path": session_context["last_output_path"],
+            })
+            meta = _json.loads(meta_raw)
+            if meta.get("has_context"):
+                volatile_parts.append("\n--- Last Output Context ---")
+                volatile_parts.append(meta.get("summary", ""))
+                ctx = meta.get("context", {})
+                if ctx.get("intent"):
+                    volatile_parts.append(
+                        f"  Artist wanted: {ctx['intent'].get('what_artist_wanted', '')}"
+                    )
+                    volatile_parts.append(
+                        f"  Interpretation: {ctx['intent'].get('how_agent_interpreted', '')}"
+                    )
+                if ctx.get("session", {}).get("key_params"):
+                    kp = ctx["session"]["key_params"]
+                    volatile_parts.append(
+                        f"  Last params: {', '.join(f'{k}={v}' for k, v in sorted(kp.items()))}"
+                    )
+                volatile_parts.append("")
+        except Exception:
+            pass
+
+    if volatile_parts:
+        blocks.append({
+            "type": "text",
+            "text": "\n".join(volatile_parts),
+            # No cache_control — this block changes turn-to-turn.
+        })
+
+    return blocks

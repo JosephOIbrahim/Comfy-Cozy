@@ -226,11 +226,21 @@ Comfy Cozy is **provider-agnostic**. Same 113 tools, same streaming, same vision
 # .env
 ANTHROPIC_API_KEY=sk-ant-your-key-here
 
+# Optional overrides (defaults shown):
+#   AGENT_MODEL=claude-opus-4-7                  -- main loop
+#   FAST_MODEL=claude-haiku-4-5-20251001         -- low-stakes triage
+#   VISION_MODEL=claude-opus-4-7                 -- analyze/compare images
+#   THINKING_BUDGET=4000                         -- agent reasoning budget (tokens)
+#   VISION_THINKING_BUDGET=2000                  -- vision reasoning budget
+
 # Run
 agent run
 ```
 
-Ships as the default. No extra install. Supports prompt caching for lower costs on long sessions.
+Ships as the default with **Opus 4.7 + extended thinking + three-tier prompt caching**.
+The agent runs on Opus 4.7 with a 4K reasoning budget; vision analysis (`analyze_image`,
+`compare_outputs`, `suggest_improvements`) runs the same model with its own budget. Set
+`FAST_MODEL` if you want to route triage / classification tools to Haiku 4.5.
 
 ### OpenAI
 
@@ -303,6 +313,67 @@ graph LR
 ```
 
 Common types (`TextBlock`, `ToolUseBlock`, `LLMResponse`), unified error hierarchy, provider-specific format conversion handled internally. Switch providers with one env var -- no code changes. All 4 providers have dedicated test suites (132 tests) plus a parameterized conformance suite that verifies protocol compliance across providers. Every `stream()` and `create()` call is instrumented with `llm_call_total` and `llm_call_duration_seconds` metrics (per-provider labels).
+
+### Reasoning + caching (Opus 4.7)
+
+The Anthropic path uses two Opus-4.7-specific features the other providers ignore:
+
+1. **Extended thinking.** Every agent turn ships `thinking={"type": "enabled",
+   "budget_tokens": THINKING_BUDGET}`. The streamed `ThinkingBlock`s include a
+   cryptographic `signature`; we capture it and replay it on the next turn so
+   tool-use loops stay valid (without the signature, Anthropic 400s the next
+   request).
+2. **Three-tier system prompt.** `system_prompt.build_system_prompt_blocks()`
+   returns a list of cache blocks instead of one big string. Two blocks are
+   marked `cache_control: ephemeral`; the third (volatile session context) is
+   deliberately not cached. Combined with the last-tool cache pin, three of
+   Anthropic's four cache breakpoints stay hot across a session.
+
+```mermaid
+flowchart TB
+    classDef stable   fill:#1f2a44,stroke:#3b5bdb,color:#e9ecf5,stroke-width:1.2px
+    classDef volatile fill:#3d2b14,stroke:#d99458,color:#fde8cf,stroke-width:1.2px
+
+    subgraph SYS[" system prompt blocks "]
+        b1["<b>Block 1 · stable prefix</b><br/>identity · paths · RULES<br/>+ comfyui_core.md<br/><i>cache_control: ephemeral</i>"]
+        b2["<b>Block 2 · topical knowledge</b><br/>3d / flux / controlnet / video / ...<br/><i>cache_control: ephemeral</i>"]
+        b3["<b>Block 3 · session tail</b><br/>notes · recommendations<br/>last-output context<br/><i>uncached</i>"]
+    end
+
+    subgraph TOOLS[" tools[] "]
+        t1[tool 1]
+        t2[tool 2]
+        tN[... 100+ tools]
+        tL["<b>last tool</b><br/><i>cache_control: ephemeral</i>"]
+    end
+
+    subgraph LOOP[" agent turn loop "]
+        m1[messages · user input]
+        think["<b>ThinkingBlock</b><br/>thinking text<br/>+ signature ✓"]
+        tu[ToolUseBlock]
+        tr[ToolResultBlock]
+        api[(claude-opus-4-7<br/>thinking enabled)]
+    end
+
+    b1 --> api
+    b2 --> api
+    b3 --> api
+    t1 --> api
+    t2 --> api
+    tN --> api
+    tL --> api
+    m1 --> api
+    api --> think --> tu --> tr --> m1
+
+    class b1,b2,tL stable
+    class b3,t1,t2,tN,m1,think,tu,tr,api volatile
+```
+
+**Tone key.** Blue = blocks pinned in the prompt cache (the stable prefix, the
+topical knowledge, and the last-tool breakpoint). Amber = the per-turn volatile
+tail: session context, the message log, and the streaming agent loop itself.
+Signature-bearing `ThinkingBlock`s are replayed verbatim on each turn so the
+API accepts the next request.
 
 ---
 

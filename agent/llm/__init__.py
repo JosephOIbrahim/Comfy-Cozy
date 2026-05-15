@@ -50,9 +50,10 @@ __all__ = [
     "LLMAuthError",
 ]
 
-# Default models per provider — used when AGENT_MODEL is not explicitly set
+# Default models per provider — used when AGENT_MODEL is not explicitly set.
+# Mirrors _DEFAULT_AGENT_MODELS in agent/config.py; keep them in sync.
 DEFAULT_MODELS: dict[str, str] = {
-    "anthropic": "claude-sonnet-4-20250514",
+    "anthropic": "claude-opus-4-7",
     "openai": "gpt-4o",
     "gemini": "gemini-2.5-flash",
     "ollama": "llama3.1",
