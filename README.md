@@ -19,9 +19,9 @@ graph LR
     ComfyUI -->|image| Agent
     Agent -->|"Done. Lowered CFG to 5,<br/>switched to DPM++ 2M Karras.<br/>Here's your render."| You
 
-    style You fill:#0066FF,color:#fff
-    style Agent fill:#1e293b,color:#fff
-    style ComfyUI fill:#0066FF,color:#fff
+    style You fill:#d99458,color:#3d2b14
+    style Agent fill:#3d2b14,color:#fde8cf
+    style ComfyUI fill:#d99458,color:#3d2b14
 ```
 
 > **Session 1** is a capable tool.<br/>
@@ -77,10 +77,10 @@ flowchart LR
     B -->|10 sec| C["Paste key"]
     C -->|done| D(["agent run"])
 
-    style A fill:#1e293b,color:#fff
-    style B fill:#1e293b,color:#fff
-    style C fill:#1e293b,color:#fff
-    style D fill:#0066FF,color:#fff
+    style A fill:#3d2b14,color:#fde8cf
+    style B fill:#3d2b14,color:#fde8cf
+    style C fill:#3d2b14,color:#fde8cf
+    style D fill:#d99458,color:#3d2b14
 ```
 
 **Three prerequisites, four copy-paste steps. Under 2 minutes start to finish.**
@@ -204,9 +204,9 @@ graph LR
     P -->|"canvas sync (headless)"| Panel["panel/__init__.py"]
     U -->|"sidebar + chat"| UI["ui/__init__.py"]
 
-    style CN fill:#0066FF,color:#fff
-    style P fill:#1e293b,color:#fff
-    style U fill:#0066FF,color:#fff
+    style CN fill:#d99458,color:#3d2b14
+    style P fill:#3d2b14,color:#fde8cf
+    style U fill:#d99458,color:#3d2b14
 ```
 
 **Both symlinks are required:**
@@ -304,11 +304,11 @@ graph LR
     LLM -->|gemini| C["Gemini<br/>Function Decl."]
     LLM -->|ollama| D["Ollama<br/>Local + Private"]
 
-    style Agent fill:#1e293b,color:#fff
-    style A fill:#1e293b,color:#fff
-    style B fill:#0066FF,color:#fff
-    style C fill:#1e293b,color:#fff
-    style D fill:#0066FF,color:#fff
+    style Agent fill:#3d2b14,color:#fde8cf
+    style A fill:#3d2b14,color:#fde8cf
+    style B fill:#d99458,color:#3d2b14
+    style C fill:#3d2b14,color:#fde8cf
+    style D fill:#d99458,color:#3d2b14
 ```
 
 Common types (`TextBlock`, `ToolUseBlock`, `LLMResponse`), unified error hierarchy, provider-specific format conversion handled internally. Switch providers with one env var -- no code changes. All 4 providers have dedicated test suites (132 tests) plus a parameterized conformance suite that verifies protocol compliance across providers. Every `stream()` and `create()` call is instrumented with `llm_call_total` and `llm_call_duration_seconds` metrics (per-provider labels).
@@ -330,7 +330,7 @@ The Anthropic path uses two Opus-4.7-specific features the other providers ignor
 
 ```mermaid
 flowchart TB
-    classDef stable   fill:#1f2a44,stroke:#3b5bdb,color:#e9ecf5,stroke-width:1.2px
+    classDef stable   fill:#d99458,stroke:#3d2b14,color:#3d2b14,stroke-width:1.2px
     classDef volatile fill:#3d2b14,stroke:#d99458,color:#fde8cf,stroke-width:1.2px
 
     subgraph SYS[" system prompt blocks "]
@@ -487,10 +487,10 @@ graph TB
     Cog --> EXP
     Tools --> Sessions
 
-    style Browser fill:#1e293b,color:#F0F0F0,stroke:#0066FF
-    style Backend fill:#1e293b,color:#F0F0F0,stroke:#0066FF
-    style ComfyUI fill:#1e293b,color:#F0F0F0,stroke:#0066FF
-    style Disk fill:#1e293b,color:#F0F0F0,stroke:#0066FF
+    style Browser fill:#3d2b14,color:#fde8cf,stroke:#d99458
+    style Backend fill:#3d2b14,color:#fde8cf,stroke:#d99458
+    style ComfyUI fill:#3d2b14,color:#fde8cf,stroke:#d99458
+    style Disk fill:#3d2b14,color:#fde8cf,stroke:#d99458
 ```
 
 ```mermaid
@@ -502,11 +502,11 @@ graph LR
     Pilot --> Verify[VERIFY<br/>Did it work?]
     Verify -->|learn| Agent
 
-    style You fill:#0066FF,color:#fff
-    style Understand fill:#1e293b,color:#fff
-    style Discover fill:#1e293b,color:#fff
-    style Pilot fill:#1e293b,color:#fff
-    style Verify fill:#0066FF,color:#fff
+    style You fill:#d99458,color:#3d2b14
+    style Understand fill:#3d2b14,color:#fde8cf
+    style Discover fill:#3d2b14,color:#fde8cf
+    style Pilot fill:#3d2b14,color:#fde8cf
+    style Verify fill:#d99458,color:#3d2b14
 ```
 
 **Four phases, always in order:**
@@ -534,14 +534,14 @@ flowchart TD
     Check2 -->|Yes| Report["Report unfixable<br/>issue + ask"]
     Execute --> Done(["Done — image ready"])
 
-    style Run fill:#0066FF,color:#fff
-    style Validate fill:#1e293b,color:#fff
-    style Repair fill:#1e293b,color:#fff
-    style SetInput fill:#1e293b,color:#fff
-    style Discover fill:#1e293b,color:#fff
-    style Execute fill:#0066FF,color:#fff
-    style Done fill:#0066FF,color:#fff
-    style Report fill:#0066FF,color:#fff
+    style Run fill:#d99458,color:#3d2b14
+    style Validate fill:#3d2b14,color:#fde8cf
+    style Repair fill:#3d2b14,color:#fde8cf
+    style SetInput fill:#3d2b14,color:#fde8cf
+    style Discover fill:#3d2b14,color:#fde8cf
+    style Execute fill:#d99458,color:#3d2b14
+    style Done fill:#d99458,color:#3d2b14
+    style Report fill:#d99458,color:#3d2b14
 ```
 
 Every change is undoable. Every generation teaches the agent something. The agent is a doer, not a describer -- say "wire the model" and it wires the model. Say "repair this" and it finds the missing nodes, installs them, and validates. Say "run it" and it validates, fixes anything broken, then executes. No confirmation dialogs, no "would you like me to..." -- it acts, then tells you what it did.
@@ -559,13 +559,13 @@ flowchart LR
     Dispatch --> CB3["on_progress<br/>→ custom callback"]
     Dispatch --> WH["Webhook<br/>→ POST JSON to URL"]
 
-    style WS fill:#0066FF,color:#fff
-    style Parse fill:#1e293b,color:#fff
-    style Dispatch fill:#1e293b,color:#fff
-    style CB1 fill:#0066FF,color:#fff
-    style CB2 fill:#1e293b,color:#fff
-    style CB3 fill:#0066FF,color:#fff
-    style WH fill:#0066FF,color:#fff
+    style WS fill:#d99458,color:#3d2b14
+    style Parse fill:#3d2b14,color:#fde8cf
+    style Dispatch fill:#3d2b14,color:#fde8cf
+    style CB1 fill:#d99458,color:#3d2b14
+    style CB2 fill:#3d2b14,color:#fde8cf
+    style CB3 fill:#d99458,color:#3d2b14
+    style WH fill:#d99458,color:#3d2b14
 ```
 
 ```python
@@ -602,16 +602,16 @@ flowchart TD
     LEARN --> DONE(["Complete<br/>Experience recorded"])
     EVALUATE -->|"score < threshold<br/>retries remaining"| CB
 
-    style You fill:#0066FF,color:#fff
-    style GATE fill:#1e293b,color:#fff
-    style CB fill:#0066FF,color:#fff
-    style EXECUTE fill:#0066FF,color:#fff
-    style EVALUATE fill:#1e293b,color:#fff
-    style LEARN fill:#1e293b,color:#fff
-    style DONE fill:#0066FF,color:#fff
-    style STOP fill:#1e293b,color:#fff
-    style FAIL fill:#1e293b,color:#fff
-    style PROVISION fill:#1e293b,color:#fff
+    style You fill:#d99458,color:#3d2b14
+    style GATE fill:#3d2b14,color:#fde8cf
+    style CB fill:#d99458,color:#3d2b14
+    style EXECUTE fill:#d99458,color:#3d2b14
+    style EVALUATE fill:#3d2b14,color:#fde8cf
+    style LEARN fill:#3d2b14,color:#fde8cf
+    style DONE fill:#d99458,color:#3d2b14
+    style STOP fill:#3d2b14,color:#fde8cf
+    style FAIL fill:#3d2b14,color:#fde8cf
+    style PROVISION fill:#3d2b14,color:#fde8cf
 ```
 
 **Use from Python:**
@@ -650,8 +650,8 @@ graph LR
     JSONL -->|"load on startup"| C2
     S2 -->|"atomic save -- cumulative"| JSONL
 
-    style JSONL fill:#1e293b,color:#fff
-    style C2 fill:#0066FF,color:#fff
+    style JSONL fill:#3d2b14,color:#fde8cf
+    style C2 fill:#d99458,color:#3d2b14
 ```
 
 ---
@@ -681,9 +681,9 @@ graph TB
     Sidebar <--> Bridge
     Bridge <--> Canvas
 
-    style ComfyUI_App fill:#1e293b,color:#F0F0F0,stroke:#0066FF
-    style Sidebar fill:#1e293b,color:#F0F0F0,stroke:#0066FF
-    style Bridge fill:#1e293b,color:#F0F0F0,stroke:#0066FF
+    style ComfyUI_App fill:#3d2b14,color:#fde8cf,stroke:#d99458
+    style Sidebar fill:#3d2b14,color:#fde8cf,stroke:#d99458
+    style Bridge fill:#3d2b14,color:#fde8cf,stroke:#d99458
 ```
 
 **What you get:**
@@ -713,12 +713,12 @@ flowchart TD
     Size -->|"> 10 MB"| R413(["413 Too Large"])
     Size -->|"chunked -- no length"| R411(["411 Length Required"])
 
-    style R401 fill:#0066FF,color:#fff
-    style R429 fill:#1e293b,color:#fff
-    style R413 fill:#0066FF,color:#fff
-    style R411 fill:#1e293b,color:#fff
-    style Handler fill:#0066FF,color:#fff
-    style Guard fill:#1e293b,color:#fff
+    style R401 fill:#d99458,color:#3d2b14
+    style R429 fill:#3d2b14,color:#fde8cf
+    style R413 fill:#d99458,color:#3d2b14
+    style R411 fill:#3d2b14,color:#fde8cf
+    style Handler fill:#d99458,color:#3d2b14
+    style Guard fill:#3d2b14,color:#fde8cf
 ```
 
 ---
@@ -734,11 +734,11 @@ flowchart LR
     Verify --> Wire["Auto-Wire<br/>find loader -- set input"]
     Wire --> Ready["Ready to<br/>Queue"]
 
-    style Search fill:#1e293b,color:#fff
-    style Download fill:#1e293b,color:#fff
-    style Verify fill:#0066FF,color:#fff
-    style Wire fill:#1e293b,color:#fff
-    style Ready fill:#0066FF,color:#fff
+    style Search fill:#3d2b14,color:#fde8cf
+    style Download fill:#3d2b14,color:#fde8cf
+    style Verify fill:#d99458,color:#3d2b14
+    style Wire fill:#3d2b14,color:#fde8cf
+    style Ready fill:#d99458,color:#3d2b14
 ```
 
 **`provision_model`** -- one tool call that discovers, downloads, verifies compatibility, finds the right loader node in your workflow, and wires the model in.
@@ -772,9 +772,9 @@ graph TB
 
     Foundation --> Safety --> Integration
 
-    style Foundation fill:#1e293b,color:#F0F0F0,stroke:#0066FF
-    style Safety fill:#1e293b,color:#F0F0F0,stroke:#0066FF
-    style Integration fill:#1e293b,color:#F0F0F0,stroke:#0066FF
+    style Foundation fill:#3d2b14,color:#fde8cf,stroke:#d99458
+    style Safety fill:#3d2b14,color:#fde8cf,stroke:#d99458
+    style Integration fill:#3d2b14,color:#fde8cf,stroke:#d99458
 ```
 
 ### Workflow Intelligence DAG
@@ -788,9 +788,9 @@ graph LR
     O --> R[Risk<br/>SAFE to BLOCKED]
     R --> RD[Readiness<br/>go / no-go]
 
-    style C fill:#1e293b,color:#fff
-    style R fill:#0066FF,color:#fff
-    style RD fill:#0066FF,color:#fff
+    style C fill:#3d2b14,color:#fde8cf
+    style R fill:#d99458,color:#3d2b14
+    style RD fill:#d99458,color:#3d2b14
 ```
 
 ### Pre-Dispatch Safety Gate
@@ -815,12 +815,12 @@ flowchart LR
     OK -->|Yes| Go[Execute]
     OK -->|No| Stop[Denied + reason]
 
-    style Pass fill:#0066FF,color:#fff
-    style Go fill:#0066FF,color:#fff
-    style Stop fill:#0066FF,color:#fff
-    style Block fill:#0066FF,color:#fff
-    style Deny fill:#0066FF,color:#fff
-    style Escalate fill:#1e293b,color:#fff
+    style Pass fill:#d99458,color:#3d2b14
+    style Go fill:#d99458,color:#3d2b14
+    style Stop fill:#d99458,color:#3d2b14
+    style Block fill:#d99458,color:#3d2b14
+    style Deny fill:#d99458,color:#3d2b14
+    style Escalate fill:#3d2b14,color:#fde8cf
 ```
 
 ### Per-Connection Session Isolation (all 4 transports)
@@ -849,14 +849,14 @@ flowchart LR
     CT --> WS
     HY --> WS
 
-    style CV fill:#1e293b,color:#fff
-    style WP fill:#1e293b,color:#fff
-    style ST fill:#1e293b,color:#fff
-    style FT fill:#1e293b,color:#fff
-    style PV fill:#1e293b,color:#fff
-    style CT fill:#1e293b,color:#fff
-    style HY fill:#1e293b,color:#fff
-    style WS fill:#0066FF,color:#fff
+    style CV fill:#3d2b14,color:#fde8cf
+    style WP fill:#3d2b14,color:#fde8cf
+    style ST fill:#3d2b14,color:#fde8cf
+    style FT fill:#3d2b14,color:#fde8cf
+    style PV fill:#3d2b14,color:#fde8cf
+    style CT fill:#3d2b14,color:#fde8cf
+    style HY fill:#3d2b14,color:#fde8cf
+    style WS fill:#d99458,color:#3d2b14
 ```
 
 The same connection id is also installed as the per-thread correlation ID via `set_correlation_id`, so every log entry from a single conversation is greppable end-to-end. Parallel tool calls inside a single turn inherit the contextvar via `contextvars.copy_context()` per `ThreadPoolExecutor.submit()`. And `_save_and_exit()` (called on normal exit, atexit, or SIGTERM) self-sets the contextvar before saving so the user's named session never gets corrupted with empty default workflow state.
@@ -890,12 +890,12 @@ graph LR
     Stack -->|"sort weakest to strongest<br/>apply, preserve link arrays"| Resolved["Resolved WorkflowGraph"]
     Resolved -->|"to_api_json()"| Comfy["ComfyUI /prompt"]
 
-    style User fill:#0066FF,color:#fff
-    style WP fill:#1e293b,color:#fff
-    style CGE fill:#1e293b,color:#fff
-    style Stack fill:#1e293b,color:#fff
-    style Resolved fill:#0066FF,color:#fff
-    style Comfy fill:#0066FF,color:#fff
+    style User fill:#d99458,color:#3d2b14
+    style WP fill:#3d2b14,color:#fde8cf
+    style CGE fill:#3d2b14,color:#fde8cf
+    style Stack fill:#3d2b14,color:#fde8cf
+    style Resolved fill:#d99458,color:#3d2b14
+    style Comfy fill:#d99458,color:#3d2b14
 ```
 
 The `cognitive/` package is layered by phase -- the core engine (Phase 1) is fully tested at 54/54 adversarial cases. Phase 6 is complete: the autonomous pipeline is fully wired with real executor, template loading, rule-based evaluator, and experience persistence.
@@ -910,13 +910,13 @@ graph TB
     Cognitive --> Pipe["pipeline/<br/>autonomous -- create_default_pipeline<br/>Phase 6 complete"]
     Cognitive --> CogTools["tools/<br/>analyze -- compose -- execute<br/>(cycle 9 deleted 5 dead modules)"]
 
-    style Cognitive fill:#1e293b,color:#fff
-    style Core fill:#0066FF,color:#fff
-    style Exp fill:#1e293b,color:#fff
-    style Pred fill:#1e293b,color:#fff
-    style Trans fill:#0066FF,color:#fff
-    style Pipe fill:#0066FF,color:#fff
-    style CogTools fill:#1e293b,color:#fff
+    style Cognitive fill:#3d2b14,color:#fde8cf
+    style Core fill:#d99458,color:#3d2b14
+    style Exp fill:#3d2b14,color:#fde8cf
+    style Pred fill:#3d2b14,color:#fde8cf
+    style Trans fill:#d99458,color:#3d2b14
+    style Pipe fill:#d99458,color:#3d2b14
+    style CogTools fill:#3d2b14,color:#fde8cf
 ```
 
 Each delta layer carries its `creation_hash` (SHA-256 of `opinion + sorted-JSON mutations`). `verify_stack_integrity()` walks the stack and flags any layer whose `layer_hash` no longer matches its `creation_hash` -- making post-hoc tampering detectable. Link arrays (`["node_id", output_index]`) are preserved through every parse/mutate/serialize round-trip, which is the #1 failure mode in ComfyUI agents.
@@ -939,14 +939,14 @@ graph TB
     Track -->|content emitted + transient error| NoRetry["RAISE — don't retry<br/>(would duplicate text in UI)"]
     Track -->|no content + transient error| Retry["Retry with backoff<br/>RateLimit / Connection / 5xx"]
 
-    style Stream fill:#1e293b,color:#fff
-    style Track fill:#1e293b,color:#fff
-    style A fill:#0066FF,color:#fff
-    style O fill:#0066FF,color:#fff
-    style G fill:#0066FF,color:#fff
-    style OL fill:#0066FF,color:#fff
-    style NoRetry fill:#0066FF,color:#fff
-    style Retry fill:#0066FF,color:#fff
+    style Stream fill:#3d2b14,color:#fde8cf
+    style Track fill:#3d2b14,color:#fde8cf
+    style A fill:#d99458,color:#3d2b14
+    style O fill:#d99458,color:#3d2b14
+    style G fill:#d99458,color:#3d2b14
+    style OL fill:#d99458,color:#3d2b14
+    style NoRetry fill:#d99458,color:#3d2b14
+    style Retry fill:#d99458,color:#3d2b14
 ```
 
 **Cycle 20 — ThinkingBlock multi-turn bug.** When Claude 3.7+ or Claude 4 returns a `ThinkingBlock` in its response, the agent stores it in message history. On the next turn, `convert_messages` must translate that block back to the provider's native format. Before cycle 20, all 4 providers mishandled it: Anthropic sent the raw Python dataclass to the API (400 error), OpenAI silently dropped it, Gemini converted `str(ThinkingBlock(...))` to user-visible text, and Ollama sent raw objects. Fix: all providers now skip ThinkingBlock in convert_messages (the API requires a signature field we don't capture; thinking content is already delivered via the streaming `on_thinking` callback).
@@ -964,12 +964,12 @@ graph LR
     Skip --> Safe["API receives only<br/>valid native blocks"]
     Keep --> Safe
 
-    style LLM fill:#1e293b,color:#fff
-    style Store fill:#1e293b,color:#fff
-    style Replay fill:#0066FF,color:#fff
-    style Skip fill:#0066FF,color:#fff
-    style Keep fill:#0066FF,color:#fff
-    style Safe fill:#0066FF,color:#fff
+    style LLM fill:#3d2b14,color:#fde8cf
+    style Store fill:#3d2b14,color:#fde8cf
+    style Replay fill:#d99458,color:#3d2b14
+    style Skip fill:#d99458,color:#3d2b14
+    style Keep fill:#d99458,color:#3d2b14
+    style Safe fill:#d99458,color:#3d2b14
 ```
 
 The retry tracker pattern is the key insight: an `on_text("Hello ")` followed by a transient `LLMRateLimitError` USED TO retry from scratch, calling `on_text("Hello ")` again, then `on_text("world!")` — the user saw `"Hello Hello world!"` in the UI. After cycle 7, any error fired AFTER content was emitted raises immediately instead of retrying. Tested across all 4 providers via `tests/test_main.py::TestStreamRetryDuplication` + provider-specific regression tests.
@@ -1002,9 +1002,9 @@ flowchart LR
     TFIDF --> Merge["Union results"]
     Merge --> Done
 
-    style KW fill:#1e293b,color:#fff
-    style TFIDF fill:#1e293b,color:#fff
-    style Done fill:#0066FF,color:#fff
+    style KW fill:#3d2b14,color:#fde8cf
+    style TFIDF fill:#3d2b14,color:#fde8cf
+    style Done fill:#d99458,color:#3d2b14
 ```
 
 ### Tool Inventory
@@ -1037,14 +1037,14 @@ flowchart LR
     Patch -->|Undo| Validate
     Check -->|Iterate| Patch
 
-    style Load fill:#1e293b,color:#fff
-    style Repair fill:#1e293b,color:#fff
-    style Fix fill:#1e293b,color:#fff
-    style Analyze fill:#1e293b,color:#fff
-    style Gate fill:#0066FF,color:#fff
-    style Run fill:#0066FF,color:#fff
-    style Check fill:#0066FF,color:#fff
-    style Learn fill:#1e293b,color:#fff
+    style Load fill:#3d2b14,color:#fde8cf
+    style Repair fill:#3d2b14,color:#fde8cf
+    style Fix fill:#3d2b14,color:#fde8cf
+    style Analyze fill:#3d2b14,color:#fde8cf
+    style Gate fill:#d99458,color:#3d2b14
+    style Run fill:#d99458,color:#3d2b14
+    style Check fill:#d99458,color:#3d2b14
+    style Learn fill:#3d2b14,color:#fde8cf
 ```
 
 ### Project Structure
@@ -1121,10 +1121,10 @@ graph TB
         D1 --> D2 --> D3
     end
 
-    style Sec fill:#1e293b,color:#F0F0F0,stroke:#0066FF
-    style Atom fill:#1e293b,color:#F0F0F0,stroke:#0066FF
-    style Resil fill:#1e293b,color:#F0F0F0,stroke:#0066FF
-    style Obs fill:#1e293b,color:#F0F0F0,stroke:#0066FF
+    style Sec fill:#3d2b14,color:#fde8cf,stroke:#d99458
+    style Atom fill:#3d2b14,color:#fde8cf,stroke:#d99458
+    style Resil fill:#3d2b14,color:#fde8cf,stroke:#d99458
+    style Obs fill:#3d2b14,color:#fde8cf,stroke:#d99458
 ```
 
 </details>
