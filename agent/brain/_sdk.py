@@ -54,6 +54,19 @@ def _null_limiter_factory() -> _NullLimiter:
     return _NULL_LIMITER
 
 
+def _default_agent_model() -> str:
+    """Read AGENT_MODEL from agent.config when available; fall back to the
+    Anthropic-tier literal for true standalone construction (no agent.*
+    import path). The literal is the only place outside agent.config
+    that hard-codes the model name — kept here because pure-standalone
+    BrainConfig() has no canonical source to read from."""
+    try:
+        from ..config import AGENT_MODEL
+        return AGENT_MODEL
+    except ImportError:
+        return "claude-opus-4-7"
+
+
 # ---------------------------------------------------------------------------
 # BrainConfig — dependency injection container
 # ---------------------------------------------------------------------------
@@ -73,7 +86,7 @@ class BrainConfig:
     comfyui_url: str = "http://127.0.0.1:8188"
     custom_nodes_dir: Path = field(default_factory=lambda: Path("./Custom_Nodes"))
     models_dir: Path = field(default_factory=lambda: Path("./models"))
-    agent_model: str = "claude-opus-4-7"
+    agent_model: str = field(default_factory=_default_agent_model)
     # Optional separate model for image analysis. If None, vision tools fall back
     # to agent_model. Wired from VISION_MODEL env (see config.py).
     vision_model: str | None = None
