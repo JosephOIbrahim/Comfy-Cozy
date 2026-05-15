@@ -59,7 +59,7 @@ ruff format agent/ tests/                  # Format
 14. Never generate entire workflows from scratch. Make surgical, validated modifications.
 15. Every patch is validated before application. No exceptions.
 
-## Tool Overview (~103 tools: ~53 intelligence + ~27 brain + ~23 stage)
+## Tool Overview (113 dispatched tools: 64 intelligence + 22 stage via `_HANDLERS`; 27 brain via `_BRAIN_TOOL_NAMES` (BrainAgent SDK auto-register))
 
 | Category | Tools |
 |----------|-------|
@@ -288,9 +288,9 @@ When a prompt explicitly grants session-level git authorization, the agent may r
 [TEST] Add fixture for SDXL + ControlNet + IP-Adapter workflow
 ```
 
-## Current TODO (Phase 7)
+## Current TODO (Phase 7 / Cozy)
 
-Phase 6 complete. All 8 items verified passing (3579 tests, 30 pipeline tests).
+Phase 6 complete. Cozy persistence + harness shipped (4150+ tests passing).
 
 **Completed (Phase 6 — archived):**
 - ~~test_health.py mock leak~~ — fixed (6/6 passing)
@@ -302,11 +302,77 @@ Phase 6 complete. All 8 items verified passing (3579 tests, 30 pipeline tests).
 - ~~Post-COMPOSE diagnostic~~ — `analyze_workflow` warns on zero-node workflows
 - ~~`create_default_pipeline()`~~ — bootstrap factory in `cognitive/pipeline/__init__.py`
 
+**Completed (Cozy — see `.claude/COZY_CONSTITUTION.md`):**
+- ~~Stage persistence~~ — `STAGE_DEFAULT_PATH` cold-load + autosave timer + MCP atexit
+- ~~Lazy experience-loop wiring~~ — `STAGE_AUTOLOAD_EXPERIENCE` invokes `create_default_pipeline()` on `ensure_stage()`
+- ~~MCP resource support~~ — `stage://workflows`, `stage://experience`, `stage://agents`, `stage://scenes` exposed in `agent/mcp_server.py`
+- ~~Stage event surface~~ — `CognitiveWorkflowStage.subscribe(callback)` registry; daemon-thread fan-out; failures isolated from writers
+- ~~SCRIBE specialist~~ — chain terminator per Article II of the Cozy Constitution
+- ~~Two new commandments~~ — `persistence_durability` (post-check), `self_healing_ladder` (classifier)
+- ~~Long-running harness~~ — `agent/harness/cozy_loop.py` with checkpointing, self-healing ladder, optional `repair_fn` and MetaAgent Tier-1 dial integration
+- ~~Moneta reference adapter~~ — `agent/integrations/moneta.py` bidirectional file-watch transport (placeholder for Moneta API)
+- ~~Cozy MoE subagents~~ — `.claude/agents/cozy-{scout,architect,provisioner,forge,crucible,vision,scribe}.md`
+
 **Phase 7 — Next:**
 1. Vision-based evaluator — replace rule-based 0.7/0.1 with `analyze_image` scoring
 2. Auto-retry loop — re-COMPOSE when `quality.overall < threshold` (stub exists in pipeline)
-3. MCP resource support — expose workflow state as MCP resources
-4. Integration test harness — `@pytest.mark.integration` for live ComfyUI tests
+3. Integration test harness — `@pytest.mark.integration` for live ComfyUI tests
+4. Real Moneta wire format — replace file-watch transport in `agent/integrations/moneta.py` with HTTP/RPC once API contract lands
+
+## Cozy Environment Variables
+
+```bash
+STAGE_DEFAULT_PATH=/path/to/stage.usda     # cold-load + flush target; "" = in-memory
+STAGE_AUTOSAVE_SECONDS=300                 # daemon Timer interval; 0 disables
+STAGE_AUTOLOAD_EXPERIENCE=true             # wires the cognitive ExperienceAccumulator
+MONETA_OUTBOX_DIR=/path/to/moneta/outbox   # enables the Moneta reference adapter
+MONETA_INBOX_DIR=/path/to/moneta/inbox     # optional; enables bidirectional ingest
+MONETA_POLL_SECONDS=2.0                    # inbox poll interval
+```
+
+## Cozy Autonomous Harness
+
+```bash
+# Smoke test the harness loop without ComfyUI (synthetic scores)
+agent autonomous --execute-mode dry-run --hours 0.001 --max-experiments 5
+
+# Real run against ComfyUI (mutates a workflow's steps/cfg/seed each iter)
+agent autonomous --execute-mode real --workflow path/to/wf.json \
+                 --hours 24 --max-experiments 1000 --session cozy_run
+
+# Default mode (mock) — harness errors at first iteration unless callbacks
+# are injected programmatically. Used by Python tests, not for live runs.
+agent autonomous --hours 24
+```
+
+Execute modes:
+- `mock` (default) — no callbacks; harness raises at first iteration.
+- `dry-run` — real proposal cycle (steps/cfg/seed); synthetic axis scores;
+  no ComfyUI contact.
+- `real` — requires `--workflow PATH`; loads the workflow once, applies
+  RFC6902 patches per iteration, executes via `execute_with_progress`,
+  derives axis scores from `{status, total_time_s, outputs}`. Failures
+  return zero scores so the ratchet rejects the experiment without
+  halting; the circuit breaker's TRANSIENT classification keeps the
+  harness retrying.
+
+Per-iteration checkpoint to `STAGE_DEFAULT_PATH`. Halts only on TERMINAL
+(constitution-violation / disk-full / repeated-RECOVERABLE>3) or budget
+exhaustion. Writes `BLOCKER.md` on TERMINAL halt. See
+`.claude/COZY_CONSTITUTION.md` Article III for the bounded-failure ladder.
+
+## Integration tests (opt-in)
+
+```bash
+# 1k-iteration soak validating no thread/FD leaks under sustained load
+python -m pytest tests/integration/test_cozy_soak.py -v
+# Bidirectional Moneta round-trip via subprocess fake consumer
+python -m pytest tests/integration/test_moneta_e2e.py -v
+```
+
+Both are marked `@pytest.mark.integration`, deselected by default. Run
+manually before shipping changes that touch persistence, dispatchers,
+or the Moneta adapter.
 
 ## Non-Goals
 

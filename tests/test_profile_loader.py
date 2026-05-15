@@ -208,11 +208,21 @@ class TestLoadProfile:
         assert meta["base_arch"] == "unknown"
         assert meta["modality"] == "image"
 
-    def test_returns_deep_copy(self):
-        """Mutating the returned profile must not affect the cache."""
+    def test_returns_frozen_view(self):
+        """The returned profile is recursively read-only.
+
+        Pre-MoE-R1 contract: 'deep copy so callers can mutate freely' —
+        but the deepcopy fired on every cache hit (O(W)) negating the
+        cache. New contract: return a recursive MappingProxyType view;
+        mutation raises TypeError at the call site, surfacing the bug
+        instead of silently corrupting other consumers.
+        """
+        import pytest as _pytest
         from agent.profiles import load_profile
         p1 = load_profile("flux1-dev")
-        p1["meta"]["model_id"] = "MUTATED"
+        with _pytest.raises(TypeError):
+            p1["meta"]["model_id"] = "MUTATED"
+        # Cache integrity is structurally guaranteed (immutable views)
         p2 = load_profile("flux1-dev")
         assert p2["meta"]["model_id"] == "flux1-dev"
 
@@ -230,12 +240,17 @@ class TestCaching:
         p2 = load_profile("flux1-dev")
         assert p1 == p2
 
-    def test_cache_returns_different_objects(self):
-        """Deep copy means different object identity."""
+    def test_cache_returns_same_object(self):
+        """Post-MoE-R1: cache returns the SAME frozen view across calls.
+
+        That's the whole point of the cache — repeat lookups are O(1) by
+        sharing one immutable view. The previous test asserted the
+        opposite (`assert p1 is not p2`) because of the per-hit deepcopy;
+        deleting that deepcopy is the entire optimization."""
         from agent.profiles import load_profile
         p1 = load_profile("flux1-dev")
         p2 = load_profile("flux1-dev")
-        assert p1 is not p2
+        assert p1 is p2
 
     def test_clear_cache(self):
         from agent.profiles import load_profile
@@ -301,11 +316,12 @@ class TestAccessors:
         assert is_fallback("completely_unknown_model_qqq")
 
     def test_accessors_return_empty_for_unknown(self):
-        """Accessors on minimal-default profiles should return dicts, not crash."""
+        """Accessors on minimal-default profiles return mapping views, not crash."""
+        from collections.abc import Mapping
         from agent.profiles import get_intent_section, get_parameter_section, get_quality_section
-        assert isinstance(get_intent_section("unknown_xyz"), dict)
-        assert isinstance(get_parameter_section("unknown_xyz"), dict)
-        assert isinstance(get_quality_section("unknown_xyz"), dict)
+        assert isinstance(get_intent_section("unknown_xyz"), Mapping)
+        assert isinstance(get_parameter_section("unknown_xyz"), Mapping)
+        assert isinstance(get_quality_section("unknown_xyz"), Mapping)
 
 
 # ---------------------------------------------------------------------------
@@ -355,37 +371,41 @@ class TestFallbackYAMLProfiles:
     """
 
     def test_default_dit_fallback_loads(self):
-        from agent.profiles.loader import PROFILES_DIR
         from agent.profiles import load_profile
-        path = PROFILES_DIR / "default_dit.yaml"
-        if not path.is_file():
-            pytest.skip("default_dit.yaml not yet created")
+        # default_dit.yaml is required infrastructure (lives at
+        # agent/profiles/default_dit.yaml). Earlier this test had a
+        # `pytest.skip` guard from when the file didn't exist; deleted
+        # because the guard is now unreachable AND silently weakened the
+        # signal if someone later removed the file.
         profile = load_profile("some_unknown_dit_model")
         assert profile["meta"]["_is_fallback"] is True
         assert profile["meta"]["model_id"] == "some_unknown_dit_model"
 
     def test_default_unet_fallback_loads(self):
-        from agent.profiles.loader import PROFILES_DIR
         from agent.profiles import load_profile
-        path = PROFILES_DIR / "default_unet.yaml"
-        if not path.is_file():
-            pytest.skip("default_unet.yaml not yet created")
+        # default_unet.yaml is required infrastructure; see comment on
+        # test_default_dit_fallback_loads above.
         profile = load_profile("some_unknown_unet_model")
         assert profile["meta"]["_is_fallback"] is True
         assert profile["meta"]["model_id"] == "some_unknown_unet_model"
 
     def test_fallback_profiles_have_all_consumer_sections(self):
-        """Any fallback YAML that exists must have all three consumer sections."""
+        """All three fallback YAMLs must have all three consumer sections.
+
+        Earlier this test had `if not path.is_file(): continue` plus a
+        `pytest.skip("No fallback YAML files exist yet")` fallback to
+        accommodate partial completion. All three files now exist as
+        required infrastructure; the conditional `continue` would
+        silently weaken the assertion if someone removed one. Strict
+        check is correct.
+        """
         from agent.profiles.loader import PROFILES_DIR, _load_yaml
-        found_any = False
         for name in ("default_dit", "default_unet", "default_video"):
             path = PROFILES_DIR / f"{name}.yaml"
-            if not path.is_file():
-                continue
-            found_any = True
+            assert path.is_file(), (
+                f"required fallback profile {name}.yaml is missing"
+            )
             data = _load_yaml(path)
             assert "prompt_engineering" in data, f"{name}.yaml missing prompt_engineering"
             assert "parameter_space" in data, f"{name}.yaml missing parameter_space"
             assert "quality_signatures" in data, f"{name}.yaml missing quality_signatures"
-        if not found_any:
-            pytest.skip("No fallback YAML files exist yet")

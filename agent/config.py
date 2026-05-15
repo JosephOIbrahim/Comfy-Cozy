@@ -19,21 +19,40 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1")
 
-# Validate ANTHROPIC_API_KEY — warn if missing when provider is anthropic. (Cycle 35 fix)
-if LLM_PROVIDER == "anthropic" and not ANTHROPIC_API_KEY:
-    print(
-        "WARNING: ANTHROPIC_API_KEY is not set. "
-        "Set it in your .env file or environment. "
-        "Get your key at https://console.anthropic.com/",
-        file=sys.stderr,
-    )
-# Validate Anthropic key format (warn, don't block — key may be valid in other formats)
-elif ANTHROPIC_API_KEY and not re.match(r"^sk-ant-", ANTHROPIC_API_KEY):
-    print(
-        "WARNING: ANTHROPIC_API_KEY doesn't match expected format (sk-ant-...). "
-        "Verify your key at https://console.anthropic.com/",
-        file=sys.stderr,
-    )
+# API-key validation is deferred to a callable (T5 from the 5x review).
+# Pre-fix this printed at import time, leaking the warning into every
+# `agent --help`, `agent inspect`, etc. — confusing because those
+# commands don't need an API key. Callers who DO need the LLM call
+# `warn_on_missing_api_key()` explicitly at their entry point.
+_api_key_warn_emitted = False
+
+
+def warn_on_missing_api_key() -> None:
+    """Emit the API-key-missing warning once per process, IF needed.
+
+    Idempotent: only emits on first call. Safe to call from any command
+    that requires the LLM. Commands that DON'T need the LLM (--help,
+    inspect, parse, autonomous --execute-mode {mock,dry-run}) should
+    NOT call this.
+    """
+    global _api_key_warn_emitted
+    if _api_key_warn_emitted:
+        return
+    _api_key_warn_emitted = True
+    if LLM_PROVIDER == "anthropic" and not ANTHROPIC_API_KEY:
+        print(
+            "WARNING: ANTHROPIC_API_KEY is not set. "
+            "Set it in your .env file or environment. "
+            "Get your key at https://console.anthropic.com/",
+            file=sys.stderr,
+        )
+    # Validate format (warn, don't block — key may be valid in other formats)
+    elif ANTHROPIC_API_KEY and not re.match(r"^sk-ant-", ANTHROPIC_API_KEY):
+        print(
+            "WARNING: ANTHROPIC_API_KEY doesn't match expected format (sk-ant-...). "
+            "Verify your key at https://console.anthropic.com/",
+            file=sys.stderr,
+        )
 
 # MCP auth token (optional — for future HTTP/SSE transport auth)
 MCP_AUTH_TOKEN = os.getenv("MCP_AUTH_TOKEN")
@@ -186,6 +205,17 @@ AUTO_SCAN_MODELS = os.getenv("AUTO_SCAN_MODELS", "false").lower() == "true"
 AUTO_SCAN_WORKFLOWS = os.getenv("AUTO_SCAN_WORKFLOWS", "false").lower() == "true"
 AUTO_LOAD_WORKFLOW = os.getenv("AUTO_LOAD_WORKFLOW", "")
 AUTO_LOAD_SESSION = os.getenv("AUTO_LOAD_SESSION", "")
+
+# Stage persistence — durable USD checkpoint across sessions.
+# STAGE_DEFAULT_PATH: if set, ensure_stage() loads from this .usda file on cold
+# start and uses it as the default flush target. Empty string = in-memory only.
+STAGE_DEFAULT_PATH = os.getenv("STAGE_DEFAULT_PATH", "")
+# STAGE_AUTOSAVE_SECONDS: interval for the daemon flush timer. 0 disables.
+STAGE_AUTOSAVE_SECONDS = int(os.getenv("STAGE_AUTOSAVE_SECONDS", "300"))
+# STAGE_AUTOLOAD_EXPERIENCE: when "true", the cognitive ExperienceAccumulator
+# is loaded from EXPERIENCE_FILE on first ensure_stage(). Wires the dormant
+# create_default_pipeline() into the live runtime.
+STAGE_AUTOLOAD_EXPERIENCE = os.getenv("STAGE_AUTOLOAD_EXPERIENCE", "false").lower() == "true"
 
 # Project paths
 PROJECT_DIR = Path(__file__).parent.parent

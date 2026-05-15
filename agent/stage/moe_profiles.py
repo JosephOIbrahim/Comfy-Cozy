@@ -1,4 +1,4 @@
-"""MoE Agent Profiles — 6 specialist roles for the agentic ecosystem.
+"""MoE Agent Profiles — 7 specialist roles for the agentic ecosystem.
 
 Each profile defines:
   - name: Role identifier
@@ -252,6 +252,37 @@ VISION = AgentProfile(
     handoff_artifact_type="quality_report",
 )
 
+SCRIBE = AgentProfile(
+    name="scribe",
+    system_prompt_fragment=(
+        "You are the Scribe. Persist state, checkpoint progress, and "
+        "record experience. You are the chain terminator: every full chain "
+        "ends with you flushing the stage and saving the session. "
+        "You persist but never modify workflows, execute, or judge."
+    ),
+    allowed_tools=(
+        "save_session", "load_session", "list_sessions", "add_note",
+        "record_experience", "get_experience_stats",
+        "stage_read", "stage_list_deltas", "stage_reconstruct_clean",
+    ),
+    authority_rules={
+        "owns": [
+            "stage_persistence",
+            "session_checkpoint",
+            "experience_recording",
+            "durability_attestation",
+        ],
+        "cannot": [
+            "modify_workflow",
+            "execute_workflow",
+            "judge_quality",
+            "translate_intent",
+            "provision_models",
+        ],
+    },
+    handoff_artifact_type="persistence_receipt",
+)
+
 # ---------------------------------------------------------------------------
 # Registry
 # ---------------------------------------------------------------------------
@@ -263,13 +294,16 @@ ALL_PROFILES: dict[str, AgentProfile] = {
     "forge": FORGE,
     "crucible": CRUCIBLE,
     "vision": VISION,
+    "scribe": SCRIBE,
 }
 
 PROFILE_NAMES: tuple[str, ...] = tuple(ALL_PROFILES.keys())
 
-# Default chain order for full pipeline
+# Default chain order for full pipeline. SCRIBE is always last per Article II
+# of the Cozy Constitution: every state-changing chain MUST end in a flush.
 DEFAULT_CHAIN: tuple[str, ...] = (
     "scout", "architect", "provisioner", "forge", "crucible", "vision",
+    "scribe",
 )
 
 

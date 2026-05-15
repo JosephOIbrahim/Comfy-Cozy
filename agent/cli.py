@@ -80,7 +80,13 @@ def run(
         help="Show debug logging (API timing, tool execution, context management)",
     ),
 ):
-    """Start an interactive agent session."""
+    """Start an interactive agent session.
+
+    Examples:
+      agent run                       # ephemeral session, no memory
+      agent run --session portrait    # named session, remembers across calls
+      agent run -v                    # verbose: API timing + tool tracing
+    """
     # Configure logging
     setup_logging(
         level=logging.DEBUG if verbose else logging.WARNING,
@@ -215,7 +221,14 @@ def run(
 
 @app.command()
 def inspect():
-    """Quick summary of the local ComfyUI installation."""
+    """Quick summary of the local ComfyUI installation.
+
+    Reports installed models (counts by family), custom node packs, and
+    a check for whether ComfyUI itself is reachable. No API key needed.
+
+    Examples:
+      agent inspect                   # full summary
+    """
     console.print("[bold]ComfyUI Installation Summary[/bold]\n")
 
     # Models summary
@@ -253,7 +266,16 @@ def inspect():
 def parse(
     workflow: str = typer.Argument(..., help="Path to workflow JSON file"),
 ):
-    """Analyze a ComfyUI workflow file."""
+    """Analyze a ComfyUI workflow file.
+
+    Reports node count, format detection (API / UI+API / UI-only),
+    sampler parameters, and any deprecation warnings. Read-only —
+    never modifies the file.
+
+    Examples:
+      agent parse my_workflow.json
+      agent parse ~/Downloads/sdxl_portrait.json
+    """
     from pathlib import Path
 
     path = Path(workflow)
@@ -346,7 +368,15 @@ def parse(
 
 @app.command()
 def sessions():
-    """List saved agent sessions."""
+    """List saved agent sessions.
+
+    Sessions are created when you pass `--session NAME` to
+    `agent run`. They persist memory, ratchet history, and learned
+    parameter preferences across invocations.
+
+    Examples:
+      agent sessions                  # list all saved sessions
+    """
     result = json.loads(session_tools.handle("list_sessions", {}))
     if result["count"] == 0:
         console.print("[dim]No saved sessions. Use --session NAME with 'run' to create one.[/dim]")
@@ -385,7 +415,19 @@ def search(
         help="Filter models by type (checkpoint, lora, vae, controlnet)",
     ),
 ):
-    """Search for custom nodes or models."""
+    """Search for custom nodes or models.
+
+    Searches the local ComfyUI Manager registry by default. Use --hf to
+    search HuggingFace, --type to filter by model kind. No API key needed
+    for local registry.
+
+    Examples:
+      agent search "flux dev"                  # local registry, all categories
+      agent search "ipadapter" --nodes         # only custom node packs
+      agent search "sdxl" --models             # only models
+      agent search "lora" --models --type lora # only LoRA models
+      agent search "flux" --hf                 # HuggingFace search
+    """
     # Build discover params
     params: dict = {"query": query}
 
@@ -457,6 +499,12 @@ def orchestrate(
 
     Loads a workflow, validates it against ComfyUI, executes it, and
     verifies the output. Results are saved to the session if provided.
+
+    Examples:
+      agent orchestrate workflow.json
+      agent orchestrate workflow.json --session daily_render
+      agent orchestrate workflow.json --auto-repair       # install missing nodes
+      agent orchestrate workflow.json -v                  # verbose tracing
     """
     from pathlib import Path
 
@@ -639,6 +687,12 @@ def autoresearch(
     With --program: runs the FORESIGHT autoresearch pipeline — loads the
     program spec, initializes the ratchet with CWM+experience+arbiter,
     runs experiments, generates counterfactuals, and produces a morning report.
+
+    Examples:
+      agent autoresearch "flux dev"                       # discovery search
+      agent autoresearch "sdxl realistic" --provision     # discover + queue downloads
+      agent autoresearch --program research.md            # FORESIGHT pipeline run
+      agent autoresearch --program research.md --hours 8  # bounded experiment budget
     """
     setup_logging(
         level=logging.DEBUG if verbose else logging.WARNING,
@@ -765,12 +819,188 @@ def autoresearch(
 
 
 @app.command()
+def autonomous(
+    hours: float = typer.Option(
+        24.0, "--hours", "-h",
+        help="Maximum runtime in hours.",
+    ),
+    max_experiments: int = typer.Option(
+        1000, "--max-experiments",
+        help="Maximum number of experiments before halting.",
+    ),
+    program: str = typer.Option(
+        None, "--program",
+        help="Path to a program.md file for the autoresearch driver.",
+    ),
+    workflow: str = typer.Option(
+        None, "--workflow", "-w",
+        help=(
+            "Path to a workflow JSON. Required for --execute-mode real; "
+            "ignored otherwise."
+        ),
+    ),
+    execute_mode: str = typer.Option(
+        "dry-run", "--execute-mode",
+        help=(
+            "Execution dispatch: 'dry-run' (real proposals + synthetic "
+            "scores; no ComfyUI; the default — useful for smoke-testing "
+            "the harness loop offline), 'real' (requires --workflow; "
+            "mutates and executes against ComfyUI; failures degrade to "
+            "zero scores so the ratchet rejects without halting), 'mock' "
+            "(no callbacks; AutoresearchRunner falls back to neutral "
+            "scores every iteration — for harness-internals testing only)."
+        ),
+    ),
+    checkpoint_path: str = typer.Option(
+        None, "--checkpoint",
+        help="Override STAGE_DEFAULT_PATH for this run's checkpoint target.",
+    ),
+    checkpoint_every_seconds: float = typer.Option(
+        300.0, "--checkpoint-every-seconds",
+        help="Time-based checkpoint interval (also flushes every N iterations).",
+    ),
+    session_name: str = typer.Option(
+        "cozy_autonomous", "--session",
+        help="Session name for ratchet/experience persistence.",
+    ),
+    resume: bool = typer.Option(
+        False, "--resume",
+        help="Resume from a previously checkpointed session.",
+    ),
+):
+    """Run the long-running self-healing harness (Cozy Constitution).
+
+    Wraps AutoresearchRunner with the self_healing_ladder classifier,
+    checkpoints the stage on every iteration boundary, and only halts on
+    TERMINAL classifications. See .claude/COZY_CONSTITUTION.md for doctrine.
+    """
+    from rich.console import Console
+    console = Console()
+
+    if execute_mode not in ("mock", "dry-run", "real"):
+        console.print(
+            f"[red]Invalid --execute-mode: {execute_mode!r}. "
+            f"Choose one of: mock, dry-run, real.[/red]"
+        )
+        raise typer.Exit(code=2)
+    if execute_mode == "real" and not workflow:
+        console.print(
+            "[red]--execute-mode real requires --workflow PATH.[/red]"
+        )
+        raise typer.Exit(code=2)
+
+    # T6 from the 5x review: path-validate user-supplied paths before they
+    # flow into the harness. validate_path() blocks traversal outside the
+    # configured sandbox dirs (COMFYUI_DATABASE etc., plus tempdir for
+    # pytest). Returns an error string if rejected, None if accepted.
+    from .tools._util import validate_path
+    if workflow:
+        err = validate_path(workflow)
+        if err:
+            console.print(f"[red]--workflow path rejected: {err}[/red]")
+            raise typer.Exit(code=2)
+    if checkpoint_path:
+        err = validate_path(checkpoint_path)
+        if err:
+            console.print(f"[red]--checkpoint path rejected: {err}[/red]")
+            raise typer.Exit(code=2)
+
+    from .harness import (
+        CozyLoop, CozyLoopConfig,
+        make_execute_fn, make_propose_fn,
+    )
+    from .session_context import get_session_context
+
+    ctx = get_session_context(session_name)
+    cws = ctx.ensure_stage()
+    if cws is None:
+        console.print(
+            "[red]Cannot start autonomous harness: usd-core is not installed."
+            "[/red]"
+        )
+        raise typer.Exit(code=1)
+
+    config = CozyLoopConfig(
+        budget_hours=hours,
+        max_experiments=max_experiments,
+        program_path=program,
+        checkpoint_path=checkpoint_path,
+        checkpoint_every_seconds=checkpoint_every_seconds,
+        session_name=session_name,
+        resume=resume,
+    )
+
+    # Build callbacks. With --execute-mode dry-run (the default after T3
+    # of the 5x review), make_propose_fn cycles real proposals and
+    # make_execute_fn returns synthetic axis scores. With --execute-mode
+    # mock, both callbacks stay None and AutoresearchRunner falls back to
+    # its built-in cyclic proposer + a neutral-score executor (returns
+    # {aesthetic: 0.5, lighting: 0.5} every iteration — useful for
+    # harness-internals testing only; produces zero ratchet signal).
+    propose_fn = None
+    execute_fn = None
+    if execute_mode == "mock":
+        console.print(
+            "[yellow]WARNING: --execute-mode=mock uses AutoresearchRunner "
+            "defaults — neutral scores every iteration, no ratchet signal. "
+            "This mode is for harness-internals testing only. Use "
+            "--execute-mode=dry-run (the default) for offline smoke tests "
+            "with real proposal cycles, or --execute-mode=real --workflow "
+            "PATH for live ComfyUI runs.[/yellow]"
+        )
+    elif execute_mode in ("dry-run", "real"):
+        try:
+            propose_fn = make_propose_fn()
+            execute_fn = make_execute_fn(execute_mode, workflow)
+        except (ValueError, OSError) as exc:
+            console.print(f"[red]Failed to build execute callable: {exc}[/red]")
+            raise typer.Exit(code=2) from exc
+
+    console.print(
+        f"[bold]Cozy autonomous harness[/bold] starting "
+        f"(budget={hours}h, max_experiments={max_experiments}, "
+        f"mode={execute_mode}, "
+        f"checkpoint={config.checkpoint_path or 'in-memory only'})"
+    )
+    loop = CozyLoop(
+        config,
+        cws=cws,
+        propose_fn=propose_fn,
+        execute_fn=execute_fn,
+    )
+    result = loop.run()
+
+    console.print(
+        f"\n[bold]Halt[/bold]: {result.halt_reason}\n"
+        f"  iterations:    "
+        f"{len(result.run_result.experiments) if result.run_result else 0}\n"
+        f"  total_seconds: {result.total_seconds:.1f}\n"
+        f"  blocker_path:  {result.blocker_path or '(none)'}"
+    )
+
+
+@app.command()
 def mcp():
     """Primary integration -- exposes all tools via MCP for Claude Code.
 
     Starts the MCP server using stdio transport. Configure in your
     Claude Code settings (.claude/settings.json) to use these tools
     directly from Claude Code conversations.
+
+    Examples:
+      agent mcp                       # start MCP server (stdio transport)
+
+    Typical Claude Code config to wire this up (.claude/settings.json):
+
+      {
+        "mcpServers": {
+          "comfyui-agent": {
+            "command": "agent",
+            "args": ["mcp"],
+            "cwd": "/path/to/Comfy-Cozy"
+          }
+        }
+      }
     """
     from .mcp_server import main as mcp_main
     mcp_main()

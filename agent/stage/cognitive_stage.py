@@ -19,8 +19,14 @@ Requires usd-core: pip install usd-core
 
 from __future__ import annotations
 
+import logging
+import os
+import queue
+import threading
+import time
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 try:
     from pxr import Sdf, Usd
@@ -30,9 +36,37 @@ except ImportError:
 
 from .anchors import check_anchor
 
+_log = logging.getLogger(__name__)
+
 
 class StageError(Exception):
     """Base error for stage operations."""
+
+
+@dataclass(frozen=True)
+class StageEvent:
+    """Typed event emitted by CognitiveWorkflowStage on every observable op.
+
+    External consumers (MCP resources, Moneta adapter, telemetry) subscribe
+    via CognitiveWorkflowStage.subscribe() to receive these.
+    """
+
+    op: str  # one of: "write", "add_delta", "rollback", "flush"
+    prim_path: str | None = None
+    attr_name: str | None = None
+    layer_id: str | None = None
+    timestamp: float = field(default_factory=time.time)
+    payload: dict | None = None  # op-specific extras
+
+    def to_dict(self) -> dict:
+        return {
+            "op": self.op,
+            "prim_path": self.prim_path,
+            "attr_name": self.attr_name,
+            "layer_id": self.layer_id,
+            "timestamp": self.timestamp,
+            "payload": self.payload,
+        }
 
 
 # Top-level hierarchy prims
@@ -97,6 +131,18 @@ class CognitiveWorkflowStage:
         self._root_path = Path(root_path) if root_path else None
         self._agent_deltas: list[Any] = []  # list[Sdf.Layer]
 
+        # W2.1 — subscriber registry. Callbacks fire post-mutation, dispatched
+        # by a SINGLE consumer thread reading from a bounded queue, so the
+        # writer never blocks on a slow subscriber and we never spawn one
+        # thread per event. Lazily started on first subscribe().
+        self._subscribers: dict[int, Callable[[StageEvent], None]] = {}
+        self._sub_lock = threading.Lock()
+        self._sub_next_id = 0
+        self._dispatch_queue: queue.Queue | None = None
+        self._dispatch_thread: threading.Thread | None = None
+        self._dispatch_sentinel = object()
+        self._dispatch_drops = 0  # number of events dropped due to full queue
+
         # Always in-memory. Root layer manages sublayer composition only.
         self._stage = Usd.Stage.CreateInMemory("cognitive_stage.usda")
         self._base_layer = Sdf.Layer.CreateAnonymous("base.usda")
@@ -148,6 +194,126 @@ class CognitiveWorkflowStage:
     def delta_count(self) -> int:
         """Number of active agent delta sublayers."""
         return len(self._agent_deltas)
+
+    # ------------------------------------------------------------------
+    # W2.1/W2.3 — Subscriber registry
+    # ------------------------------------------------------------------
+
+    # Bounded queue size. Big enough that bursty traffic doesn't drop
+    # under normal load, small enough that a stuck consumer doesn't pin
+    # unbounded memory. Drops are logged so the WARN trail is visible.
+    _DISPATCH_QUEUE_MAXSIZE: int = 10_000
+
+    def subscribe(self, callback: Callable[[StageEvent], None]) -> int:
+        """Register a callback for stage mutation events.
+
+        Returns an integer handle that can be passed to unsubscribe(). The
+        callback is invoked once per write / add_delta / rollback / flush,
+        on a single dedicated daemon thread so subscriber failures cannot
+        block the writer or corrupt stage state, and a 1000-event burst
+        does not spawn 1000 threads.
+        """
+        with self._sub_lock:
+            handle = self._sub_next_id
+            self._sub_next_id += 1
+            self._subscribers[handle] = callback
+            self._ensure_dispatcher_locked()
+            return handle
+
+    def unsubscribe(self, handle: int) -> bool:
+        """Remove a subscriber by handle. Returns True if removed.
+
+        If this was the last subscriber, the dispatcher thread is left
+        running but idle (it'll consume any in-flight events and then
+        block on the queue). Use `close_subscribers()` to tear it down.
+        """
+        with self._sub_lock:
+            return self._subscribers.pop(handle, None) is not None
+
+    def close_subscribers(self) -> None:
+        """Stop the dispatcher thread and clear all subscribers.
+
+        Safe to call multiple times; safe to call before any subscribe().
+        Tests use this in teardown so daemon threads don't accumulate
+        across pytest runs.
+        """
+        with self._sub_lock:
+            self._subscribers.clear()
+            t = self._dispatch_thread
+            q = self._dispatch_queue
+            self._dispatch_thread = None
+            self._dispatch_queue = None
+        if q is not None:
+            try:
+                q.put(self._dispatch_sentinel, timeout=1.0)
+            except queue.Full:
+                pass
+        if t is not None:
+            t.join(timeout=2.0)
+
+    def _ensure_dispatcher_locked(self) -> None:
+        """Lazily spawn the single dispatcher thread. Call with _sub_lock held."""
+        if self._dispatch_thread is not None:
+            return
+        self._dispatch_queue = queue.Queue(maxsize=self._DISPATCH_QUEUE_MAXSIZE)
+        t = threading.Thread(
+            target=self._dispatch_loop,
+            daemon=True,
+            name="cozy-stage-dispatch",
+        )
+        t.start()
+        self._dispatch_thread = t
+
+    def _dispatch_loop(self) -> None:
+        """Single consumer thread — drains the queue and fans out to subs.
+
+        Exits cleanly when it sees `_dispatch_sentinel`. Never lets a
+        subscriber's exception escape (each callback is wrapped in
+        try/except per Article V).
+        """
+        q = self._dispatch_queue
+        if q is None:
+            return
+        while True:
+            event = q.get()
+            if event is self._dispatch_sentinel:
+                return
+            with self._sub_lock:
+                callbacks = list(self._subscribers.values())
+            for cb in callbacks:
+                try:
+                    cb(event)
+                except Exception as exc:
+                    _log.warning(
+                        "Stage subscriber %r failed on %s: %s",
+                        cb, event.op, exc,
+                    )
+
+    def _emit(self, event: StageEvent) -> None:
+        """Notify all subscribers of an event. Never raises.
+
+        Non-blocking — events are enqueued for the dispatcher thread.
+        On queue overflow (slow/stuck consumer) the event is DROPPED with
+        a WARN log; the writer never blocks. This violates Article V's
+        "no silent state changes" if it ever fires, so the drop counter
+        is exposed via `dispatch_drops` for observability.
+        """
+        if self._dispatch_queue is None:
+            # No subscribers ever attached — fast path, no work.
+            return
+        try:
+            self._dispatch_queue.put_nowait(event)
+        except queue.Full:
+            self._dispatch_drops += 1
+            _log.warning(
+                "Stage subscriber queue full (drops=%d) — dropping %s event",
+                self._dispatch_drops, event.op,
+            )
+
+    @property
+    def dispatch_drops(self) -> int:
+        """Total events dropped because the dispatcher queue was full."""
+        return self._dispatch_drops
 
     # ------------------------------------------------------------------
     # Read / Write
@@ -220,6 +386,12 @@ class CognitiveWorkflowStage:
         finally:
             self._stage.SetEditTarget(self._stage.GetRootLayer())
 
+        self._emit(StageEvent(
+            op="write",
+            prim_path=prim_path,
+            attr_name=attr_name,
+        ))
+
     # ------------------------------------------------------------------
     # Agent Deltas (LIVRPS Local opinion)
     # ------------------------------------------------------------------
@@ -281,6 +453,12 @@ class CognitiveWorkflowStage:
         root.subLayerPaths = paths
 
         self._agent_deltas.append(layer)
+
+        self._emit(StageEvent(
+            op="add_delta",
+            layer_id=layer.identifier,
+            payload={"agent_name": agent_name, "keys": list(delta_dict.keys())},
+        ))
         return layer.identifier
 
     def rollback_to(self, n_deltas: int) -> int:
@@ -307,6 +485,11 @@ class CognitiveWorkflowStage:
         root.subLayerPaths = [
             p for p in root.subLayerPaths if p not in removed_ids
         ]
+
+        self._emit(StageEvent(
+            op="rollback",
+            payload={"removed_count": to_remove},
+        ))
         return to_remove
 
     def list_deltas(self) -> list[str]:
@@ -335,11 +518,21 @@ class CognitiveWorkflowStage:
             raise StageError(
                 f"Variant set '{variant_set}' not found on {prim_path}"
             )
-        try:
-            vsets.GetVariantSet(variant_set).SetVariantSelection(profile_name)
-        except Exception as _e:  # Cycle 64: pxr raises bare Exception on invalid variant name
+        vset = vsets.GetVariantSet(variant_set)
+        # Some pxr versions raise on invalid names; others silently accept
+        # them. Cross-check `variantNames` upfront so behavior is uniform.
+        valid_names = list(vset.GetVariantNames())
+        if profile_name not in valid_names:
             raise StageError(
-                f"Could not select variant '{profile_name}' on {prim_path}/{variant_set}: {_e}"
+                f"Could not select variant '{profile_name}' on "
+                f"{prim_path}/{variant_set}: not in {valid_names}"
+            )
+        try:
+            vset.SetVariantSelection(profile_name)
+        except Exception as _e:
+            raise StageError(
+                f"Could not select variant '{profile_name}' on "
+                f"{prim_path}/{variant_set}: {_e}"
             ) from _e
 
     # ------------------------------------------------------------------
@@ -406,6 +599,13 @@ class CognitiveWorkflowStage:
         Flattens all sublayers into a single file. Agent deltas are
         baked in. Use export_flat() for the same behavior explicitly.
 
+        The write is atomic: the flattened stage is exported to a sibling
+        `<path>.tmp` file and then `os.replace`d into place. A SIGKILL
+        between Export and replace leaves the .tmp orphaned but the
+        canonical path either intact (pre-flush) or fully rewritten
+        (post-flush) — never partially written. Per Article IV of the
+        Cozy Constitution, checkpoint integrity requires this.
+
         Args:
             output_path: Override path. Uses root_path if not provided.
 
@@ -422,7 +622,23 @@ class CognitiveWorkflowStage:
             raise StageError(
                 "No output path. Stage is in-memory — provide output_path."
             )
-        self._stage.Flatten().Export(path)
+        tmp_path = path + ".tmp"
+        try:
+            self._stage.Flatten().Export(tmp_path)
+            os.replace(tmp_path, path)
+        except Exception:
+            # Best-effort cleanup of the orphaned tmp file. If the cleanup
+            # itself fails, the next flush will overwrite it.
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+            raise
+
+        self._emit(StageEvent(
+            op="flush",
+            payload={"path": path},
+        ))
         return path
 
     def export_flat(self, output_path: str | Path) -> str:

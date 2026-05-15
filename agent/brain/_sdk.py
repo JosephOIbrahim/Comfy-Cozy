@@ -29,15 +29,14 @@ def _default_to_json(obj: Any, **kwargs) -> str:
     return _json.dumps(obj, **kwargs)
 
 
-def _default_validate_path(path_str: str, *, must_exist: bool = False) -> str | None:
-    """Permissive path validation for standalone use."""
-    try:
-        p = Path(path_str).resolve()
-    except (OSError, ValueError) as e:
-        return f"Invalid path: {e}"
-    if must_exist and not p.exists():
-        return f"File not found: {path_str}"
-    return None
+# MoE-R4: brain SDK no longer defines its own divergent path validator.
+# The canonical validate_path lives at agent/tools/_util.py:46. Importing
+# here ensures BrainAgent uses the same security perimeter as the rest
+# of the codebase — future hardening to validate_path propagates without
+# code drift. The previous local definition was a permissive fallback
+# missing the system-directory + sandbox checks the canonical version
+# enforces.
+from ..tools._util import validate_path as _default_validate_path
 
 
 class _NullLimiter:

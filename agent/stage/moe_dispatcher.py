@@ -28,14 +28,16 @@ TaskType = Literal[
     "recon", "design", "provision", "build", "verify", "analyze",
 ]
 
-# Maps task type to the agent chain that handles it
+# Maps task type to the agent chain that handles it.
+# Per Cozy Constitution Article II, every chain that mutates state ends in
+# scribe (the persistence terminator). Pure read chains (recon) do not.
 TASK_CHAINS: dict[TaskType, tuple[str, ...]] = {
     "recon": ("scout",),
-    "design": ("scout", "architect"),
-    "provision": ("scout", "provisioner"),
-    "build": ("scout", "architect", "forge", "crucible"),
-    "verify": ("crucible",),
-    "analyze": ("crucible", "vision"),
+    "design": ("scout", "architect", "scribe"),
+    "provision": ("scout", "provisioner", "scribe"),
+    "build": ("scout", "architect", "forge", "crucible", "scribe"),
+    "verify": ("crucible", "scribe"),
+    "analyze": ("crucible", "vision", "scribe"),
 }
 
 # Keywords for task classification
