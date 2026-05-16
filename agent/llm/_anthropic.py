@@ -67,9 +67,7 @@ class AnthropicProvider(LLMProvider):
         }
         # Streaming loop routes delta.thinking -> on_thinking;
         # ThinkingBlocks with signature emitted in final response.
-        thinking_kwarg = _build_thinking_kwarg(thinking_budget, max_tokens)
-        if thinking_kwarg is not None:
-            stream_kwargs["thinking"] = thinking_kwarg
+        stream_kwargs.update(_build_thinking_kwargs(thinking_budget, max_tokens, model))
 
         try:
             with self._client.messages.stream(**stream_kwargs) as stream:
@@ -137,9 +135,7 @@ class AnthropicProvider(LLMProvider):
             "system": system,
             "messages": native_messages,
         }
-        thinking_kwarg = _build_thinking_kwarg(thinking_budget, max_tokens)
-        if thinking_kwarg is not None:
-            kwargs["thinking"] = thinking_kwarg
+        kwargs.update(_build_thinking_kwargs(thinking_budget, max_tokens, model))
         start = time.monotonic()
 
         try:
@@ -281,20 +277,55 @@ class AnthropicProvider(LLMProvider):
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _build_thinking_kwarg(thinking_budget: int, max_tokens: int) -> dict | None:
-    """Compute the `thinking` kwarg for Anthropic stream/create.
+# Models that require the adaptive-thinking shape. Opus 4.7 hard-rejects
+# the legacy `{type: enabled, budget_tokens}` with HTTP 400; Opus 4.6 and
+# Sonnet 4.6 still accept legacy but adaptive is the forward-compatible
+# path, so we route them here too. Older models (Sonnet 4.5, 3.7, etc.)
+# stay on the legacy branch — adaptive is unavailable to them.
+_ADAPTIVE_THINKING_MODEL_PREFIXES = (
+    "claude-opus-4-7",
+    "claude-opus-4-6",
+    "claude-sonnet-4-6",
+)
 
-    Returns None when extended thinking is disabled (thinking_budget <= 0).
-    Returns {"type": "enabled", "budget_tokens": N} otherwise, with N
-    clamped to fit within max_tokens.
 
-    Raises ValueError when thinking is requested but max_tokens is too
-    small to satisfy Anthropic's `budget_tokens < max_tokens` constraint.
-    The clamp floor is 1024, so max_tokens must be strictly greater than
-    1024 for any positive budget to be valid (review action C3).
+def _uses_adaptive_thinking(model: str) -> bool:
+    name = (model or "").lower()
+    return any(name.startswith(p) for p in _ADAPTIVE_THINKING_MODEL_PREFIXES)
+
+
+def _build_thinking_kwargs(thinking_budget: int, max_tokens: int, model: str) -> dict:
+    """Compute the thinking-related kwargs for Anthropic stream/create.
+
+    Returns a dict to merge into the call kwargs. Empty dict means thinking
+    is disabled and neither `thinking` nor `output_config` should be sent.
+
+    For adaptive-thinking models (Opus 4.7 / 4.6, Sonnet 4.6):
+        {"thinking": {"type": "adaptive", "display": "summarized"},
+         "output_config": {"effort": THINKING_EFFORT}}
+        Opus 4.7 hard-rejects the legacy shape (HTTP 400); the older two
+        accept it but adaptive is the forward-compatible path.
+
+    For legacy models (Sonnet 4.5, 3.7, etc.):
+        {"thinking": {"type": "enabled", "budget_tokens": N}} with N
+        clamped so `budget_tokens < max_tokens` holds.
+
+    Raises ValueError on the legacy path when max_tokens <= 1024 — the
+    clamp floor is 1024, so the API would reject it (review action C3).
+    Adaptive path has no max_tokens precondition: the model schedules its
+    own reasoning under the umbrella max_tokens ceiling.
     """
     if not thinking_budget or thinking_budget <= 0:
-        return None
+        return {}
+    if _uses_adaptive_thinking(model):
+        # Lazy import so importlib.reload(agent.config) in other tests
+        # doesn't bind us to a stale THINKING_EFFORT value.
+        from agent import config as _agent_config
+
+        return {
+            "thinking": {"type": "adaptive", "display": "summarized"},
+            "output_config": {"effort": _agent_config.THINKING_EFFORT},
+        }
     if max_tokens <= 1024:
         raise ValueError(
             f"thinking_budget={thinking_budget} cannot be enabled with "
@@ -303,8 +334,10 @@ def _build_thinking_kwarg(thinking_budget: int, max_tokens: int) -> dict | None:
             f"max_tokens above 1024 or pass thinking_budget=0."
         )
     return {
-        "type": "enabled",
-        "budget_tokens": min(thinking_budget, max(max_tokens - 1024, 1024)),
+        "thinking": {
+            "type": "enabled",
+            "budget_tokens": min(thinking_budget, max(max_tokens - 1024, 1024)),
+        }
     }
 
 

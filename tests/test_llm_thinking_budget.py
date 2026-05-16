@@ -2,11 +2,15 @@
 
 Behavior under test (inside-out branch):
   - Anthropic threads thinking_budget into stream/create as
-    `thinking={"type": "enabled", "budget_tokens": N}` when N > 0.
+    `thinking={"type": "enabled", "budget_tokens": N}` for legacy models
+    (Sonnet 4.5, 3.7, the generic test model).
+  - For Opus 4.7 / 4.6 and Sonnet 4.6, Anthropic emits the adaptive shape
+    `thinking={"type": "adaptive", "display": "summarized"}` plus
+    `output_config={"effort": THINKING_EFFORT}` — Opus 4.7 hard-rejects
+    the legacy shape with HTTP 400, so the model-aware branch is required.
   - Anthropic's convert_messages replays signature-bearing ThinkingBlocks
     verbatim (so multi-turn extended-thinking + tool_use stays valid).
-  - Signature-less ThinkingBlocks are silently dropped — a known-fragile
-    path pinned here for visibility (Action 2 was deferred).
+  - Signature-less ThinkingBlocks are dropped with a warning (action S1).
   - OpenAI / Gemini / Ollama accept thinking_budget without raising
     and do NOT forward it to their respective SDK calls.
 """
@@ -185,6 +189,148 @@ class TestAnthropicThinkingBudgetCreate:
                 "type": "enabled",
                 "budget_tokens": 2000,
             }
+
+
+# ============================================================================
+# Anthropic — adaptive thinking for Opus 4.7 / 4.6 and Sonnet 4.6
+# ============================================================================
+
+
+class TestAnthropicAdaptiveThinking:
+    """Opus 4.7 hard-rejects `{type: enabled, budget_tokens: N}` with HTTP 400.
+    Opus 4.6 and Sonnet 4.6 still accept legacy but adaptive is the
+    forward-compatible path. The model-aware branch in
+    `_build_thinking_kwargs` routes these three model prefixes to the
+    adaptive shape: `thinking={type: adaptive, display: summarized}` plus
+    `output_config={effort: THINKING_EFFORT}`.
+    """
+
+    @pytest.mark.parametrize(
+        "model",
+        [
+            "claude-opus-4-7",
+            "claude-opus-4-6",
+            "claude-sonnet-4-6",
+            "claude-opus-4-7-20260301",  # dated variant — prefix match
+        ],
+    )
+    def test_stream_uses_adaptive_shape_for_modern_models(self, model):
+        with patch("agent.llm._anthropic.anthropic") as mock_sdk:
+            provider = _make_anthropic(mock_sdk)
+            _wire_anthropic_stream(provider)
+            provider.stream(
+                model=model,
+                max_tokens=16384,
+                system="sys",
+                tools=[],
+                messages=[{"role": "user", "content": "hi"}],
+                thinking_budget=4000,
+            )
+            kwargs = provider._client.messages.stream.call_args.kwargs
+            assert kwargs["thinking"] == {
+                "type": "adaptive",
+                "display": "summarized",
+            }
+            assert kwargs["output_config"] == {"effort": "high"}
+            # Critical: legacy keys must not leak into the request.
+            assert "budget_tokens" not in kwargs.get("thinking", {})
+
+    def test_create_uses_adaptive_shape_for_opus_4_7(self):
+        with patch("agent.llm._anthropic.anthropic") as mock_sdk:
+            provider = _make_anthropic(mock_sdk)
+            _wire_anthropic_create(provider)
+            provider.create(
+                model="claude-opus-4-7",
+                max_tokens=4096,
+                system="sys",
+                messages=[{"role": "user", "content": "hi"}],
+                thinking_budget=2000,
+            )
+            kwargs = provider._client.messages.create.call_args.kwargs
+            assert kwargs["thinking"] == {
+                "type": "adaptive",
+                "display": "summarized",
+            }
+            assert kwargs["output_config"] == {"effort": "high"}
+
+    def test_thinking_budget_zero_omits_both_kwargs_for_adaptive_model(self):
+        """thinking_budget=0 disables thinking even on Opus 4.7 — neither
+        `thinking` nor `output_config` should appear."""
+        with patch("agent.llm._anthropic.anthropic") as mock_sdk:
+            provider = _make_anthropic(mock_sdk)
+            _wire_anthropic_stream(provider)
+            provider.stream(
+                model="claude-opus-4-7",
+                max_tokens=16384,
+                system="sys",
+                tools=[],
+                messages=[{"role": "user", "content": "hi"}],
+                # thinking_budget omitted — defaults to 0
+            )
+            kwargs = provider._client.messages.stream.call_args.kwargs
+            assert "thinking" not in kwargs
+            assert "output_config" not in kwargs
+
+    def test_adaptive_path_does_not_clamp_or_raise_on_small_max_tokens(self):
+        """The legacy max_tokens<=1024 guard does NOT apply to adaptive —
+        the model schedules its own reasoning under the umbrella ceiling."""
+        with patch("agent.llm._anthropic.anthropic") as mock_sdk:
+            provider = _make_anthropic(mock_sdk)
+            _wire_anthropic_stream(provider)
+            # Would raise on legacy path; must succeed on adaptive
+            provider.stream(
+                model="claude-opus-4-7",
+                max_tokens=1024,
+                system="sys",
+                tools=[],
+                messages=[{"role": "user", "content": "hi"}],
+                thinking_budget=4000,
+            )
+            kwargs = provider._client.messages.stream.call_args.kwargs
+            assert kwargs["thinking"]["type"] == "adaptive"
+
+    def test_thinking_effort_env_override_propagates(self, monkeypatch):
+        """THINKING_EFFORT env var overrides the default `high`."""
+        # Update the live module attribute (config has already imported
+        # the env value at module load). Lazy import inside the helper
+        # picks up the new value.
+        from agent import config as agent_config
+
+        monkeypatch.setattr(agent_config, "THINKING_EFFORT", "medium")
+        with patch("agent.llm._anthropic.anthropic") as mock_sdk:
+            provider = _make_anthropic(mock_sdk)
+            _wire_anthropic_stream(provider)
+            provider.stream(
+                model="claude-opus-4-7",
+                max_tokens=16384,
+                system="sys",
+                tools=[],
+                messages=[{"role": "user", "content": "hi"}],
+                thinking_budget=4000,
+            )
+            kwargs = provider._client.messages.stream.call_args.kwargs
+            assert kwargs["output_config"] == {"effort": "medium"}
+
+    def test_legacy_model_keeps_enabled_shape(self):
+        """Older models (Sonnet 4.5, 3.7) must keep the legacy shape —
+        adaptive is unavailable to them and would error."""
+        with patch("agent.llm._anthropic.anthropic") as mock_sdk:
+            provider = _make_anthropic(mock_sdk)
+            _wire_anthropic_stream(provider)
+            provider.stream(
+                model="claude-sonnet-4-5-20251022",
+                max_tokens=16384,
+                system="sys",
+                tools=[],
+                messages=[{"role": "user", "content": "hi"}],
+                thinking_budget=4000,
+            )
+            kwargs = provider._client.messages.stream.call_args.kwargs
+            assert kwargs["thinking"] == {
+                "type": "enabled",
+                "budget_tokens": 4000,
+            }
+            assert "output_config" not in kwargs
 
 
 # ============================================================================
