@@ -6,6 +6,14 @@
 **Branch:** architecture/inside-out-pass
 **Approved by:** Joe (Option 1: PROCEED-WITH-XFAIL — see "Status" below for landing state)
 
+## Resolved
+
+**Resolution date:** 2026-05-03
+**Fixing commit:** `bf5d0c3` — `[VERIFY] Cozy follow-up — bug fixes uncovered by usd-core install`
+**Summary:** `select_profile` now pre-checks `vset.GetVariantNames()` before calling `SetVariantSelection`; `test_invalid_variant_name_raises_stage_error` passes and the carve-out baseline (2716 + 1 known fail) has been restored to 2717 passing in all runbook and playbook assertions.
+
+---
+
 ## What this incident covers
 
 The pytest baseline check in `RUN_INSIDE_OUT_PASS.md` Section 10 surfaced a single failing test that pre-exists on `master`:
