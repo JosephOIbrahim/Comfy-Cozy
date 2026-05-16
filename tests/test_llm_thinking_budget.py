@@ -334,6 +334,220 @@ class TestAnthropicAdaptiveThinking:
 
 
 # ============================================================================
+# Anthropic — SDK-version-robust transport for thinking kwargs
+# ============================================================================
+
+
+class TestAnthropicThinkingTransportAdapter:
+    """Coverage for `_adapt_thinking_transport`.
+
+    Decision LOGIC (which params, what effort) lives in `_build_thinking_kwargs`
+    and is untouched by this adapter. These tests pin the transport behavior:
+    per-key inspection of the target SDK method's signature, with extra_body
+    as the fallback when a key isn't natively declared.
+
+    Why this exists: anthropic 0.75 (the version installed on the deployed
+    Python 3.14 user-site under C:\\Python314) does not declare ``output_config``
+    on Messages.stream / .create, raising TypeError client-side before the
+    request reaches the API. The adapter routes the kwarg through extra_body,
+    which the SDK promotes to a top-level JSON body field — wire-equivalent.
+    """
+
+    def test_keeps_native_when_target_accepts_param(self):
+        from agent.llm._anthropic import _adapt_thinking_transport
+
+        def target(*, model, max_tokens, thinking, output_config, extra_body=None):
+            ...
+
+        out = _adapt_thinking_transport(
+            {"thinking": {"type": "adaptive"}, "output_config": {"effort": "high"}},
+            target,
+        )
+        assert out == {
+            "thinking": {"type": "adaptive"},
+            "output_config": {"effort": "high"},
+        }
+
+    def test_routes_to_extra_body_when_target_lacks_param(self):
+        from agent.llm._anthropic import _adapt_thinking_transport
+
+        def target(*, model, max_tokens, thinking, extra_body=None):
+            # mirrors anthropic 0.75: thinking native, output_config absent
+            ...
+
+        out = _adapt_thinking_transport(
+            {"thinking": {"type": "adaptive"}, "output_config": {"effort": "high"}},
+            target,
+        )
+        assert out == {
+            "thinking": {"type": "adaptive"},
+            "extra_body": {"output_config": {"effort": "high"}},
+        }
+
+    def test_merges_into_existing_extra_body(self):
+        from agent.llm._anthropic import _adapt_thinking_transport
+
+        def target(*, model, max_tokens, thinking, extra_body=None):
+            ...
+
+        out = _adapt_thinking_transport(
+            {
+                "thinking": {"type": "adaptive"},
+                "output_config": {"effort": "high"},
+                "extra_body": {"caller_supplied": "x"},
+            },
+            target,
+        )
+        # caller's existing extra_body is preserved; rerouted key is merged in
+        assert out["thinking"] == {"type": "adaptive"}
+        assert out["extra_body"] == {
+            "caller_supplied": "x",
+            "output_config": {"effort": "high"},
+        }
+
+    def test_per_key_independence_thinking_native_output_config_rerouted(self):
+        """Each helper-emitted key is evaluated against the target signature
+        independently. thinking may be native while output_config is not."""
+        from agent.llm._anthropic import _adapt_thinking_transport
+
+        def target(*, model, max_tokens, thinking, extra_body=None):
+            ...
+
+        out = _adapt_thinking_transport(
+            {"thinking": {"type": "adaptive"}, "output_config": {"effort": "high"}},
+            target,
+        )
+        assert out["thinking"] == {"type": "adaptive"}  # stays native
+        assert "output_config" not in out  # NOT top-level
+        assert out["extra_body"] == {"output_config": {"effort": "high"}}
+
+    def test_empty_helper_output_returns_empty(self):
+        from agent.llm._anthropic import _adapt_thinking_transport
+
+        def target(*, model, max_tokens):
+            ...
+
+        assert _adapt_thinking_transport({}, target) == {}
+
+    def test_target_without_native_or_extra_body_falls_through_unchanged(self):
+        """If the target lacks both the native name AND extra_body, we cannot
+        adapt — leave the kwarg alone so the SDK raises a loud TypeError
+        instead of silently dropping the param."""
+        from agent.llm._anthropic import _adapt_thinking_transport
+
+        def target(*, model, thinking):
+            ...
+
+        out = _adapt_thinking_transport(
+            {"thinking": {"type": "adaptive"}, "output_config": {"effort": "high"}},
+            target,
+        )
+        # output_config remains top-level — SDK will TypeError; that's the signal
+        assert out["output_config"] == {"effort": "high"}
+        assert "extra_body" not in out
+
+    def test_target_with_var_keyword_accepts_anything_natively(self):
+        """A target whose signature includes **kwargs accepts every name —
+        no rerouting needed. (This is what bare MagicMock looks like, so the
+        existing wired-through-provider tests still see native kwargs.)"""
+        from agent.llm._anthropic import _adapt_thinking_transport
+
+        def target(*, model, **anything):
+            ...
+
+        out = _adapt_thinking_transport(
+            {"thinking": {"type": "adaptive"}, "output_config": {"effort": "high"}},
+            target,
+        )
+        assert out == {
+            "thinking": {"type": "adaptive"},
+            "output_config": {"effort": "high"},
+        }
+
+    def test_uninspectable_target_falls_through_unchanged(self):
+        """When inspect.signature can't introspect the target (raises
+        ValueError/TypeError), pass the kwargs through. The SDK is the
+        source of truth — let it speak."""
+        from agent.llm._anthropic import _adapt_thinking_transport
+
+        class _NoSig:
+            __call__ = None  # makes inspect.signature unhappy
+
+        out = _adapt_thinking_transport(
+            {"thinking": {"type": "adaptive"}, "output_config": {"effort": "high"}},
+            _NoSig(),
+        )
+        assert out == {
+            "thinking": {"type": "adaptive"},
+            "output_config": {"effort": "high"},
+        }
+
+    def test_logs_rerouted_key_names_and_sdk_version(self, caplog):
+        from agent.llm._anthropic import _adapt_thinking_transport
+        import logging
+
+        def target(*, model, max_tokens, thinking, extra_body=None):
+            ...
+
+        with caplog.at_level(logging.INFO, logger="agent.llm._anthropic"):
+            _adapt_thinking_transport(
+                {
+                    "thinking": {"type": "adaptive"},
+                    "output_config": {"effort": "high"},
+                },
+                target,
+            )
+        rerouting_msgs = [
+            r.getMessage() for r in caplog.records
+            if r.levelno == logging.INFO and "extra_body" in r.getMessage()
+        ]
+        assert rerouting_msgs, "expected an INFO log naming extra_body"
+        assert any("output_config" in m for m in rerouting_msgs), (
+            f"expected the rerouted key name in the log; got: {rerouting_msgs}"
+        )
+
+    def test_no_log_emitted_on_native_path(self, caplog):
+        """Quiet path: when nothing is rerouted, no log line is emitted."""
+        from agent.llm._anthropic import _adapt_thinking_transport
+        import logging
+
+        def target(*, model, max_tokens, thinking, output_config, extra_body=None):
+            ...
+
+        with caplog.at_level(logging.INFO, logger="agent.llm._anthropic"):
+            _adapt_thinking_transport(
+                {
+                    "thinking": {"type": "adaptive"},
+                    "output_config": {"effort": "high"},
+                },
+                target,
+            )
+        rerouting_msgs = [
+            r.getMessage() for r in caplog.records
+            if r.levelno == logging.INFO and "extra_body" in r.getMessage()
+        ]
+        assert not rerouting_msgs, f"expected no rerouting log; got: {rerouting_msgs}"
+
+    def test_build_thinking_kwargs_output_byte_identical_for_opus_4_7(self):
+        """IP-boundary guard: the decision helper's emitted payload (WHICH
+        params, WHAT effort) must remain byte-identical to the prior fix
+        commit. Transport adaptation must not bleed into decision logic.
+        """
+        from agent.llm._anthropic import _build_thinking_kwargs
+
+        out = _build_thinking_kwargs(
+            thinking_budget=1024, max_tokens=2048, model="claude-opus-4-7"
+        )
+        assert out == {
+            "thinking": {"type": "adaptive", "display": "summarized"},
+            "output_config": {"effort": "high"},
+        }
+        # Strict-shape check: no extra_body, no transport-adapter artifacts
+        # creeping into the decision layer
+        assert set(out.keys()) == {"thinking", "output_config"}
+
+
+# ============================================================================
 # Anthropic — ThinkingBlock signature replay (convert_messages)
 # ============================================================================
 
