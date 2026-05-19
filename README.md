@@ -41,11 +41,11 @@ graph LR
 
 **Demo 1 — overview**
 
-[![Comfy-Cozy demo 1](docs/demo-1-thumbnail.jpg)](https://vimeo.com/1193622319)
+[![Comfy-Cozy demo 1](docs/demo-1-thumbnail.jpg)](https://vimeo.com/1193607778)
 
 **Demo 2 — walkthrough**
 
-[![Comfy-Cozy demo 2](docs/demo-2-thumbnail.jpg)](https://vimeo.com/1193607778)
+[![Comfy-Cozy demo 2](docs/demo-2-thumbnail.jpg)](https://vimeo.com/1193622319)
 
 ## See It In Action
 
