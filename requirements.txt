@@ -1,5 +1,14 @@
 # Pinned dependencies for comfyui-agent
 # Generated from: pip install -e .[dev,mcp]
+#
+# Item 7 embedder pins (sentence-transformers + CPU-only torch).
+# CPU index keeps the torch wheel small (~200MB) for users without a
+# GPU — agents/tests need only the embedding pipeline, not CUDA.
+--extra-index-url https://download.pytorch.org/whl/cpu
+
+sentence-transformers==3.3.1
+torch==2.5.1
+
 aiohappyeyeballs==2.6.1
 aiohttp==3.13.3
 aiosignal==1.4.0
