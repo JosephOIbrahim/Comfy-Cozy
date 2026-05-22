@@ -12,7 +12,7 @@ import uuid
 
 import httpx
 
-from ..config import COMFYUI_HOST, COMFYUI_PORT, COMFYUI_URL
+from ..config import COMFYUI_URL
 from ..progress import ProgressCallback, ProgressReporter
 from ._util import to_json, validate_path
 
@@ -27,8 +27,7 @@ except ImportError:
     _HAS_TRIGGERS = False
 
 try:
-    import websockets
-    import websockets.sync.client
+    import websockets  # noqa: F401  # presence-check for _HAS_WS; actual WS calls live in agent.engine.comfyui_adapter
     _HAS_WS = True
 except ImportError:
     _HAS_WS = False
@@ -197,49 +196,31 @@ def _load_workflow_from_file(path_str: str) -> tuple[dict | None, str | None]:
 
 
 def _queue_prompt(workflow: dict) -> tuple[str | None, str | None]:
-    """Queue a workflow. Returns (prompt_id, error)."""
-    from ..circuit_breaker import COMFYUI_BREAKER
-    breaker = COMFYUI_BREAKER()
-    if not breaker.allow_request():
-        return None, f"ComfyUI has been unreachable. Waiting {breaker.recovery_timeout:.0f}s before retrying."
-    payload = {
-        "prompt": workflow,
-        "client_id": _CLIENT_ID,
-    }
+    """Queue a workflow. Returns (prompt_id, error).
+
+    Routes the POST /prompt call through the IAIEngine adapter so all
+    execution-path ComfyUI traffic flows through one seam. Engine
+    exceptions are translated back to the (prompt_id, error_string)
+    tuple this helper has always returned.
+    """
+    from ..engine import (
+        EngineConnectionError,
+        EngineError,
+        EngineUnavailableError,
+        EngineValidationError,
+        get_engine,
+    )
     try:
-        with httpx.Client() as client:
-            resp = client.post(
-                f"{COMFYUI_URL}/prompt",
-                json=payload,
-                timeout=30.0,
-            )
-            resp.raise_for_status()
-            breaker.record_success()
-            data = resp.json()
-            prompt_id = data.get("prompt_id")
-            if not prompt_id:
-                return None, "ComfyUI accepted the workflow but didn't return a job ID. It may be overloaded — try again in a few seconds."
-            return prompt_id, None
-    except httpx.ConnectError:
-        breaker.record_failure()
+        prompt_id = get_engine().queue_prompt(workflow=workflow, client_id=_CLIENT_ID)
+        return prompt_id, None
+    except EngineUnavailableError as e:
+        return None, str(e)
+    except EngineConnectionError:
         return None, f"ComfyUI not reachable at {COMFYUI_URL}. Is it running?"
-    except httpx.HTTPStatusError as e:
-        # ComfyUI returns errors in the response body
-        try:
-            err_data = e.response.json()
-            # Format common errors nicely
-            node_errors = err_data.get("node_errors", {})
-            if node_errors:
-                msgs = []
-                # He2025: sort for deterministic error message order
-                for nid, nerr in sorted(node_errors.items()):
-                    class_type = nerr.get("class_type", "?")
-                    for exc in nerr.get("errors", []):
-                        msgs.append(f"Node [{nid}] {class_type}: {exc.get('message', str(exc))}")
-                return None, "Validation errors:\n" + "\n".join(msgs)
-            return None, err_data.get("error", str(err_data))
-        except Exception:
-            return None, f"HTTP {e.response.status_code}: {e.response.text[:300]}"
+    except EngineValidationError as e:
+        return None, str(e)
+    except EngineError as e:
+        return None, str(e)
     except Exception as e:
         return None, str(e)
 
@@ -250,9 +231,17 @@ def _poll_completion(
     poll_interval: float = 1.0,
     progress: ProgressCallback | None = None,
 ) -> dict:
-    """Poll /history until the prompt completes or times out."""
+    """Poll /history until the prompt completes or times out.
+
+    History fetches go through the IAIEngine adapter. The circuit
+    breaker is queried directly here (gates the polling loop) and is
+    *also* updated inside the adapter; the redundancy is harmless and
+    preserves the existing log/abort semantics on prolonged outages.
+    """
     from ..circuit_breaker import COMFYUI_BREAKER
+    from ..engine import EngineConnectionError, EngineError, EngineUnavailableError, get_engine
     breaker = COMFYUI_BREAKER()
+    engine = get_engine()
     progress = progress or ProgressReporter.noop()
     deadline = time.monotonic() + timeout
     start = time.monotonic()
@@ -264,19 +253,16 @@ def _poll_completion(
             log.warning("Circuit breaker open during polling for %s", prompt_id)
             return {"error": "ComfyUI became unreachable during generation. Check if it's still running."}
         try:
-            with httpx.Client() as client:
-                resp = client.get(
-                    f"{COMFYUI_URL}/history/{prompt_id}",
-                    timeout=10.0,
-                )
-                resp.raise_for_status()
-                history = resp.json()
-                breaker.record_success()
-                consecutive_errors = 0
-        except (httpx.ConnectError, httpx.TimeoutException) as e:
-            breaker.record_failure()
+            history = engine.get_history(prompt_id=prompt_id)
+            consecutive_errors = 0
+        except (EngineConnectionError, EngineUnavailableError) as e:
             consecutive_errors += 1
             log.warning("Poll attempt %d failed for %s: %s", consecutive_errors, prompt_id, e)
+            time.sleep(poll_interval)
+            continue
+        except EngineError as e:
+            consecutive_errors += 1
+            log.warning("Unexpected polling error for %s: %s", prompt_id, e)
             time.sleep(poll_interval)
             continue
         except Exception as e:
@@ -370,9 +356,8 @@ def _execute_with_websocket(
         result["monitoring"] = "polling_fallback"
         return result
 
-    # Derive WebSocket scheme from COMFYUI_URL
-    ws_scheme = "wss" if COMFYUI_URL.startswith("https") else "ws"
-    ws_url = f"{ws_scheme}://{COMFYUI_HOST}:{COMFYUI_PORT}/ws?clientId={_CLIENT_ID}"
+    from ..engine import get_engine
+    engine = get_engine()
 
     # Queue the prompt first
     prompt_id, err = _queue_prompt(workflow)
@@ -389,27 +374,21 @@ def _execute_with_websocket(
     start_time = time.monotonic()
 
     try:
-        with websockets.sync.client.connect(ws_url, close_timeout=5, open_timeout=10) as ws:
-            ws.recv_bufsize = 16 * 1024 * 1024  # 16MB for preview images
+        with engine.subscribe_ws(client_id=_CLIENT_ID) as events:
             deadline = time.monotonic() + timeout
 
-            while time.monotonic() < deadline:
-                try:
-                    raw = ws.recv(timeout=2.0)
-                except TimeoutError:
+            for event in events:
+                if time.monotonic() >= deadline:
+                    break
+
+                # Sentinel surfaced by the adapter when ws.recv() times out
+                # waiting for the next message. Lets us re-check the deadline.
+                if event.type == "__timeout__":
                     continue
 
-                # Skip binary messages (preview images)
-                if isinstance(raw, bytes):
-                    continue
-
-                try:
-                    msg = json.loads(raw)
-                except json.JSONDecodeError:
-                    continue
-
-                msg_type = msg.get("type", "")
-                data = msg.get("data", {})
+                msg_type = event.type
+                data = event.data
+                msg = event.raw
 
                 # Dispatch to event trigger system (non-blocking, failure-safe)
                 if _HAS_TRIGGERS:
@@ -540,10 +519,7 @@ def _execute_with_websocket(
     outputs = []
     _outputs_fetch_error: str | None = None
     try:
-        with httpx.Client() as client:
-            resp = client.get(f"{COMFYUI_URL}/history/{prompt_id}", timeout=10.0)
-            resp.raise_for_status()
-            history = resp.json()
+        history = engine.get_history(prompt_id=prompt_id)
         if prompt_id in history:
             # He2025: sort for deterministic output order
             for _nid, node_out in sorted(history[prompt_id].get("outputs", {}).items()):
@@ -832,21 +808,17 @@ def _handle_get_execution_status(tool_input: dict) -> str:
     if not _re.match(r'^[a-zA-Z0-9\-_]+$', prompt_id):
         return to_json({"error": "prompt_id must contain only alphanumeric characters, hyphens, or underscores."})
 
+    from ..engine import EngineConnectionError, get_engine
     try:
-        with httpx.Client() as client:
-            resp = client.get(
-                f"{COMFYUI_URL}/history/{prompt_id}",
-                timeout=10.0,
-            )
-            resp.raise_for_status()
-            history = resp.json()
-    except httpx.ConnectError:
+        history = get_engine().get_history(prompt_id=prompt_id)
+    except EngineConnectionError:
         return to_json({"error": f"ComfyUI not reachable at {COMFYUI_URL}."})
     except Exception as e:
         return to_json({"error": str(e)})
 
     if prompt_id not in history:
-        # Check if it's in the queue
+        # Check if it's in the queue (introspection — stays direct httpx,
+        # out of scope for the execution-engine abstraction).
         try:
             with httpx.Client() as client:
                 resp = client.get(f"{COMFYUI_URL}/queue", timeout=5.0)

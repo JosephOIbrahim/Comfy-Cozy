@@ -469,6 +469,7 @@ graph TB
     subgraph Backend ["Agent Backend (Python)"]
         Routes["49 REST Routes<br/>+ WebSocket"]
         Tools["113 Tools<br/>workflow -- models -- vision -- session -- provision"]
+        Engine["IAIEngine<br/>ComfyUIAdapter<br/>queue / interrupt / history / ws"]
         Cog["Cognitive Engine<br/>LIVRPS delta stack -- CWM -- experience"]
     end
     subgraph ComfyUI ["ComfyUI"]
@@ -484,7 +485,8 @@ graph TB
     Sidebar <-->|"canvas sync"| Canvas
     Routes --> Tools
     Tools --> Cog
-    Tools -->|httpx| API
+    Tools -->|execution path| Engine
+    Engine -->|httpx + websockets| API
     Cog --> EXP
     Tools --> Sessions
 
@@ -495,6 +497,7 @@ graph TB
 
     classDef orange fill:#d99458,color:#1a1a1a,stroke:#1a1a1a
     classDef yellow fill:#d9c958,color:#1a1a1a,stroke:#1a1a1a
+    class Engine orange
     class Sidebar,Routes,Tools,Cog,API,Canvas,EXP,Sessions yellow
 ```
 
@@ -1000,6 +1003,28 @@ graph LR
 
 The retry tracker pattern is the key insight: an `on_text("Hello ")` followed by a transient `LLMRateLimitError` USED TO retry from scratch, calling `on_text("Hello ")` again, then `on_text("world!")` — the user saw `"Hello Hello world!"` in the UI. After cycle 7, any error fired AFTER content was emitted raises immediately instead of retrying. Tested across all 4 providers via `tests/test_main.py::TestStreamRetryDuplication` + provider-specific regression tests.
 
+### Execution Engine Adapter
+
+The agent's **execution path** (POST `/prompt`, POST `/interrupt`, GET `/history`, WS `/ws`) routes through an abstraction layer that mirrors `agent/llm/` discipline exactly. `agent/engine/` defines an `IAIEngine` ABC with four keyword-only methods — `queue_prompt`, `interrupt`, `get_history`, `subscribe_ws` — and ships a `ComfyUIAdapter(IAIEngine)` that owns every direct HTTP/WS call to a running ComfyUI instance. `agent/tools/comfy_execute.py` delegates through `get_engine()`; the call sites it owned before (queue, poll, websocket monitoring, execution status) now translate engine exceptions back to their established string/tuple return shapes, so caller behavior is byte-for-byte identical and the existing test suite passes unchanged.
+
+```mermaid
+graph LR
+    Tool["agent/tools/comfy_execute.py<br/>queue / poll / ws / status"] --> Get["get_engine()<br/>thread-safe cache<br/>env var AI_ENGINE"]
+    Get --> IFace{IAIEngine}
+    IFace -->|comfyui| Adapter["ComfyUIAdapter<br/>httpx + websockets<br/>circuit breaker"]
+    Adapter -->|POST| P["/prompt"]
+    Adapter -->|POST| I["/interrupt"]
+    Adapter -->|GET| H["/history"]
+    Adapter -.->|WS| W["/ws"]
+
+    classDef orange fill:#d99458,color:#1a1a1a,stroke:#1a1a1a
+    classDef yellow fill:#d9c958,color:#1a1a1a,stroke:#1a1a1a
+    class Adapter,P,I,H,W orange
+    class Tool,Get,IFace yellow
+```
+
+The split is deliberate: **execution operations** live behind `IAIEngine` because they're the path that a future backend (a remote queue, a hosted ComfyUI fleet, a mock for tests) would re-implement. **Introspection endpoints** (`/object_info`, `/system_stats`, `/queue` status, `/userdata`) stay as direct `httpx` calls in their existing tool modules — they're discovery-only and not part of the execution surface. Engine errors form a hierarchy that parallels the LLM error hierarchy: `EngineError` base + `EngineConnectionError`, `EngineTimeoutError`, `EngineValidationError` (carries `node_errors`), `EngineServerError` (carries `status_code`), `EngineUnavailableError` (circuit-breaker open). The `subscribe_ws` context manager yields `EngineEvent(type, data, raw)` objects plus a `__timeout__` sentinel event that lets the caller re-check its deadline without losing the connection.
+
 ### Graceful Degradation
 
 Every subsystem has an independent kill switch. Set any of these to `0` in your `.env` to disable:
@@ -1033,6 +1058,25 @@ flowchart LR
     class Done orange
     class KW,TFIDF,Context,Merge yellow
 ```
+
+### MiniLM Embedder (in-process semantic vectors)
+
+`agent/embedder.py` exposes a single function — `embed(payload: str) -> list[float]` — that returns 384-dimension L2-normalized vectors from `sentence-transformers/all-MiniLM-L6-v2`. The model is lazy-loaded on first call (≈80 MB cache at `~/.cache/huggingface/hub/`) and reused thereafter; encoding latency on M-series CPU is ≈5 ms per short string after warm-up. Opt-in: requires `pip install -r requirements.txt` to pull `sentence-transformers` + the CPU-only torch wheel (`--extra-index-url https://download.pytorch.org/whl/cpu` keeps the install small for users without a GPU).
+
+```mermaid
+flowchart LR
+    Text["outcome text<br/>(workflow params + result)"] --> Embed["embed(payload)<br/>lazy SentenceTransformer<br/>thread-safe cache"]
+    Embed --> Vec["384-dim<br/>L2-normalized list[float]"]
+    Vec --> Cos["cosine similarity<br/>(= dot product)"]
+    Cos --> Neighbors["nearest-neighbor<br/>outcome retrieval"]
+
+    classDef orange fill:#d99458,color:#1a1a1a,stroke:#1a1a1a
+    classDef yellow fill:#d9c958,color:#1a1a1a,stroke:#1a1a1a
+    class Embed,Vec,Cos orange
+    class Text,Neighbors yellow
+```
+
+The acceptance test (`tests/embedder/test_minilm_clustering.py`) verifies the contract on a 50-outcome × 5-theme corpus: within-theme cosine averages stay above 0.4, between-theme below 0.3, separation above 0.15. A parallel control using deterministic hash-based "synthetic" vectors (the shape of the comfy-moneta-bridge's current stub) deliberately does **not** cluster — the test asserts `|within − between| < 0.05` and that both averages sit near zero. This is the contract that distinguishes a real embedder from a placeholder before the in-process Moneta migration consumes it. **`record_outcome` and the existing JSONL → bridge pipeline are not modified by this step** — the embedder is wired in as a future-ready dependency, not switched on yet.
 
 ### Tool Inventory
 
@@ -1085,9 +1129,15 @@ flowchart LR
 
 ```
 agent/
-  llm/                Multi-provider abstraction (Anthropic, OpenAI, Gemini, Ollama)
+  llm/                Multi-provider LLM abstraction (Anthropic, OpenAI, Gemini, Ollama)
+  engine/             Execution-engine abstraction (IAIEngine + ComfyUIAdapter)
+                      Wraps POST /prompt, POST /interrupt, GET /history, WS /ws
+                      so the agent's execution path is backend-pluggable
+  embedder.py         MiniLM (all-MiniLM-L6-v2) -- 384-dim L2-normalized vectors
+                      Lazy-loaded, thread-safe, opt-in via requirements.txt
   tools/              63 tools -- workflow ops, model search, provisioning, auto-wire
                       workflow_patch.py wraps the cognitive engine for non-destructive PILOT
+                      comfy_execute.py routes execution traffic through agent/engine/
   brain/              27 tools -- vision, planning, memory, optimization
     adapters/         Pure-function translators between brain modules
   stage/              23 tools -- USD state, prediction, composition (USD optional via [stage])
