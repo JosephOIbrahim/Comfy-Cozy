@@ -17,3 +17,4 @@
 - [x] 13. Orchestrate CLI — cli.py updated with scene composition + validation + experience recording steps
 - [x] 14. Fix test_health.py mock leak — 4 failing tests (MEDIUM, target 2717 passing)
 - [x] 15. Windows grep portability — test_workflow_patch_engine_live.py subprocess→pathlib (LOW, target 2718 passing)
+- [x] 16. Item 12 — agent/engine/ adapter abstraction — `IAIEngine` ABC mirrors agent/llm/, `ComfyUIAdapter` wraps POST /prompt + POST /interrupt + GET /history + WS /ws; refactored comfy_execute.py call sites (queue/poll/ws/status) to route through engine. Introspection endpoints (object_info, queue, system_stats, userdata) intentionally left direct per narrow scope. 3822 passing, identical to baseline; lint clean; Crucible audit PASS on all 7 points.
