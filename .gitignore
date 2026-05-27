@@ -38,6 +38,9 @@ logs/
 *.swp
 *.swo
 
+# macOS artifacts
+.DS_Store
+
 # Windows artifacts
 nul
 
