@@ -13,6 +13,7 @@ import { app } from "../../../scripts/app.js";
 import { AgentClient } from "./agentClient.js";
 import { addDeltaFailure, clearDeltaFailures } from "./_deltaFailures.js";
 import { applyTouchedSet } from "./_pushApplyTouched.js";
+import { debounce, withObserverPause } from "./_pushControl.js";
 
 const client = new AgentClient();
 
@@ -104,9 +105,13 @@ async function pushAgentToCanvas() {
     const { workflow, touched } = result;
     if (!workflow || !app.graph) return;
 
-    applyTouchedSet(app, workflow, touched);
-
-    app.canvas.setDirty(true, true);
+    // L-6: pause onAfterChange while we mutate the canvas so our writes
+    // don't echo back through syncCanvasToAgent (P4). Restore in finally
+    // regardless of whether applyTouchedSet throws (F-4 mitigation).
+    await withObserverPause(app.graph, () => {
+      applyTouchedSet(app, workflow, touched);
+      app.canvas.setDirty(true, true);
+    });
 
     // L-2: acknowledge the push so the server snapshot rotates forward.
     // If ack fails, log but don't throw — touched will recompute against
@@ -140,8 +145,13 @@ function highlightNode(nodeId) {
   }, 600);
 }
 
+// L-6: debounce rapid workflow-changed events. 100 ms window coalesces
+// bursts (e.g., the agent emitting several connect_nodes deltas in rapid
+// succession) into a single push. F-5 mitigation.
+const _debouncedPushAgentToCanvas = debounce(pushAgentToCanvas, 100);
+
 document.addEventListener("comfy-cozy:workflow-changed", () => {
-  pushAgentToCanvas();
+  _debouncedPushAgentToCanvas();
 });
 
 document.addEventListener("comfy-cozy:node_touch", (e) => {

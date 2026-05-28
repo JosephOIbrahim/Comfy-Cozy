@@ -402,3 +402,41 @@ verifier:      L1 (Vitest pushApplyTouched.test.js: 14/14; total 23/23 vitest
 outcome:       success
 external_calls: [Read (agentClient), Write x2, Edit x3, Bash (npm test)]
 ```
+
+```
+span_id:       s17
+parent_id:     s16
+pass:          4
+step_type:     execute
+leaf_id:       L-6
+input_state:   L-2 ready (touched-set consumer wired); PLAN L-6 contract
+               (observer-pause + try/finally + debounce; F-4, F-5, P4)
+action:        Extracted control primitives into new panel/web/js/_pushControl.js:
+                 debounce(fn, ms) — coalesces rapid calls; .cancel() drops
+                                    pending fire; swallows fn errors safely
+                 withObserverPause(graph, fn) — saves graph.onAfterChange,
+                                    replaces with no-op, restores in finally
+                                    (works for sync throws, async rejects,
+                                    null graph)
+               superduperPanel.js: wrapped applyTouchedSet + setDirty in
+               withObserverPause(app.graph, ...) inside pushAgentToCanvas;
+               debounce(pushAgentToCanvas, 100) replaces the bare event
+               handler call on comfy-cozy:workflow-changed.
+output_state:  panel/web/js/_pushControl.js (new, ~55 LOC).
+               panel/web/js/superduperPanel.js: +import {debounce,
+               withObserverPause}; +withObserverPause wrap around mutations;
+               +_debouncedPushAgentToCanvas at module scope replacing inline
+               pushAgentToCanvas() event call. tests/panel/pushControl.test.js
+               (new, 11 cases). P4 (no echo): pause is module-internal; the
+               saved handler is always restored even on exception, so no echo
+               and no observer leak. F-5 (concurrent race): debounce makes
+               the queue head-of-line — at most one push in flight per 100 ms
+               window.
+verifier:      L2 (Vitest pushControl: 11/11 covering throw-restore, async-
+               reject-restore, coalesce N rapid → 1 fn, cancel kills pending,
+               null-graph safe, paused observer doesn't fire original) + L0
+               sanity (all prior vitest + pytest green; new total 58/58) —
+               L-6 GREEN
+outcome:       success
+external_calls: [Write x2, Edit x3, Bash (npm test)]
+```
