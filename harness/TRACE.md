@@ -306,3 +306,27 @@ verifier:      L0 (test runner exits 0; 4/4 passing) — L-0 GREEN
 outcome:       success
 external_calls: [Bash (git checkout -b, mkdir, npm install, npm test), Write x4, Edit x2]
 ```
+
+```
+span_id:       s14
+parent_id:     s13
+pass:          4
+step_type:     execute
+leaf_id:       L-7
+input_state:   L-0 stack ready; PLAN L-7 contract (surface accumulator + status-bar wire)
+action:        Implementation refinement vs PLAN: extracted helpers into new
+               panel/web/js/_deltaFailures.js module (pure ES module, no dependency
+               on the host app import, trivially unit-testable). Wired
+               graphMode.js:_refreshStatusBar to surface deltaFailureCount() > 0 as
+               a "Details" warning row; modal renders entries with type/node/input/
+               class/reason/raw. Hooked clearDeltaFailures() at the top of
+               superduperPanel.js:pushAgentToCanvas to reset accumulator each push.
+               Added 5 Vitest tests covering insert/get/clear/copy-safety/order.
+output_state:  panel/web/js/_deltaFailures.js (new). graphMode.js: +import, +warning
+               push in _refreshStatusBar, +_showDeltaFailureModal helper.
+               superduperPanel.js: +import, +clear-on-push hook.
+               9/9 Vitest tests passing (4 sample + 5 deltaFailures).
+verifier:      L1 (Vitest deltaFailures.test.js: 5/5) — L-7 GREEN
+outcome:       success
+external_calls: [Write x2, Edit x5, Bash (npm test x2)]
+```

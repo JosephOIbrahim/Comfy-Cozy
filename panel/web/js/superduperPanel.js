@@ -11,6 +11,7 @@
 
 import { app } from "../../../scripts/app.js";
 import { AgentClient } from "./agentClient.js";
+import { addDeltaFailure, clearDeltaFailures } from "./_deltaFailures.js";
 
 const client = new AgentClient();
 
@@ -92,6 +93,8 @@ async function setupCanvasSync() {
  * differ; connections (arrays) are left untouched.
  */
 async function pushAgentToCanvas() {
+  // L-7: reset delta-failure accumulator at the start of every push
+  clearDeltaFailures();
   try {
     const workflow = await client.getWorkflowApi();
     if (!workflow || !app.graph) return;
