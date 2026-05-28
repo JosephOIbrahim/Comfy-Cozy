@@ -43,6 +43,11 @@ export function makeFakeGraph(nodesById = {}) {
   };
   return {
     _nodesById: nodesById,
+    get _nodes() {
+      // LiteGraph exposes this as an array of LGraphNode; the stub
+      // mirrors the shape so L-4 Tier-3 detection can enumerate.
+      return Object.values(nodesById);
+    },
     get onAfterChange() {
       return _onAfterChange;
     },

@@ -440,3 +440,75 @@ verifier:      L2 (Vitest pushControl: 11/11 covering throw-restore, async-
 outcome:       success
 external_calls: [Write x2, Edit x3, Bash (npm test)]
 ```
+
+```
+span_id:       s18
+parent_id:     s17
+pass:          4
+step_type:     execute
+leaf_id:       L-3
+input_state:   L-6 ready; PLAN L-3 contract (ID-shape shim + parse surfacing)
+action:        Added _parseNodeId(raw) -> {ok, id} helper to
+               _pushApplyTouched.js with strict /^-?\d+$/ shape check (handles
+               null/undefined/non-numeric/empty string). Replaced parseInt
+               calls in both _applyTouchedWidget and _applyTouchedLink with
+               parseNodeId; on failure, emit addDeltaFailure({type:"malformed",
+               reason:"non-numeric node id"}) and return.
+output_state:  panel/web/js/_pushApplyTouched.js: +_parseNodeId, parseInt
+               replaced in both apply functions, +malformed surface on failure.
+verifier:      L1 (5 tests in L-3 group: non-numeric widget, non-numeric link,
+               empty string, null, numeric-string passes) — L-3 GREEN
+outcome:       success
+external_calls: [Write, Edit, Bash (npm test)]
+```
+
+```
+span_id:       s19
+parent_id:     s18
+pass:          4
+step_type:     execute
+leaf_id:       L-4
+input_state:   L-3 ready; PLAN L-4 contract (Tier-3 detection at top of push)
+action:        Added _detectTier3(graph, workflow) -> {add, delete} that diffs
+               server node-set against canvas node-set (graph._nodes array,
+               LiteGraph's exposure). Called at top of applyTouchedSet; emits
+               tier3_add for server-only, tier3_delete for canvas-only. Built
+               tier3Ids set so touched entries on Tier-3 nodes are SKIPPED in
+               main loop (avoid double-surface as stale_node_ref). Updated
+               tests/panel/_stubs/litegraph.js: added _nodes getter so the
+               fake graph mirrors LiteGraph's array exposure. Per-touched
+               stale_node_ref retained for narrower case (touched entry whose
+               node-id is missing from BOTH workflow and canvas).
+output_state:  panel/web/js/_pushApplyTouched.js: +_detectTier3, +Tier-3
+               surface at top, +tier3Ids skip in main loop.
+               tests/panel/_stubs/litegraph.js: +_nodes getter.
+               Tests rewritten to pass wfBase() (a workflow matching the
+               canvas) by default; Tier-3 tests deliberately override wfBase
+               to exercise add/delete paths.
+verifier:      L1 (4 Tier-3 detect tests + 1 per-touched stale test) — L-4 GREEN
+outcome:       success
+external_calls: [Edit (stub), Bash (npm test)]
+```
+
+```
+span_id:       s20
+parent_id:     s19
+pass:          4
+step_type:     execute
+leaf_id:       L-5
+input_state:   L-4 ready; PLAN L-5 contract (unknown-kind + missing-slot)
+action:        Added missing_slot surface in _applyTouchedWidget for two
+               cases: (a) node has no widgets array, (b) widget with given
+               name not found. Added malformed surface in main loop when
+               entry.kind is neither "widget" nor "link" ("unknown" or
+               other). raw_value captured in the malformed entry for
+               diagnostic value.
+output_state:  panel/web/js/_pushApplyTouched.js: +missing_slot surface in
+               widget path, +malformed surface for unknown kind. P3 surface
+               enumeration complete for the widget path (links wait for L-8).
+verifier:      L1 (3 L-5 tests: nonexistent input name, null widgets array,
+               unknown kind) + L0 sanity (all prior green; new total 68/68
+               = 44 vitest + 24 pytest) — L-5 GREEN
+outcome:       success
+external_calls: [Bash (npm test)]
+```
