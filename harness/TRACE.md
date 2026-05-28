@@ -330,3 +330,41 @@ verifier:      L1 (Vitest deltaFailures.test.js: 5/5) — L-7 GREEN
 outcome:       success
 external_calls: [Write x2, Edit x5, Bash (npm test x2)]
 ```
+
+```
+span_id:       s15
+parent_id:     s14
+pass:          4
+step_type:     execute
+leaf_id:       L-1
+input_state:   L-7 ready; PLAN L-1 contract (per-session touched-set + routes hooks)
+action:        Write panel/server/touched.py (record_last_pushed / compute_touched /
+               clear_session; thread-safe via RLock; deep-copy snapshot semantics;
+               link/widget classification). Add 2 new routes:
+               GET  /comfy-cozy/get-workflow-api-with-touched  -> {workflow, touched}
+               POST /comfy-cozy/ack-push                       -> snapshot current.
+               Hook record_last_pushed into existing /comfy-cozy/load-workflow-data
+               (post-load) and /comfy-cozy/reset (post-reset). Hook clear_session
+               into chat.py WebSocket disconnect finally block. Write tests/
+               test_touched.py (24 pytest cases: snapshot semantics, diff,
+               classification, F-1 clobber scenario, session isolation, ack-push
+               flow, malformed shapes). Bug surfaced + fixed: classification used
+               `or` short-circuit which failed when new_value was None (link
+               removed); "unknown" is truthy → old_value fallback never ran.
+               Replaced with explicit conditional.
+output_state:  panel/server/touched.py (new, 132 LOC). panel/server/routes.py:
+               +2 endpoints (~58 LOC), +load-hook, +reset-hook. panel/server/
+               chat.py: +clear_session on disconnect. tests/test_touched.py
+               (new, 245 LOC, 24 tests). py_compile clean.
+               Architectural note (out of scope, surfaced for PASS 5): production
+               session routing between HTTP and WebSocket contexts
+               (current_conn_session() returns "default" for browser HTTP,
+               conv.id for in-agent loop) was NOT addressed; L-1's mechanism is
+               session-id-parameterized so it adapts to whichever session is in
+               play, but if HTTP/WS sessions don't intersect, F-1 mitigation
+               degrades. Surface at PASS 5 integration.
+verifier:      L1 (24/24 pytest passing in tests/test_touched.py) +
+               L0 (9/9 vitest sanity, no JS changes) — L-1 GREEN
+outcome:       success
+external_calls: [Write x2, Edit x4, Bash (pytest x2, npm test, py_compile)]
+```

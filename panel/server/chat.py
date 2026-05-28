@@ -459,6 +459,12 @@ async def websocket_handler(request):
     finally:
         conv.cancelled.set()  # Signal any in-flight agent thread to stop between turns
         _conversations.pop(conv.id, None)
+        # L-1: drop the touched-set snapshot for this conversation
+        try:
+            from .touched import clear_session as _touched_clear
+            _touched_clear(conv.id)
+        except Exception:
+            log.debug("touched.clear_session failed on disconnect", exc_info=True)
         log.info("Panel WebSocket disconnected: %s", conv.id)
 
     return ws

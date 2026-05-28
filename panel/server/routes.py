@@ -136,6 +136,56 @@ def setup_routes():
             log.error("Route %s error: %s", request.path, e, exc_info=True)
             return web.json_response({"error": "Internal server error"}, status=500)
 
+    @routes.get("/comfy-cozy/get-workflow-api-with-touched")
+    async def get_workflow_api_with_touched(request):
+        """Return the current agent workflow + the touched-set delta.
+
+        The touched-set lists only the inputs the agent has changed since
+        the last successful push — used by pushAgentToCanvas to avoid
+        clobbering director-edited slots (write-back v1, L-1).
+        """
+        try:
+            rejected = _guard(request, "read")
+            if rejected:
+                return rejected
+            from agent._conn_ctx import current_conn_session
+            from agent.tools.workflow_patch import get_current_workflow
+            from .touched import compute_touched
+            workflow = get_current_workflow()
+            if workflow is None:
+                return web.json_response({"error": "No workflow loaded"}, status=404)
+            session_id = current_conn_session()
+            touched = compute_touched(session_id, workflow)
+            return web.json_response({"workflow": workflow, "touched": touched})
+        except Exception as e:
+            log.error("Route %s error: %s", request.path, e, exc_info=True)
+            return web.json_response({"error": "Internal server error"}, status=500)
+
+    @routes.post("/comfy-cozy/ack-push")
+    async def ack_push(request):
+        """Acknowledge a successful push from the panel.
+
+        Snapshots the current workflow as the new last-pushed baseline.
+        Subsequent compute_touched calls diff against this snapshot
+        (write-back v1, L-1).
+        """
+        try:
+            rejected = _guard(request, "mutation")
+            if rejected:
+                return rejected
+            from agent._conn_ctx import current_conn_session
+            from agent.tools.workflow_patch import get_current_workflow
+            from .touched import record_last_pushed
+            workflow = get_current_workflow()
+            if workflow is None:
+                return web.json_response({"error": "No workflow loaded"}, status=404)
+            session_id = current_conn_session()
+            record_last_pushed(session_id, workflow)
+            return web.json_response({"ok": True})
+        except Exception as e:
+            log.error("Route %s error: %s", request.path, e, exc_info=True)
+            return web.json_response({"error": "Internal server error"}, status=500)
+
     # ── Workflow Loading ───────────────────────────────────────────
 
     @routes.post("/comfy-cozy/load-workflow")
@@ -172,6 +222,15 @@ def setup_routes():
             err = load_workflow_from_data(workflow_data, source=source)
             if err:
                 return web.json_response({"error": err}, status=400)
+
+            # L-1: snapshot the freshly-loaded workflow as the
+            # last-pushed baseline for this session (write-back v1).
+            try:
+                from agent._conn_ctx import current_conn_session
+                from .touched import record_last_pushed
+                record_last_pushed(current_conn_session(), workflow_data)
+            except Exception:
+                log.debug("touched.record_last_pushed failed on load", exc_info=True)
 
             result = {"loaded": True}
 
@@ -280,6 +339,17 @@ def setup_routes():
             if rejected:
                 return rejected
             result = _tool_call("reset_workflow", {})
+            # L-1: snapshot the post-reset workflow as the last-pushed
+            # baseline (write-back v1).
+            try:
+                from agent._conn_ctx import current_conn_session
+                from agent.tools.workflow_patch import get_current_workflow
+                from .touched import record_last_pushed
+                post_reset = get_current_workflow()
+                if post_reset is not None:
+                    record_last_pushed(current_conn_session(), post_reset)
+            except Exception:
+                log.debug("touched.record_last_pushed failed on reset", exc_info=True)
             return web.Response(text=result, content_type="application/json")
         except Exception as e:
             log.error("Route %s error: %s", request.path, e, exc_info=True)
