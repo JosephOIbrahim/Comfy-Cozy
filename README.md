@@ -737,7 +737,7 @@ graph TB
 - **Canvas bridge** -- Agent changes sync to canvas live with node highlighting; canvas re-syncs after each execution
 - **Self-healing** -- Missing node warnings with one-click repair, deprecated node migration
 
-**49 panel routes** expose the full tool surface: discovery, provisioning, repair, sessions, execution.
+**51 panel routes** expose the full tool surface: discovery, provisioning, repair, sessions, execution. (Write-back v1 added `/get-workflow-api-with-touched` and `/ack-push` to the existing 49.)
 
 Every request passes through a three-layer security chain:
 
@@ -759,6 +759,73 @@ flowchart TD
     classDef yellow fill:#d9c958,color:#1a1a1a,stroke:#1a1a1a
     class R401,R413,Handler orange
     class R429,R411,Guard,REST,_guard,WS,Auth,Rate,Size yellow
+```
+
+### Write-back v1 -- touched-set push to the live canvas
+
+The canvas bridge is **bidirectional**. The canvas → agent direction has worked since launch (the panel POSTs the live graph to the agent on every change). The agent → canvas direction shipped Tier 1 only -- widget edits -- and **silently dropped every link the agent emitted** (`panel/web/js/superduperPanel.js:89-92, :106` pre-v1). Write-back v1 closes that gap with a touched-set delta-merge.
+
+```mermaid
+flowchart LR
+    Event["comfy-cozy:workflow-changed<br/>(agent mutated cache)"] --> Debounce["debounce(100ms)<br/>coalesce burst events"]
+    Debounce --> Run["runPushAgentToCanvas<br/>(_pushOrchestrator.js)"]
+    Run --> Clear["clearDeltaFailures<br/>(L-7 lifecycle)"]
+    Clear --> Fetch["GET /comfy-cozy/<br/>get-workflow-api-with-touched<br/>→ {workflow, touched}"]
+    Fetch --> Pause["withObserverPause<br/>(L-6 try/finally<br/>+ refcount)"]
+    Pause --> Apply["applyTouchedSet<br/>iterate touched ONLY"]
+    Apply --> Kind{"entry.kind"}
+    Kind -->|widget| W["widget.value = new_value"]
+    Kind -->|link| L["fromNode.connect /<br/>toNode.disconnectInput"]
+    Kind -->|"Tier-3 / stale /<br/>missing / malformed"| S["addDeltaFailure<br/>(P3 surface)"]
+    W --> Dirty["app.canvas.setDirty"]
+    L --> Dirty
+    S --> Dirty
+    Dirty --> Restore["observer restored<br/>(finally)"]
+    Restore --> Ack["POST /comfy-cozy/ack-push<br/>(rotates server snapshot)"]
+
+    classDef orange fill:#d99458,color:#1a1a1a,stroke:#1a1a1a
+    classDef yellow fill:#d9c958,color:#1a1a1a,stroke:#1a1a1a
+    class W,L,Dirty,Restore,Ack orange
+    class Event,Debounce,Run,Clear,Fetch,Pause,Apply,Kind,S yellow
+```
+
+**F-1 mitigation -- touched-set diff.** The push iterates a server-computed *touched-set* (the diff between the agent's current cache and the last successfully-pushed snapshot) instead of the full workflow. Untouched canvas slots are never read or written -- director hand-edits on neighbour nodes survive every push, by construction.
+
+```mermaid
+flowchart LR
+    Load["/load-workflow-data<br/>(canvas-sync POST)"] -->|"record_last_pushed"| Snap[("snapshot:<br/>last-pushed workflow<br/>panel/server/touched.py")]
+    Agent["agent mutation<br/>(connect_nodes / set_input)"] -->|"updates"| Cache[("server cache:<br/>current_workflow")]
+    Cache --> Diff["compute_touched<br/>= diff(cache, snapshot)"]
+    Snap --> Diff
+    Diff --> Touched["touched = [<br/>  {node_id, input_name,<br/>   kind, old, new}<br/>]<br/>= what the AGENT changed"]
+    Director["director hand-edits<br/>node 5 cfg = 8.0"] -.->|"never iterated<br/>by frontend push"| Survives["node 5 survives<br/>(P2 / F-1 closed)"]
+    Touched -->|"push touched only"| Survives
+
+    classDef orange fill:#d99458,color:#1a1a1a,stroke:#1a1a1a
+    classDef yellow fill:#d9c958,color:#1a1a1a,stroke:#1a1a1a
+    class Survives orange
+    class Load,Snap,Agent,Cache,Diff,Touched,Director yellow
+```
+
+**P3 surface -- no silent drops.** Every emitted delta is either applied or routed to the panel's status bar as a "**N delta(s) not applied**" warning with a Details modal listing each entry. Six categories surface:
+
+| Type | Trigger | Action |
+|---|---|---|
+| `tier3_add` | server workflow has a node the canvas doesn't | surface only -- Tier 3 deferred per SPEC |
+| `tier3_delete` | canvas has a node the server doesn't | surface only |
+| `stale_node_ref` | touched references a node not on canvas (and not in workflow) | surface only |
+| `missing_slot` | node found, but input / widget name doesn't match | surface only |
+| `malformed` | unparseable node id, unknown kind, or non-conforming shape | surface only |
+| `link_rejected` | LiteGraph's `connect` / `disconnectInput` returned `false` | surface only |
+
+**Echo + concurrency.** `withObserverPause` is module-level refcounted, so the push pauses `app.graph.onAfterChange` **exactly once** even under nested / overlapping invocations and restores in `finally` -- no echo back into the agent (P4), no observer leak (F-4), no concurrent-push race (F-5).
+
+**Verifier stack.** 111 tests guard the contract -- **24 pytest cases** for the server-side touched-set module + **87 Vitest cases** across seven JS test files (unit, property, integration, stress, pipeline orchestrator, surface accumulator, stubs). See `harness/SHIP_REPORT.md` for predicate-by-predicate evidence and `harness/CAPSULE.md` for the F-1..F-8 verification status table.
+
+```bash
+npm install --include=dev          # one-time -- pulls Vitest
+npm test                            # 87 Vitest cases (~250ms)
+python -m pytest tests/test_touched.py -v   # 24 pytest cases
 ```
 
 ---
@@ -1160,10 +1227,22 @@ ui/
   web/css/            Design system v3 -- ComfyUI-native CSS variables, theme-reactive
   server/routes.py    WebSocket + REST endpoints for sidebar chat
 panel/
-  __init__.py         WEB_DIRECTORY + route registration + sys.path injection
-  server/routes.py    49 REST routes -- full tool surface
-  web/js/             Headless canvas↔agent bridge (no visible UI -- sidebar is primary)
-tests/                4,100+ passing tests, all mocked, ~60s
+  __init__.py             WEB_DIRECTORY + route registration + sys.path injection
+  server/routes.py        51 REST routes -- full tool surface (+ write-back v1 endpoints)
+  server/touched.py       Per-session "last pushed" snapshot + compute_touched (F-1)
+  server/chat.py          WebSocket chat handler -- clears touched session on disconnect
+  web/js/                 Bidirectional canvas bridge (no visible UI -- sidebar is primary)
+    _deltaFailures.js     L-7 surface-report accumulator
+    _pushApplyTouched.js  L-3/L-4/L-5/L-8 apply pipeline (widget + link + surface)
+    _pushControl.js       L-6 debounce + withObserverPause (module-level refcount)
+    _pushOrchestrator.js  Composed push: clear → fetch → pause → apply → ack
+    superduperPanel.js    Headless canvas↔agent bridge entry point
+    agentClient.js        HTTP client incl. getWorkflowApiWithTouched / ackPush
+    graphMode.js          GRAPH-mode panel + delta-failure status bar + modal
+tests/                4,100+ pytest + 87 Vitest, all mocked, ~60s + ~250ms
+  panel/                  Vitest suite for write-back v1 (sample, deltaFailures,
+                          pushApplyTouched, pushControl, pushOrchestrator,
+                          integration, stress + LiteGraph stubs)
   integration/        Skips cleanly when ComfyUI not running
 ```
 
@@ -1253,6 +1332,17 @@ python -m pytest tests/ -v -m "not integration"
 ```
 
 The `[dev]` install runs the full test suite -- no ComfyUI server or API keys required, everything is mocked. The `test_provisioner.py` tests require `usd-core` (install with `pip install -e ".[stage]"` to resolve them).
+
+### JavaScript / panel write-back v1
+
+The bidirectional canvas bridge runs its own Vitest suite under `tests/panel/`:
+
+```bash
+npm install --include=dev          # one-time -- pulls Vitest
+npm test                            # 87 Vitest cases, ~250ms
+```
+
+The suite covers: surface-report accumulator, push-apply pipeline (widget + link), push control (`debounce` + `withObserverPause` + concurrent-pause refcount), push orchestrator (vi.fn() stubs), integration (SPEC P1-P4 oracle), and stress (100-entry batch, 50-event burst, 50-node Tier-3, slow ack, rapid sequence). See `harness/SHIP_REPORT.md` for write-back v1 details and `harness/CAPSULE.md` for the F-1..F-8 verification status table.
 
 ---
 
