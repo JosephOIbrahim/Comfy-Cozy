@@ -53,18 +53,50 @@ export function debounce(fn, ms) {
   return debounced;
 }
 
+// Module-level pause state (F-5 mitigation, CAPSULE option (c)).
+// Counts concurrent / nested withObserverPause calls so the saved
+// handler is captured exactly ONCE — when depth transitions 0 → 1.
+// Subsequent overlapping calls see depth > 0 and reuse the existing
+// pause; only the outermost finally (depth → 0) restores. This makes
+// the helper safe even when debounce doesn't coalesce events
+// (e.g., direct invocations, tests).
+let _pauseDepth = 0;
+let _savedOnAfterChange = null;
+let _pausedGraph = null;
+
 export async function withObserverPause(graph, fn) {
   if (!graph) {
     // No graph — nothing to pause; just run the body.
     return await fn();
   }
-  const saved = graph.onAfterChange;
-  graph.onAfterChange = _noop;
+  if (_pauseDepth === 0) {
+    _savedOnAfterChange = graph.onAfterChange;
+    _pausedGraph = graph;
+    graph.onAfterChange = _noop;
+  }
+  _pauseDepth++;
   try {
     return await fn();
   } finally {
-    graph.onAfterChange = saved;
+    _pauseDepth--;
+    if (_pauseDepth === 0 && _pausedGraph !== null) {
+      _pausedGraph.onAfterChange = _savedOnAfterChange;
+      _savedOnAfterChange = null;
+      _pausedGraph = null;
+    }
   }
+}
+
+/**
+ * Test-only: reset the module-level pause state.
+ * Production code should never call this. Tests use it in beforeEach
+ * to ensure isolation when prior tests leak depth (e.g., via uncaught
+ * async rejection during setup).
+ */
+export function _resetObserverPauseState() {
+  _pauseDepth = 0;
+  _savedOnAfterChange = null;
+  _pausedGraph = null;
 }
 
 function _noop() {

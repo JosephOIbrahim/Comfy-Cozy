@@ -209,6 +209,39 @@ PASS 2 closes clean. PASS 3 (DECOMPOSE) inherits **3 design-constraint findings
 
 ---
 
+## PASS 4–6 verification status (post-implementation)
+
+| Finding | Severity | PASS 4 Closure | PASS 5 Proxy | PASS 6 Stress |
+|---|---|---|---|---|
+| F-1 stale-cache clobber | DESIGN-CONSTRAINT | ✅ L-1 server touched-set + L-2 frontend consumer (widgets) + L-8 link apply | ✅ orchestrator F-1 end-to-end | ✅ 100-entry batch + rapid 5-push sequence |
+| F-2 NaN node IDs | DESIGN-CONSTRAINT | ✅ L-3 strict `parseNodeId` (`/^-?\d+$/`) | ✅ via orchestrator P3 propagate | ✅ malformed-mix stress |
+| F-3 Tier-3 leak | DESIGN-CONSTRAINT | ✅ L-4 top-level detect (server vs canvas) | ✅ all 6 surface types in one push | ✅ 50-node Tier-3 in both directions |
+| F-4 observer-pause leak | HARDEN | ✅ L-6 try/finally | ✅ orchestrator throw-restore | ✅ — |
+| F-5 concurrent push race | HARDEN | ⚠️ L-6 shipped option (b) debounce only — see PASS 6 amendment below | ✅ — | ✅ overlapping-pauses now safe via refcount (option c) |
+| F-6 malformed shape | HARDEN | ✅ L-3 + L-5 + L-8 from-node parse | ✅ orchestrator surface propagate | ✅ mixed malformed don't throw |
+| F-7 cross-mode visibility | BOUNDED | unchanged | unchanged | unchanged — deferred per SPEC; PASS 5 manual L3 will surface if UX-critical |
+| F-8 agent-backend unreachable | BOUNDED | unchanged | ✅ getWorkflowApiWithTouched-throws path swallows + logs | unchanged — nice-to-have, not specified by SPEC |
+
+### PASS 6 amendment summary
+
+**F-5 nested-save bug surfaced.** L-6 originally shipped CAPSULE option (b)
+— debounce only — assuming `comfy-cozy:workflow-changed` events would never
+overlap. Concurrent direct invocations (bypassing debounce: tests, direct
+calls) still nested-saved the noop handler, leaking the observer.
+
+Fixed in TRACE span s24 by adding **CAPSULE option (c) on top**:
+module-level refcount + saved-handler in `panel/web/js/_pushControl.js`.
+The handler is captured ONCE when depth transitions 0 → 1 and restored
+ONCE when depth returns to 0. Nested / concurrent pauses see depth > 0
+and only increment / decrement.
+
+### PASS 6 gate
+
+**NO SHOWSTOPPER. Bounded items (F-7, F-8) documented as deferred per
+SPEC. PASS 6 PASSES.**
+
+---
+
 ## Leaf-shape preview for PASS 3
 
 Anticipated leaves from these findings (full PLAN at PASS 3):

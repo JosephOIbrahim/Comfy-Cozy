@@ -647,3 +647,48 @@ verifier:      L1 + L3 (orchestrator proxy = SPEC-fit on the composed
 outcome:       success
 external_calls: [Write x2, Edit x2, Bash (npm test, ruff)]
 ```
+
+```
+span_id:       s24
+parent_id:     s23
+pass:          6
+step_type:     execute
+input_state:   PASS 5 proxy complete (103 tests); PLAN PASS 6 contract
+               (stress attacks + bounded documentation)
+action:        Wrote tests/panel/stress.test.js with 8 scenarios:
+                 100-touched-entry apply + perf bound (<100ms)
+                 burst events (50 calls → 1 debounced execution)
+                 Tier-3 with 50 canvas-only nodes (50× tier3_delete)
+                 Tier-3 with 50 server-only nodes (50× tier3_add)
+                 overlapping observer-pauses (F-5 nested-save)
+                 slow ackPush (80ms) — doesn't deadlock
+                 mixed malformed deltas — no throw, correct surfaces
+                 rapid 5-push sequence — last value sticks, observer canonical
+               Stress test "overlapping observer-pauses" surfaced a REAL
+               BUG: L-6 originally shipped CAPSULE option (b) debounce-
+               only F-5 mitigation; concurrent direct invocations
+               (bypass debounce) still leaked observer to noop because
+               each call saved the CURRENT handler (noop after first
+               pause). PASS 6 AMENDMENT to L-6: added CAPSULE option (c)
+               on top — module-level refcount + saved-handler in
+               _pushControl.js. Capture ONCE at 0→1; restore ONCE at
+               1→0. Concurrent overlap nests safely. Added test-only
+               _resetObserverPauseState export.
+               Updated harness/CAPSULE.md with PASS 4-6 verification
+               status table mapping every F-1..F-8 to current state;
+               F-5 escalation summarized; gate marked PASS.
+output_state:  panel/web/js/_pushControl.js: +module-level pause state
+               (_pauseDepth, _savedOnAfterChange, _pausedGraph) +
+               refcount logic + _resetObserverPauseState export.
+               tests/panel/stress.test.js (new, 8 scenarios).
+               harness/CAPSULE.md: PASS 4-6 status table appended;
+               F-5 amendment summary; gate noted.
+               Test totals: 111 (87 vitest + 24 pytest).
+               PASS 6 gate: NO SHOWSTOPPER, BOUNDED ITEMS DOCUMENTED.
+verifier:      L4 stress (8 scenarios incl. performance, concurrency,
+               malformed mix, rapid sequence) + L0 sanity (no
+               regression on prior 79 vitest + 24 pytest after F-5
+               refcount amendment) — PASS 6 GREEN
+outcome:       success
+external_calls: [Write, Edit x3, Bash (npm test x2)]
+```
