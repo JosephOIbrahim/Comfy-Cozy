@@ -139,10 +139,166 @@ Branch `feat/writeback-v1-tier1-2` @ `ee2f4e4` (HEAD).
 
 ---
 
-## Operator decision required
+## Operator decision
 
-**SHIP** (with manual PASS-5 follow-up) **/ HOLD / AMEND.**
+**Decision: SHIP** (with PASS-5 manual L3 as a pre-merge gate).
+Operator-confirmed at PASS 7 SHIP question.
 
-Branch is ready for review and merge after PASS-5 manual passes against live
-ComfyUI. Per CLAUDE.md Git Authority Map: **push requires explicit operator
-approval**; not pushed by this run.
+Per CLAUDE.md Git Authority Map: **push requires explicit operator
+approval**; the materials below are prepared for the operator to execute.
+The branch is **not pushed** by this run.
+
+---
+
+## Merge preparation (operator commands)
+
+### Step 1 — Push the feature branch
+
+```bash
+git push -u origin feat/writeback-v1-tier1-2
+```
+
+### Step 2 — Open the PR
+
+```bash
+gh pr create --base master --head feat/writeback-v1-tier1-2 \
+  --title "feat(panel): write-back v1 (Tier 1+2) — close link-drop gap with delta-merge + observer-pause + Tier-3 surface" \
+  --body-file harness/PR_BODY.md
+```
+
+(PR body is also drafted inline below — operator can paste directly into
+`gh pr create --body "..."` instead of using the file form.)
+
+### Step 3 — PASS-5 manual L3 against live ComfyUI (before merge)
+
+- Install the panel as a ComfyUI custom_node extension (point ComfyUI at
+  this repo's `panel/` directory or symlink it under `ComfyUI/custom_nodes/`).
+- Load a workflow into the canvas.
+- Trigger agent mutations via the chat panel (widget edits + connect_nodes).
+- Confirm:
+  - canvas reflects agent changes (P1)
+  - manual director edits on untouched nodes survive a push (P2, F-1)
+  - no echo back into the agent (P4)
+  - simulated Tier-3 / stale-ref / missing-slot deltas surface in the
+    status bar as "N delta(s) not applied" with the Details modal (P3)
+  - rapid `workflow-changed` events coalesce to one push (F-5)
+
+### Step 4 — Merge after PASS-5 passes
+
+```bash
+gh pr merge --merge   # or --squash if the project prefers; this branch
+                      # is 11 distinct commits, --merge preserves the
+                      # leaf-by-leaf TRACE-able history
+```
+
+---
+
+## PR title
+
+```
+feat(panel): write-back v1 (Tier 1+2) — close link-drop gap with delta-merge + observer-pause + Tier-3 surface
+```
+
+## PR body (paste into gh pr create --body)
+
+```markdown
+## Summary
+
+Closes the live shipping gap where `pushAgentToCanvas` silently
+discards every link the agent emits (`panel/web/js/superduperPanel.js:89–92, :106`).
+Tier 1 (widget edits) **+** Tier 2 (rewiring links between *existing*
+nodes) write-back to the live ComfyUI canvas via a touched-only
+delta-merge.
+
+Tier 3 (node create/delete + auto-layout) and MCP write-back are
+deferred per SPEC — Tier-3-shaped deltas are detected and surfaced,
+never applied; MCP path is untouched (P7 verified).
+
+## What changes
+
+**Server (`panel/server/`):**
+- `touched.py` (new) — per-session "last pushed" snapshot + diff
+- `routes.py` — `/get-workflow-api-with-touched`, `/ack-push` endpoints;
+  `record_last_pushed` hooked into load + reset
+- `chat.py` — `clear_session` on WebSocket disconnect
+
+**Frontend (`panel/web/js/`):**
+- `_pushApplyTouched.js` (new) — touched-only iteration with full
+  L-3/L-4/L-5/L-8 surface enumeration (tier3_add, tier3_delete,
+  stale_node_ref, missing_slot, malformed, link_rejected)
+- `_pushControl.js` (new) — `debounce` + `withObserverPause`
+  (module-level refcount; safe under concurrent overlap)
+- `_pushOrchestrator.js` (new) — composed push: clear → fetch →
+  pause → apply → setDirty → ack
+- `_deltaFailures.js` (new) — surface-report accumulator
+- `superduperPanel.js` — `pushAgentToCanvas` rewritten as one-line
+  delegation
+- `agentClient.js` — `getWorkflowApiWithTouched`, `ackPush`
+- `graphMode.js` — status-bar warning + modal for "N delta(s) not
+  applied"
+
+**JS verifier stack (new — per SPEC amendment A2):**
+- `package.json`, `vitest.config.js`
+- `tests/panel/` (7 test files): sample, deltaFailures,
+  pushApplyTouched, pushControl, pushOrchestrator, integration, stress
+- Stubs: `tests/panel/_stubs/litegraph.js`
+
+**No changes to `agent/mcp_server.py`** (P7 panel-only honored; verified
+by L-11 `git diff master -- agent/mcp_server.py` → empty).
+
+## Test results
+
+| Suite | Count |
+|---|---|
+| Python (`tests/test_touched.py`) | 24/24 |
+| JS Vitest (7 files) | 87/87 |
+| **Total** | **111/111** |
+
+`ruff check` clean. `ruff format` applied across changed Python.
+
+## SPEC compliance
+
+7 of 7 predicates met:
+
+- **P1** link parity (applied ops) — L-8 + L-10 + PASS-5 proxy
+- **P2** delta-merge / no-clobber — L-1 + L-2 + F-1 stress
+- **P3** enumerated surface — all 6 types in one push test
+- **P4** no echo — L-6 + module-level refcount
+- **P5** ID-shape — L-3 strict `/^-?\d+$/`
+- **P6** disconnect correctness — LiteGraph self-sufficient
+- **P7** panel-only — git-diff filter empty
+
+See `harness/SHIP_REPORT.md` for predicate-by-predicate evidence,
+`harness/CAPSULE.md` for the F-1..F-8 verification table,
+`harness/TRACE.md` for the append-only causal log (s0..s25).
+
+## Known limitations
+
+- **Real-canvas L3 against live ComfyUI** is the one open verification
+  gap (PASS-5 manual). PASS-5 automated proxy + PASS-6 stress are the
+  regression net; this PR should be reviewed AND validated against a
+  real canvas before merge.
+- Cross-mode P3 visibility (status-bar only in GRAPH mode) — BOUNDED,
+  deferred per SPEC.
+- Session routing between browser-HTTP and in-agent-WebSocket contexts
+  — architectural pre-existing concern; out of write-back v1 scope.
+- `_resetObserverPauseState` is a test-only export from production
+  code; tolerable, could be build-flag-gated later.
+
+## Test plan
+
+- [ ] Pull branch; install panel as ComfyUI custom extension
+- [ ] Load a workflow into the canvas
+- [ ] Trigger an agent widget edit via chat → confirm canvas reflects it
+- [ ] Hand-edit a node widget; trigger an agent edit on a DIFFERENT node
+      → confirm hand edit survives (F-1 / P2)
+- [ ] Trigger an agent link change → confirm canvas link state matches
+      server `current_workflow.inputs[*]`
+- [ ] Force a stale-ref / Tier-3 / missing-slot condition → confirm
+      status-bar surfaces "N delta(s) not applied" + modal lists entries
+- [ ] Rapidly fire `workflow-changed` events → confirm only one push
+      fires (F-5 debounce)
+- [ ] Throw mid-apply (forced) → confirm observer restored, push catches
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+```
