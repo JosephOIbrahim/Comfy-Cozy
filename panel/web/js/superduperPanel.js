@@ -11,9 +11,8 @@
 
 import { app } from "../../../scripts/app.js";
 import { AgentClient } from "./agentClient.js";
-import { addDeltaFailure, clearDeltaFailures } from "./_deltaFailures.js";
-import { applyTouchedSet } from "./_pushApplyTouched.js";
-import { debounce, withObserverPause } from "./_pushControl.js";
+import { debounce } from "./_pushControl.js";
+import { runPushAgentToCanvas } from "./_pushOrchestrator.js";
 
 const client = new AgentClient();
 
@@ -95,36 +94,10 @@ async function setupCanvasSync() {
  * differ; connections (arrays) are left untouched.
  */
 async function pushAgentToCanvas() {
-  // L-7: reset delta-failure accumulator at the start of every push
-  clearDeltaFailures();
-  try {
-    // L-2: fetch workflow + touched-set; iterate touched only so
-    // director-edited slots survive (F-1 mitigation).
-    const result = await client.getWorkflowApiWithTouched();
-    if (!result) return;
-    const { workflow, touched } = result;
-    if (!workflow || !app.graph) return;
-
-    // L-6: pause onAfterChange while we mutate the canvas so our writes
-    // don't echo back through syncCanvasToAgent (P4). Restore in finally
-    // regardless of whether applyTouchedSet throws (F-4 mitigation).
-    await withObserverPause(app.graph, () => {
-      applyTouchedSet(app, workflow, touched);
-      app.canvas.setDirty(true, true);
-    });
-
-    // L-2: acknowledge the push so the server snapshot rotates forward.
-    // If ack fails, log but don't throw — touched will recompute against
-    // the (now stale) snapshot on next push; re-applied widget writes are
-    // no-ops since widget.value === new_value already.
-    try {
-      await client.ackPush();
-    } catch (e) {
-      console.debug("[Comfy Cozy] ackPush failed:", e);
-    }
-  } catch (e) {
-    console.debug("[Comfy Cozy] Canvas push failed:", e);
-  }
+  // Full pipeline composed in _pushOrchestrator.runPushAgentToCanvas.
+  // Extracted for PASS-5-proxy testability (vi.fn() stubs for client and
+  // fake app). Production wires the host app import + AgentClient.
+  return runPushAgentToCanvas(app, client);
 }
 
 /**

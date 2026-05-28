@@ -593,3 +593,57 @@ verifier:      L1 + L3 (the 12-scenario suite IS the SPEC-fit oracle for
 outcome:       success
 external_calls: [Write, Bash (npm test)]
 ```
+
+```
+span_id:       s23
+parent_id:     s22
+pass:          5
+step_type:     execute
+input_state:   PASS 4 closed (8 leaves green, 90/90 tests); operator
+               PASS-5 gate chose option (D) — proxy via vi.fn() stubs.
+action:        Extracted push orchestration into new
+               panel/web/js/_pushOrchestrator.js exporting
+               runPushAgentToCanvas(app, client). Composes the full
+               pipeline: clearDeltaFailures → client.getWorkflowApi-
+               WithTouched → withObserverPause(applyTouchedSet +
+               setDirty) → client.ackPush. Error swallowing at top-level
+               (event handler must not throw); ackPush failure caught
+               separately and logged.
+               superduperPanel.js: replaced inline pushAgentToCanvas
+               body with `return runPushAgentToCanvas(app, client)`.
+               Removed now-unused imports (addDeltaFailure,
+               clearDeltaFailures, applyTouchedSet, withObserverPause)
+               — only `app`, `AgentClient`, `debounce`, and the new
+               orchestrator remain as direct dependencies.
+               Wrote tests/panel/pushOrchestrator.test.js (13 scenarios):
+                 - happy widget / happy link / empty touched (all
+                   trigger ackPush)
+                 - early returns: client null, workflow null, app.graph
+                   absent — none call ackPush
+                 - ackPush throws → swallowed; widget still applied;
+                   observer restored
+                 - getWorkflowApiWithTouched throws → swallowed; no
+                   ackPush; observer restored
+                 - P3 surfaces propagate through orchestrator
+                 - L-7 lifecycle: stale failures from prior push cleared
+                 - F-1 end-to-end through orchestrator
+                 - call-order: getWorkflowApiWithTouched precedes
+                   ackPush
+                 - observer paused during apply (snapshot taken in
+                   setDirty hook), restored before push completes
+output_state:  panel/web/js/_pushOrchestrator.js (new, ~55 LOC).
+               panel/web/js/superduperPanel.js: imports trimmed;
+               pushAgentToCanvas reduced to one-line delegation.
+               tests/panel/pushOrchestrator.test.js (new, 13 cases).
+               Total: 79 vitest + 24 pytest = 103 tests.
+               PASS 5 proxy GREEN. Real-canvas manual L3 against live
+               ComfyUI remains operator's final-mile validation; this
+               proxy is the automated regression net that covers the
+               same seams.
+verifier:      L1 + L3 (orchestrator proxy = SPEC-fit on the composed
+               pipeline; 13 scenarios cover every leaf + ackPush flow +
+               error paths) + ruff sanity (no JS lint stack per F4
+               amendment; Python ruff clean on touched modules)
+outcome:       success
+external_calls: [Write x2, Edit x2, Bash (npm test, ruff)]
+```

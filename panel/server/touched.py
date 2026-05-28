@@ -98,9 +98,7 @@ def clear_session(session_id: str) -> None:
         _snapshots.pop(session_id, None)
 
 
-def _diff(
-    before: dict[str, Any], after: dict[str, Any]
-) -> list[dict[str, Any]]:
+def _diff(before: dict[str, Any], after: dict[str, Any]) -> list[dict[str, Any]]:
     """Compute the touched-set as the input-level diff of ``before -> after``.
 
     Only ``workflow[node_id]["inputs"][input_name]`` is compared. Node

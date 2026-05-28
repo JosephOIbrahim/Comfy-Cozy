@@ -13,6 +13,7 @@ from panel.server.touched import (
 def _reset_touched_state():
     """Clear all sessions between tests to prevent cross-test leakage."""
     from panel.server import touched
+
     touched._snapshots.clear()
     yield
     touched._snapshots.clear()
@@ -109,13 +110,9 @@ class TestComputeTouched:
         assert result[0]["kind"] == "link"
 
     def test_unchanged_inputs_not_in_touched(self):
-        wf_before = _wf(
-            [("5", "KSampler", {"seed": 42, "cfg": 7.0, "steps": 20})]
-        )
+        wf_before = _wf([("5", "KSampler", {"seed": 42, "cfg": 7.0, "steps": 20})])
         record_last_pushed("s1", wf_before)
-        wf_after = _wf(
-            [("5", "KSampler", {"seed": 99, "cfg": 7.0, "steps": 20})]
-        )
+        wf_after = _wf([("5", "KSampler", {"seed": 99, "cfg": 7.0, "steps": 20})])
         result = compute_touched("s1", wf_after)
         names = [e["input_name"] for e in result]
         assert names == ["seed"]

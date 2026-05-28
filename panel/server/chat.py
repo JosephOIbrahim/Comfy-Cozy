@@ -53,12 +53,14 @@ def _ensure_brain():
                 sys.path.insert(0, project_root)
 
             from agent.config import BRAIN_ENABLED
+
             if not BRAIN_ENABLED:
                 _brain_disabled = True
                 log.info("Panel chat: BRAIN_ENABLED=0, skipping brain load")
                 return False
 
             from agent.main import create_client
+
             _client = create_client()
             _brain_ready = True
             log.info("Panel chat: agent brain loaded, LLM client ready")
@@ -71,6 +73,7 @@ def _ensure_brain():
 # ---------------------------------------------------------------------------
 # Per-connection conversation state
 # ---------------------------------------------------------------------------
+
 
 class ConversationState:
     """Tracks one panel chat conversation."""
@@ -88,6 +91,7 @@ class ConversationState:
 
     def _build_system(self):
         from agent.system_prompt import build_system_prompt
+
         base = build_system_prompt()
 
         extras = []
@@ -121,14 +125,17 @@ _MAX_WS_CONNECTIONS = 20
 # Inject workflow from the panel's loaded workflow
 # ---------------------------------------------------------------------------
 
+
 def _inject_current_workflow(conv: ConversationState) -> None:
     """Load the current agent-side workflow into conversation context."""
     from agent.tools.workflow_patch import get_current_workflow
+
     workflow = get_current_workflow()
     if workflow is None:
         return
 
     from agent.tools._util import to_json as _to_json
+
     wf_hash = hash(_to_json(workflow))
     if wf_hash == conv._workflow_hash:
         conv._build_system()
@@ -137,6 +144,7 @@ def _inject_current_workflow(conv: ConversationState) -> None:
     conv._workflow_hash = wf_hash
 
     from agent.tools.workflow_parse import summarize_workflow_data
+
     conv.workflow_summary = summarize_workflow_data(workflow)
     conv._build_system()
 
@@ -144,6 +152,7 @@ def _inject_current_workflow(conv: ConversationState) -> None:
 def _inject_workflow_data(conv: ConversationState, workflow_data: dict) -> None:
     """Load explicit workflow data into the agent and conversation context."""
     from agent.tools._util import to_json as _to_json
+
     wf_hash = hash(_to_json(workflow_data))
     if wf_hash == conv._workflow_hash:
         conv._build_system()
@@ -152,12 +161,14 @@ def _inject_workflow_data(conv: ConversationState, workflow_data: dict) -> None:
     conv._workflow_hash = wf_hash
 
     from agent.tools.workflow_patch import load_workflow_from_data
+
     err = load_workflow_from_data(workflow_data, source="<panel>")
     if err:
         log.warning("Workflow injection failed: %s", err)
         return
 
     from agent.tools.workflow_parse import summarize_workflow_data
+
     conv.workflow_summary = summarize_workflow_data(workflow_data)
     conv._build_system()
 
@@ -184,10 +195,12 @@ class _QueueStreamHandler:
     def on_tool_call(self, name, inp):
         self._q.put({"type": "tool_call", "name": name})
         if name in _EXECUTION_TOOLS:
-            self._q.put({
-                "type": "executing",
-                "message": f"Running workflow via {name}...",
-            })
+            self._q.put(
+                {
+                    "type": "executing",
+                    "message": f"Running workflow via {name}...",
+                }
+            )
 
     def on_tool_result(self, name, inp, result_json):
         pass
@@ -202,6 +215,7 @@ class _QueueStreamHandler:
 # ---------------------------------------------------------------------------
 # Synchronous agent runner
 # ---------------------------------------------------------------------------
+
 
 def _run_agent_sync(conv: ConversationState, user_text: str, msg_queue: queue.Queue):
     """Run the agent loop synchronously, pushing events to msg_queue."""
@@ -246,6 +260,7 @@ def _run_agent_sync(conv: ConversationState, user_text: str, msg_queue: queue.Qu
 # Forward events from queue to WebSocket
 # ---------------------------------------------------------------------------
 
+
 async def _forward_event(ws, event, accumulated_text):
     """Forward an agent event to the WebSocket client."""
     etype = event["type"]
@@ -258,24 +273,30 @@ async def _forward_event(ws, event, accumulated_text):
         await ws.send_json({"type": "tool_call", "name": event.get("name", "")})
 
     elif etype == "progress":
-        await ws.send_json({
-            "type": "progress",
-            "progress": event.get("progress", 0),
-            "total": event.get("total"),
-            "message": event.get("message", ""),
-        })
+        await ws.send_json(
+            {
+                "type": "progress",
+                "progress": event.get("progress", 0),
+                "total": event.get("total"),
+                "message": event.get("message", ""),
+            }
+        )
 
     elif etype == "executing":
-        await ws.send_json({
-            "type": "executing",
-            "message": event.get("message", "Executing workflow..."),
-        })
+        await ws.send_json(
+            {
+                "type": "executing",
+                "message": event.get("message", "Executing workflow..."),
+            }
+        )
 
     elif etype == "error":
-        await ws.send_json({
-            "type": "error",
-            "message": event.get("message", "Unknown error"),
-        })
+        await ws.send_json(
+            {
+                "type": "error",
+                "message": event.get("message", "Unknown error"),
+            }
+        )
 
     elif etype == "done":
         await ws.send_json({"type": "done"})
@@ -284,6 +305,7 @@ async def _forward_event(ws, event, accumulated_text):
 # ---------------------------------------------------------------------------
 # WebSocket handler
 # ---------------------------------------------------------------------------
+
 
 async def websocket_handler(request):
     """Bidirectional WebSocket for panel chat <-> agent communication."""
@@ -300,6 +322,7 @@ async def websocket_handler(request):
     # clients (curl, Python httpx) have no Origin header and pass through to
     # the existing bearer auth in middleware.
     from agent._session_helpers import allowed_origins
+
     origin = request.headers.get("Origin", "")
     if origin and origin not in allowed_origins():
         log.warning("Panel WebSocket rejected — cross-origin: %s", origin)
@@ -325,20 +348,24 @@ async def websocket_handler(request):
         return ws
 
     if not _ensure_brain():
-        await ws.send_json({
-            "type": "error",
-            "message": "Agent brain failed to load. Check logs.",
-        })
+        await ws.send_json(
+            {
+                "type": "error",
+                "message": "Agent brain failed to load. Check logs.",
+            }
+        )
         await ws.close()
         return ws
 
     conv = ConversationState()
     _conversations[conv.id] = conv  # atomic in asyncio: no await between re-check and here
 
-    await ws.send_json({
-        "type": "connected",
-        "conversation_id": conv.id,
-    })
+    await ws.send_json(
+        {
+            "type": "connected",
+            "conversation_id": conv.id,
+        }
+    )
 
     log.info("Panel WebSocket connected: %s", conv.id)
 
@@ -359,10 +386,12 @@ async def websocket_handler(request):
                         continue
 
                     if conv.busy:
-                        await ws.send_json({
-                            "type": "error",
-                            "message": "Agent is still processing. Please wait.",
-                        })
+                        await ws.send_json(
+                            {
+                                "type": "error",
+                                "message": "Agent is still processing. Please wait.",
+                            }
+                        )
                         continue
 
                     # Inject workflow context.  Each executor / thread call
@@ -373,13 +402,17 @@ async def websocket_handler(request):
                         spawn_with_session as _spawn_with_session,
                         run_in_executor_with_session as _run_in_executor_with_session,
                     )
+
                     loop = asyncio.get_running_loop()
 
                     workflow_data = data.get("workflow")
                     if workflow_data and isinstance(workflow_data, dict):
                         try:
                             await _run_in_executor_with_session(
-                                loop, _inject_workflow_data, conv, workflow_data,
+                                loop,
+                                _inject_workflow_data,
+                                conv,
+                                workflow_data,
                                 session_id=conv.id,
                             )
                         except Exception as e:
@@ -387,7 +420,9 @@ async def websocket_handler(request):
                     else:
                         try:
                             await _run_in_executor_with_session(
-                                loop, _inject_current_workflow, conv,
+                                loop,
+                                _inject_current_workflow,
+                                conv,
                                 session_id=conv.id,
                             )
                         except Exception as e:
@@ -408,7 +443,8 @@ async def websocket_handler(request):
                         while True:
                             try:
                                 event = await loop.run_in_executor(
-                                    None, lambda: msg_queue.get(timeout=0.1),
+                                    None,
+                                    lambda: msg_queue.get(timeout=0.1),
                                 )
                             except queue.Empty:
                                 if not thread.is_alive():
@@ -434,24 +470,32 @@ async def websocket_handler(request):
                         from agent._session_helpers import (
                             run_in_executor_with_session as _run_in_executor_with_session,
                         )
+
                         loop = asyncio.get_running_loop()
                         try:
                             await _run_in_executor_with_session(
-                                loop, _inject_workflow_data, conv, workflow_data,
+                                loop,
+                                _inject_workflow_data,
+                                conv,
+                                workflow_data,
                                 session_id=conv.id,
                             )
-                            await ws.send_json({
-                                "type": "workflow_ack",
-                                "node_count": conv.workflow_summary.get(
-                                    "node_count", 0
-                                ) if conv.workflow_summary else 0,
-                            })
+                            await ws.send_json(
+                                {
+                                    "type": "workflow_ack",
+                                    "node_count": conv.workflow_summary.get("node_count", 0)
+                                    if conv.workflow_summary
+                                    else 0,
+                                }
+                            )
                         except Exception as e:
                             log.warning("Workflow update error: %s", e)
-                            await ws.send_json({
-                                "type": "error",
-                                "message": f"Workflow update failed: {e}",
-                            })
+                            await ws.send_json(
+                                {
+                                    "type": "error",
+                                    "message": f"Workflow update failed: {e}",
+                                }
+                            )
 
             elif raw_msg.type == web.WSMsgType.ERROR:
                 log.error("Panel WebSocket error: %s", ws.exception())
@@ -462,6 +506,7 @@ async def websocket_handler(request):
         # L-1: drop the touched-set snapshot for this conversation
         try:
             from .touched import clear_session as _touched_clear
+
             _touched_clear(conv.id)
         except Exception:
             log.debug("touched.clear_session failed on disconnect", exc_info=True)
