@@ -26,6 +26,37 @@ export class AgentClient {
     return data.workflow || null;
   }
 
+  /**
+   * Fetch the current agent workflow + touched-set delta (L-1 + L-2).
+   *
+   * Returns null on HTTP error / no workflow loaded.
+   * On success returns {workflow, touched}.
+   */
+  async getWorkflowApiWithTouched() {
+    const r = await fetch(`${this._base}/get-workflow-api-with-touched`);
+    if (!r.ok) return null;
+    const data = await r.json();
+    if (data.error) return null;
+    return {
+      workflow: data.workflow || null,
+      touched: Array.isArray(data.touched) ? data.touched : [],
+    };
+  }
+
+  /**
+   * Acknowledge a successful push — server snapshots the current
+   * workflow as the new last-pushed baseline (L-1 + L-2).
+   */
+  async ackPush() {
+    const r = await fetch(`${this._base}/ack-push`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{}",
+    });
+    if (!r.ok) return { error: `Request failed: ${r.status}` };
+    return r.json();
+  }
+
   async setInput(nodeId, inputName, value) {
     const r = await fetch(`${this._base}/set-input`, {
       method: "POST",

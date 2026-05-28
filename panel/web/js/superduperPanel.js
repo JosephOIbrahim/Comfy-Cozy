@@ -12,6 +12,7 @@
 import { app } from "../../../scripts/app.js";
 import { AgentClient } from "./agentClient.js";
 import { addDeltaFailure, clearDeltaFailures } from "./_deltaFailures.js";
+import { applyTouchedSet } from "./_pushApplyTouched.js";
 
 const client = new AgentClient();
 
@@ -96,25 +97,26 @@ async function pushAgentToCanvas() {
   // L-7: reset delta-failure accumulator at the start of every push
   clearDeltaFailures();
   try {
-    const workflow = await client.getWorkflowApi();
+    // L-2: fetch workflow + touched-set; iterate touched only so
+    // director-edited slots survive (F-1 mitigation).
+    const result = await client.getWorkflowApiWithTouched();
+    if (!result) return;
+    const { workflow, touched } = result;
     if (!workflow || !app.graph) return;
 
-    for (const [nodeId, nodeData] of Object.entries(workflow)) {
-      if (!nodeData || !nodeData.inputs) continue;
-      const node = app.graph.getNodeById(parseInt(nodeId, 10));
-      if (!node || !node.widgets) continue;
-
-      for (const widget of node.widgets) {
-        const apiValue = nodeData.inputs[widget.name];
-        if (apiValue !== undefined && !Array.isArray(apiValue)) {
-          if (widget.value !== apiValue) {
-            widget.value = apiValue;
-          }
-        }
-      }
-    }
+    applyTouchedSet(app, workflow, touched);
 
     app.canvas.setDirty(true, true);
+
+    // L-2: acknowledge the push so the server snapshot rotates forward.
+    // If ack fails, log but don't throw — touched will recompute against
+    // the (now stale) snapshot on next push; re-applied widget writes are
+    // no-ops since widget.value === new_value already.
+    try {
+      await client.ackPush();
+    } catch (e) {
+      console.debug("[Comfy Cozy] ackPush failed:", e);
+    }
   } catch (e) {
     console.debug("[Comfy Cozy] Canvas push failed:", e);
   }

@@ -368,3 +368,37 @@ verifier:      L1 (24/24 pytest passing in tests/test_touched.py) +
 outcome:       success
 external_calls: [Write x2, Edit x4, Bash (pytest x2, npm test, py_compile)]
 ```
+
+```
+span_id:       s16
+parent_id:     s15
+pass:          4
+step_type:     execute
+leaf_id:       L-2
+input_state:   L-1 ready (server touched-set + endpoints + hooks); L-7 ready
+               (surface accumulator); PLAN L-2 contract (frontend consumer)
+action:        PLAN deviation: extracted apply logic into new pure module
+               panel/web/js/_pushApplyTouched.js (takes app+workflow+touched as
+               args; testable without import-of-host-app concerns). Added
+               agentClient.getWorkflowApiWithTouched() and agentClient.ackPush().
+               Replaced superduperPanel.pushAgentToCanvas body: fetch via new
+               with-touched endpoint, call applyTouchedSet (iterates touched
+               only), call ackPush in nested try (failure logged but not thrown
+               — re-applied widget writes on next push are idempotent no-ops).
+               Link kind handled by no-op stub _applyTouchedLink — DEFERRED to
+               L-8. Widget kind writes widget.value if not already equal.
+               Unknown kind silently dropped (L-5 will surface upstream).
+               Missing node / missing widget silently dropped (L-3/L-4/L-5
+               will surface upstream).
+output_state:  panel/web/js/_pushApplyTouched.js (new, ~55 LOC).
+               panel/web/js/agentClient.js: +getWorkflowApiWithTouched, +ackPush
+               (~28 LOC). panel/web/js/superduperPanel.js: pushAgentToCanvas
+               rewritten; +applyTouchedSet import. tests/panel/
+               pushApplyTouched.test.js (new, 14 cases).
+               F-1 mitigation now closed end-to-end for widget edits; link
+               write-back still pending L-8.
+verifier:      L1 (Vitest pushApplyTouched.test.js: 14/14; total 23/23 vitest
+               + 24/24 pytest = 47/47 across L-0..L-2 + L-7) — L-2 GREEN
+outcome:       success
+external_calls: [Read (agentClient), Write x2, Edit x3, Bash (npm test)]
+```
