@@ -50,3 +50,7 @@ nul
 .claude/projects/
 .claude/worktrees/
 .claude/*.lock
+
+# Node / JS verifier stack (write-back v1 — Vitest)
+node_modules/
+npm-debug.log*

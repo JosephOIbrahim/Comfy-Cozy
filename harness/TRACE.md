@@ -1,4 +1,4 @@
-# TRACE — Real Semantic Embeddings for comfy-moneta-bridge
+# TRACE — Write-Back v1 (Tier 1+2) to the live ComfyUI canvas
 
 Append-only causal log. `parent_id` is the causal predecessor, not wall-clock predecessor.
 
@@ -9,72 +9,93 @@ span_id:       s0
 parent_id:     null
 pass:          0
 step_type:     plan
-input_state:   operator brief B (semantic embeddings, first-run harness validation)
-action:        Draft + ratify SPEC.md (harness/SPEC.md)
-output_state:  SPEC ratified; predicates P1-P7, falsifiers F1-F5, assumptions A1-A5
-verifier:      operator acceptance — PASS
+input_state:   operator brief "Bet 3-out · Write-Back v1 · v2" (panel-only Tier 1+2);
+               two scouts already produced (SCOUT_rewiring_scope, SCOUT_canvas_state_sync)
+action:        Read scouts; draft SPEC.md (PROPOSED) at harness/SPEC.md with
+               predicates P1-P7, falsifiers F1-F5, assumptions A1-A3 (A4 closed as
+               RATIFIED DECISION on target surface).
+output_state:  SPEC drafted. Brief B artifacts still in harness/ root from prior run.
+verifier:      none (pre-ratification)
 outcome:       success
-external_calls: []
+external_calls: [Read x3, ls x2]
 ```
 
 ```
 span_id:       s1
 parent_id:     s0
-pass:          1
+pass:          0
 step_type:     verify
-input_state:   SPEC scout targets reference sibling repos by name
-action:        Locate Moneta / comfy-moneta-bridge / comfy-cozy-app on filesystem
-output_state:  ABSENT — no vector_index.py, no bridge dir, no outcomes.jsonl under ~
-verifier:      L1 (file existence) — A1/A2 BLOCKED (substrate off-machine, likely Threadripper)
-outcome:       escalation
-external_calls: [find, ls]
-```
-
-```
-span_id:       s2
-parent_id:     s1
-pass:          1
-step_type:     execute
-input_state:   operator supplied 3 GitHub URLs (JosephOIbrahim/{Moneta,comfy-moneta-bridge,comfy-cozy-app})
-action:        gh repo clone all three into /Users/rustybeard/Code
-output_state:  3 repos present; scout targets resolved (Moneta/src/moneta/vector_index.py, bridge/comfy_moneta_bridge/{vector,ingest,cli}.py)
-verifier:      L1 (file existence) — PASS
-outcome:       success
-external_calls: [gh repo clone x3]
-```
-
-```
-span_id:       s3
-parent_id:     s2
-pass:          1
-step_type:     verify
-leaf_id:       A1
-input_state:   Moneta/src/moneta/vector_index.py
-action:        Read; inspect dim-handling for F1 trigger
-output_state:  Index dim-agnostic at construction (embedding_dim=None default :71-74); first upsert
-               sets _dim (:108-109); later mismatch raises (:110-113). Dim fixed-at-first-deposit but
-               synthetic+BGE+MiniLM all 384 -> no mismatch on swap. F1 NOT triggered.
-verifier:      L3 (semantic, SPEC-fit) — A1 HOLDS
+leaf_id:       F5-check (target surface verification)
+input_state:   panel/web/js/superduperPanel.js cited file:line in SCOUT_rewiring_scope.md
+action:        Read superduperPanel.js; check pushAgentToCanvas body, parseInt shim,
+               link-drop filter, _lastGraphHash, onAfterChange observer against scout cites.
+output_state:  pushAgentToCanvas at :94-118 (docstring :89-93); parseInt at :101; link-drop
+               filter at :106; _lastGraphHash at :19,33-35; onAfterChange at :66-71.
+               Every scout citation matches.
+verifier:      L0 (file existence + line-anchored grep) — F5 does NOT fire
 outcome:       success
 external_calls: [Read]
 ```
 
 ```
-span_id:       s4
+span_id:       s2
+parent_id:     s1
+pass:          0
+step_type:     correction
+input_state:   operator path correction: (1) scouts belong at harness/, not harness/ledger/;
+               (2) ledger/ holds recipe candidates only, NOT artifact archives;
+               (3) confirm the real rotation convention before moving Brief B artifacts.
+action:        Investigate ledger/candidates/ (3 candidate_*.md from Brief B SLEEP)
+               + git log for harness/ledger/ (single commit 377c788, same as Brief B
+               artifacts). No archive-dir convention exists on this repo. Revert:
+               git mv Brief B SPEC/PLAN/TRACE/CAPSULE/SHIP_REPORT back to harness/;
+               mv scouts back to harness/; rmdir harness/ledger/brief-b/ (invented dir).
+output_state:  Brief B record preserved at commit 377c788; this run's artifacts overwrite
+               Brief B's in place at harness/{SPEC,PLAN,TRACE,CAPSULE,SHIP_REPORT}.md.
+               Net rotation: zero. Scouts at harness/ root.
+verifier:      L0 (git status: only untracked scouts; tracked files at committed state) — PASS
+outcome:       success — superseded the initial PASS-0 rotation conclusion in s0
+external_calls: [ls, find, git log x2, mv x2, git mv x5, rmdir]
+```
+
+```
+span_id:       s3
 parent_id:     s2
-pass:          1
-step_type:     verify
-leaf_id:       A2,A5
-input_state:   comfy-moneta-bridge repo
-action:        Explore subagent — trace ingest/hydrate x-session mechanics + Comfy-Cozy consumer wire
-output_state:  A2: shared storage_uri (moneta_config.py:33), Moneta query unfiltered (recall.py:71-72),
-               post-query session payload guard; tests/test_integration_bge.py:57-138 already proves
-               two-session same-URI semantic recall in bge mode. A5: consumer wire COMPLETE —
-               capsule.py:229-238 writes sessions/{name}.json -> Cozy-Comfy/agent/startup.py:74-75 reads
-               AUTO_LOAD_SESSION -> launch.py:44 + cli.py:158-173 (bridge hydrate --launch).
-verifier:      L1 (test existence) + L3 (SPEC-fit) — A2 HOLDS, A5 HOLDS (F5 dissolved)
+pass:          0
+step_type:     amend
+leaf_id:       A1 (amendment)
+input_state:   AskUserQuestion ratification gate; operator selected "Amend Predicates (Q3)"
+               and dictated revised P1: "Link-state parity (applied ops). After a push,
+               every link op that successfully applied achieves parity... Ops that cannot
+               apply (stale node reference, missing slot) are surfaced per P3, never
+               silently dropped, and are excluded from the parity assertion. Write-back v1
+               is best-effort-with-reporting, not all-or-nothing."
+action:        Propagate amendment: replace P1 verbatim; expand P3 to enumerate surface
+               conditions (a) Tier-3 shape, (b) stale node ref, (c) missing slot; update
+               Outcome paragraph with contract-shape clause; add A5 (user-visible surface
+               report). No new F-conditions; F1-F5 still cover SPEC-aborts only.
+output_state:  SPEC.md updated; PASS 0 status PROPOSED-A1 awaiting re-ratification.
+               Amendments section logs A1 with origin = operator PASS-0 amendment.
+verifier:      none yet (re-ratification gate pending)
 outcome:       success
-external_calls: [Agent/Explore]
+external_calls: [Write x2 (SPEC, TRACE), Read]
+```
+
+```
+span_id:       s4
+parent_id:     s3
+pass:          0
+step_type:     verify
+input_state:   SPEC at harness/SPEC.md after A1 propagation (P1 narrowed, P3 enumerated,
+               Outcome amended with best-effort-with-reporting clause, A5 added,
+               F-table unchanged with explicit "stale-ref/missing-slot are runtime not
+               SPEC-abort" note)
+action:        AskUserQuestion re-ratification gate; operator selected
+               "Ratify with A1 — freeze for PASS 1"
+output_state:  SPEC frozen for PASS 1. PASS 0 closed.
+verifier:      operator acceptance — PASS
+outcome:       success
+external_calls: [AskUserQuestion]
 ```
 
 ```
@@ -82,117 +103,164 @@ span_id:       s5
 parent_id:     s4
 pass:          1
 step_type:     verify
-input_state:   bridge vector.py + ingest.py (central reuse claim)
-action:        Read both directly to confirm embedder already built
-output_state:  vector.py encode_outcome() = real BGE-small 384-dim L2-norm (:125-135); from_env() mode
-               switch default synthetic (:30,:61-68); current_embedder_version() tagging (:71-78).
-               ingest.py _prepare() routes bge->encode_outcome else synthesize_vector (:62-65), tags
-               _embedder on payload (:69). P1/P3 BUILT; P2 default inverted; P4 network conflict;
-               P5 query-side tag-rejection unconfirmed.
-verifier:      L0 (read) — reuse confirmed
+leaf_id:       A1
+input_state:   panel/server/chat.py, panel/server/routes.py
+action:        Trace cache-freshness path. ConversationState._workflow_hash at chat.py:86;
+               _inject_current_workflow at :124-141 (reads agent cache, hashes, dedup at
+               :133); _inject_workflow_data at :144-162 (force-inject canvas push, hashes
+               at :147, dedup at :148). WebSocket handler calls injection per chat msg
+               at :378-394 and per explicit workflow msg at :431-454. Frontend canvas-sync
+               POSTs /comfy-cozy/load-workflow-data (routes.py:155-202), which calls
+               load_workflow_from_data at routes.py:172.
+output_state:  Two-channel hash-diff cache freshness confirmed. For write-back direction
+               specifically (push agent→canvas), cache is fresh because the trigger IS an
+               agent mutation that updated the cache directly via
+               _handle_apply_patch / _handle_connect_nodes. F3 does NOT fire.
+verifier:      L0 (file:line evidence) — A1 HOLDS
 outcome:       success
 external_calls: [Read x2]
 ```
 
 ```
 span_id:       s6
-parent_id:     s5
-pass:          1
-step_type:     reflect
-input_state:   A1/A2/A5 all hold; reuse map established
-action:        Produce PASS 1 sketch + confidence per predicate (CAPSULE.md)
-output_state:  Gate met — every SPEC predicate scored. Sketch = finish-and-flip, not build-from-zero.
-verifier:      PASS 1 gate (confidence per predicate) — PASS
-outcome:       success
-external_calls: []
-```
-
-```
-span_id:       s-correction
 parent_id:     s4
 pass:          1
-step_type:     reflect
-input_state:   earlier first-cut A5 verdict (Comfy-Cozy-only scout) = "bridge embeddings orphaned -> F5"
-action:        Correction logged: that verdict was made with the bridge repo ABSENT (half the system).
-               With bridge present, consumer wire is real. F5 dissolved. Recorded to prevent the
-               retracted conclusion from leaking downstream.
-verifier:      n/a
+step_type:     verify
+leaf_id:       A2
+input_state:   superduperPanel.js:12 import "../../../scripts/app.js"; system-wide find
+               for ComfyUI/LiteGraph source
+action:        Confirm LiteGraph link API reachable. ComfyUI installed at
+               /Applications/ComfyUI.app/Contents/Resources/ComfyUI/.../scripts/app.js.
+               Panel loads as a ComfyUI custom_node extension; the import resolves at
+               runtime to host's /scripts/app.js. app.graph is the LGraph instance;
+               LGraphNode primitives node.connect(slot, target_node, target_slot),
+               node.disconnectInput(slot), node.disconnectOutput(slot, target_node?),
+               and graph.removeLink(link_id) are standard LiteGraph API. Delta contract
+               maps cleanly:
+                 connect:    from_node.connect(from_output, to_node, to_input)
+                 disconnect: to_node.disconnectInput(to_input)
+output_state:  Link API reachable. F1 does NOT fire. Slot semantics: to_input accepts
+               name OR index — server uses string names, matches LiteGraph contract.
+verifier:      L0 (extension host exists; API surface standard) — A2 HOLDS
 outcome:       success
-external_calls: []
+external_calls: [find x2, ls x3]
 ```
 
 ```
 span_id:       s7
-parent_id:     s5
-pass:          2
+parent_id:     s4
+pass:          1
 step_type:     verify
-input_state:   PASS 1 claim "_embedder query-side rejection unconfirmed (P5)"
-action:        Read recall.py; grep _embedder usage across bridge
-output_state:  Query-side rejection IS implemented (recall.py:83-85, capsule.py:178). PASS 1 unknown
-               resolved. But this REJECTION is the mechanism that orphans legacy synthetic data on flip.
-verifier:      L0 (read) — claim confirmed, weaponized into F-MIGRATE
+leaf_id:       A3
+input_state:   superduperPanel.js (already read at s1)
+action:        Re-confirm echo suppression surface. _lastGraphHash at :19, :33-35 is
+               length-based (JSON.stringify(graphData).length — weak, but adequate).
+               onAfterChange observer at :66-71 debounces 500ms. CRITICAL: post-push the
+               new graph hash DIFFERS from old, so the existing _lastGraphHash auto-update
+               at :35 will NOT suppress the echo by itself — it would just record the new
+               state as the latest. Suppression requires explicit wire: either
+               (a) pushAgentToCanvas pre-stamps _lastGraphHash with the post-mutation hash
+                   before the observer's debounce fires; OR
+               (b) temporarily replaces app.graph.onAfterChange with a no-op during the
+                   push (observer-pause).
+output_state:  Mechanism present, but neither auto-suppresses. PASS 3 must select (a) or
+               (b) as a leaf-level design choice. Recommend (b) observer-pause: direct,
+               immune to hash-collision, restores on finally. F3 does NOT fire.
+verifier:      L0 (mechanism exists; explicit PASS 4 wiring required) — A3 HOLDS with caveat
 outcome:       success
-external_calls: [Read, grep]
+external_calls: []
 ```
 
 ```
 span_id:       s8
-parent_id:     s7
-pass:          2
+parent_id:     s4
+pass:          1
 step_type:     verify
-input_state:   suspicion: cross-session path != consumer path
-action:        grep callers of recall() vs write_capsule(); read cli.py command surface
-output_state:  CONFIRMED. write_capsule (AUTO_LOAD_SESSION artifact) filters same-session
-               (capsule.py:11-13,146). recall() exposed only via `bridge recall` stdout (cli.py:177)
-               + internal agent tool (tools.py:38). No automated cross-session consumer in Comfy-Cozy.
-verifier:      L3 (SPEC-fit) — SPEC Outcome NOT wired end-to-end -> F-CROSS / narrow F5
-outcome:       escalation
-external_calls: [grep, Read]
+leaf_id:       A5
+input_state:   panel/web/js/graphMode.js
+action:        Confirm user-visible surface for delta-failure reports. _createStatusBar
+               at :312-317; _refreshStatusBar at :319-426. Warning shape at :334, :365:
+               {text, action?, handler?}. Existing warnings: missing nodes ("Repair"
+               button at :337-351), deprecated nodes ("Migrate" button at :368-387),
+               wiring issues at :353-357. Each warning is dismissable (dismissBtn at
+               :418-422). Status bar mounts at top of GRAPH mode (container.appendChild
+               at :4-5).
+output_state:  Surface exists and is extensible within Tier-1+2 scope. Delta-failure
+               report adds a new warnings.push() entry of shape
+               {text:"N delta(s) not applied", action:"Details", handler: showModal}.
+               No Tier-3 work required. F2/F5 do NOT fire on A5.
+verifier:      L0 (existing extensible pattern) — A5 HOLDS
+outcome:       success
+external_calls: [Read]
 ```
 
 ```
 span_id:       s9
-parent_id:     s8
-pass:          2
-step_type:     reflect
-input_state:   12 red-team findings; 4 NOT-OK (S×L>=12); 2 sev-5 trip F2/F5
-action:        Write PASS 2 CAPSULE (findings + required mitigations M1-M6). Halt at gate per
-               Operating Principle 9: F2 (F-MIGRATE) + F5 (F-CROSS) require operator adjudication
-               before DECOMPOSE.
-verifier:      PASS 2 gate (>=1 sev4 finding) — PASS; SPEC-invalidation check -> surface to operator
+parent_id:     s4
+pass:          1
+step_type:     verify
+leaf_id:       JS-verifier-stack
+input_state:   repo root + recursive find for JS tooling
+action:        Search for package.json, eslint config, vitest/jest/playwright config,
+               .test.js / .spec.js test files, pyproject JS section. ALL ABSENT. Only
+               Python tooling present (pytest, pytest-asyncio, pytest-cov).
+output_state:  No JS verifier stack exists. 6 of 7 predicates (P1-P6) require JS
+               automation to verify via L1-L4. P7 (panel-only honored) checkable by L0
+               git-diff filter alone, independent of stack.
+               F4 TRIGGER: "No stack" is satisfied; "can't be stood up" is NOT satisfied
+               (Vitest is cheap to add). Per F4 response clause: halt and surface to
+               operator. Amendment options:
+                 (A) Stand up Vitest as PASS 3 pre-leaf 0. ~30 min infra. L0-L4 automated.
+                 (B) Accept manual verification. Replace L1-L4 with manual smoke-test
+                     script on live canvas. Faster start, no regression coverage.
+                 (C) Hybrid: Vitest L1 for pure-function leaves (ID-shape shim,
+                     disconnect-source resolution). Manual for app.graph-touching leaves
+                     (P1, P2, P3, P4).
+verifier:      L0 (filesystem scan, exhaustive) — JS stack ABSENT, F4 amendable
 outcome:       escalation
-external_calls: []
+external_calls: [find x3, grep, ls]
 ```
 
 ```
 span_id:       s10
 parent_id:     s9
-pass:          2
-step_type:     execute
-input_state:   operator answers Q1(P6 defer)/Q2(P4 amend)/Q3(P5 storage check)
-action:        Q3 empirical — find Moneta storage (default ~/.comfy-moneta-bridge/moneta, cli.py:42).
-               No snapshot.json/wal.jsonl under ~ -> empty -> P5 fixture-only on this Mac
-               (Threadripper runtime unverified caveat). Apply SPEC Amendment A1 (P4 wording, P6
-               PENDING+gate-PASS-6).
-verifier:      L1 (file existence: storage empty) — PASS; SPEC re-ratified (Amendment A1)
+pass:          1
+step_type:     amend
+leaf_id:       A2 (amendment)
+input_state:   F4 escalation; AskUserQuestion offered (A) Vitest full automation,
+               (B) manual verification, (C) hybrid, (D) narrow scope to P7-only.
+action:        Operator selected (A): Vitest as PASS 3 pre-leaf 0. Propagate amendment
+               into SPEC.md: add A2 to Amendments, extend Substrate Scope with CREATE row
+               for JS verifier stack (package.json, vitest.config, tests/panel/**,
+               minimal litegraph stub), rebind Verifier Layers L0-L4 to Vitest (no jsdom
+               — link-delta logic is pure-ish, DOM not required for L1/L2).
+output_state:  SPEC.md amended; PASS 1 ratification log entry added. PASS 1 CLOSES.
+verifier:      operator acceptance — PASS
 outcome:       success
-external_calls: [Bash find/grep, Edit SPEC x3]
+external_calls: [AskUserQuestion, Write (SPEC)]
 ```
 
 ```
 span_id:       s11
 parent_id:     s10
-pass:          3
-step_type:     verify
-input_state:   M1 (L5) would inject cross-session memory into capsule consumed by Comfy-Cozy (NO TOUCH)
-action:        Compare capsule write schema vs session.py load schema for M1 fit / OP-9 risk
-output_state:  write_capsule emits notes:list[dict]{text,type,added_at} (capsule.py:37-57);
-               session.py loads notes generically, v2 types observation/preference/decision/tip
-               (session.py:131-133,242-264). M1 fits as existing-type notes -> NO new field ->
-               NO Comfy-Cozy edit -> NO escalation.
-verifier:      L3 (schema-fit, OP-9 boundary) — PASS (NO-TOUCH holds)
+pass:          2
+step_type:     execute
+input_state:   PASS 1 evidence (s5-s10) + SPEC P1-P7 + F1-F5
+action:        Red-team adversarial scenarios across the delta-merge surface: stale-cache
+               clobber, NaN node IDs, Tier-3 leak, observer-pause leak, concurrent push
+               race, malformed delta shape, A5 visibility limit, backend-unreachable.
+               Categorize by severity (SHOWSTOPPER / DESIGN-CONSTRAINT / HARDEN /
+               BOUNDED). Map each finding to predicate at risk and mitigation surface.
+               Write CAPSULE.md.
+output_state:  CAPSULE.md committed with 8 findings (F-1..F-8 internal IDs to disambiguate
+               from SPEC F1-F5). Severity breakdown: 0 SHOWSTOPPER, 3 DESIGN-CONSTRAINT
+               (F-1 clobber race, F-2 NaN IDs, F-3 Tier-3 leak), 3 HARDEN (F-4 observer
+               leak, F-5 concurrent race, F-6 malformed shape), 2 BOUNDED (F-7 visibility,
+               F-8 unreachable). NO F1-F5 trip. PASS 2 closes clean. PASS 3 inherits 10
+               anticipated leaves (L-0..L-10) as preview.
+verifier:      L0 (no SPEC F-trip on any finding) — PASS 2 GATE PASS
 outcome:       success
-external_calls: [Bash grep/sed]
+external_calls: [Write (CAPSULE)]
 ```
 
 ```
@@ -200,12 +268,23 @@ span_id:       s12
 parent_id:     s11
 pass:          3
 step_type:     plan
-input_state:   forks resolved (M1 build, P5 mode-matched); schema-fit clear
-action:        Decompose into 6 leaves L1-L6 with contracts+verifiers+deps; write PLAN.md + CAPSULE
-output_state:  Every SPEC predicate owned; no frozen-substrate mod; ledger empty (all novel).
-verifier:      PASS 3 gate (predicate ownership + no-frozen-mod) — PASS
+input_state:   SPEC P1-P7 + CAPSULE 8 findings (F-1..F-8) + A2 Vitest binding
+action:        Decompose into 12 leaves L-0..L-11 (L-9 subsumed by L-8).
+               Per-leaf CONTRACT + VERIFIER + DEPS + FILES. Cover every SPEC predicate
+               and every CAPSULE finding. Key design call: F-1 mitigation chose option
+               (a) server-touched-set via NEW panel/server/touched.py — purely additive,
+               zero changes to agent/tools/workflow_patch.py, preserves CALL-ONLY status.
+               Execution order: risk-reduction × dependency × parallelism, leading with
+               L-0 (stack) → L-7 (surface) → L-1+L-2 (touched-set) → L-6 (observer) →
+               L-3+L-5 (parsing/shape) → L-4 (Tier-3) → L-8 (link apply) → L-10
+               (integration) → L-11 (git-diff at PASS 7).
+output_state:  PLAN.md written. Predicate / finding coverage matrix included.
+               3 open design calls surfaced for operator: (1) F-1 mitigation (a) vs
+               fallback (c), (2) debounce window 100ms, (3) surface-bar UX (rolled-up
+               vs per-entry).
+verifier:      L0 (every SPEC predicate owned by a leaf; every CAPSULE finding mapped) — PASS
 outcome:       success
-external_calls: [Write PLAN.md, Write CAPSULE.md]
+external_calls: [Write (PLAN), Read (Brief B PLAN for format)]
 ```
 
 ```
@@ -213,154 +292,17 @@ span_id:       s13
 parent_id:     s12
 pass:          4
 step_type:     execute
-input_state:   PASS 3 plan; bridge repo on master
-action:        branch feat/bge-default-semantic; venv py3.12 (3.14 lacks torch wheel); install local
-               Moneta rc1 + bridge[dev,embeddings,agents]; provision BGE (128M cache); baseline.
-output_state:  282 passed baseline. CORRECTION: conftest.py:17 delenvs BRIDGE_EMBEDDER_MODE per-test,
-               so the "both modes" baseline was synthetic-default twice — true bge-default needs L4.
-verifier:      L1 baseline (282) — PASS; correction logged
+leaf_id:       L-0
+input_state:   feat/writeback-v1-tier1-2 branch; PLAN.md L-0 contract (Vitest stack)
+action:        Create package.json (vitest ^1.6 devDep), vitest.config.js (include
+               tests/panel/**, node env), tests/panel/_stubs/litegraph.js
+               (makeFakeNode/makeFakeGraph/makeFakeApp recording stubs), and
+               tests/panel/sample.test.js (4 smoke assertions). Run npm install
+               --include=dev (npm config get omit returned "dev" → had to force include);
+               run npm test. Extend .gitignore with node_modules/ and npm-debug.log*.
+output_state:  Vitest 1.6.1 installed (124 packages). tests/panel/sample.test.js: 4/4
+               passing in 210ms. node_modules/ ignored. L-0 contract satisfied.
+verifier:      L0 (test runner exits 0; 4/4 passing) — L-0 GREEN
 outcome:       success
-external_calls: [git checkout -b, venv, pip x3, provision_model]
+external_calls: [Bash (git checkout -b, mkdir, npm install, npm test), Write x4, Edit x2]
 ```
-
-```
-span_id:       s14
-parent_id:     s13
-pass:          4
-step_type:     verify
-leaf_id:       L1,L2,L3
-action:        L1 verify embedder via existing test_vector_bge (384/determinism). L2 add
-               test_p5_synthetic_compat (synthetic round-trip, mode-matched). L3 vector.py
-               local_files_only + provision_model; add test_p4_no_network (socket-patch, no env crutch).
-output_state:  L1 verify-only PASS; L2 2/2 PASS; L3 2/2 PASS (zero socket egress during bge ingest).
-verifier:      L0+L1 (L1,L2) + L2 property (L3) — PASS
-outcome:       success
-external_calls: [Edit vector.py, Write test_p5/test_p4, pytest]
-```
-
-```
-span_id:       s15
-parent_id:     s14
-pass:          4
-step_type:     verify
-leaf_id:       L4
-action:        Flip DEFAULT_MODE=bge + docstrings. Full suite -> 21 failures (expected ripple).
-               Triage: 3 from_env default assertions -> bge; 14 synthetic-path unit tests -> pin
-               synthetic in fixtures; 1 mock spy -> accept local_files_only; 3 ingest tests -> pin.
-output_state:  Suite green both modes (286: 282 + 4 new). bge is now the real default.
-verifier:      L0+L1 full suite — PASS
-outcome:       success
-external_calls: [Edit vector.py x3, Edit tests x10, pytest x2]
-```
-
-```
-span_id:       s16
-parent_id:     s15
-pass:          4
-step_type:     verify
-leaf_id:       L5
-action:        capsule.py: write_capsule(cross_session_top_k=3); _cross_session_notes injects
-               other-session recall hits as observation notes (provenance in text, no new field,
-               best-effort). Add test_p7_cross_session (3). Cross-repo: load capsule via Comfy-Cozy
-               real session.load_session.
-output_state:  3/3 PASS; full suite 289. Cross-repo load: schema_v2, session-A memory visible in
-               session-B's loaded session. SPEC Outcome proven e2e; NO-TOUCH intact (no escalation).
-verifier:      L1 e2e + L3 (real consumer load) — PASS
-outcome:       success
-external_calls: [Edit capsule.py x3, Write test_p7, pytest, cross-repo python load]
-```
-
-```
-span_id:       s17
-parent_id:     s16
-pass:          4
-step_type:     verify
-leaf_id:       L6
-action:        Mac smoke: 15 bge full-ingests, median 16.9ms / p95 18.3ms. Labeled NOT the P6 record.
-               Final L0 ruff (clean) + collect (289) + full suite (289 passed).
-output_state:  All 6 leaves done & verified. 3 ledger candidates written. Not committed (branch).
-verifier:      L0 ruff + L1 full suite — PASS; P6 catastrophic ceiling — PASS (non-gating)
-outcome:       success
-external_calls: [smoke script, ruff, pytest, Write candidates x3]
-```
-
-```
-span_id:       s18
-parent_id:     s17
-pass:          4
-step_type:     execute
-input_state:   operator: "Commit, then PASS 5"
-action:        Stage specific files (no -A); commit [PILOT] vector.py+capsule.py (aa0ae21),
-               [VERIFY] 8 test files (bb1b32a). No push.
-verifier:      git log + clean tree — PASS
-outcome:       success
-external_calls: [git add, git commit x2]
-```
-
-```
-span_id:       s19
-parent_id:     s18
-pass:          5
-step_type:     verify
-input_state:   built system; new seams recall->capsule + tail->ingest(multi-session)
-action:        Add test_integration_cross_session (full chain two-session + recall-failure isolation).
-               System-level ruff + full suite. Commit [VERIFY] (3b23bc5).
-output_state:  2/2 seam tests PASS; full suite 291; ruff clean. 5 seams healthy; 6/7 predicates
-               verified at integration (P6 deferred). Error propagation: recall failure isolated.
-verifier:      L0 + L1 (system) + L2 (seam: failure isolation) + L3 (predicate coverage) — PASS
-outcome:       success
-external_calls: [Write test, ruff, pytest, git commit]
-```
-
-```
-span_id:       s20
-parent_id:     s19
-pass:          6
-step_type:     verify
-input_state:   PASS 2 findings; built artifact
-action:        L4 stress — 5 safety-invariant attacks (test_stress_mixed_mode) + 2 informational
-               measurements (cursor-loss replay, thintext cosine). Commit [VERIFY] (c0c26ef).
-output_state:  5/5 invariants PASS (mixed-mode isolation holds — no synthetic leak; strong match
-               not starved at 100-noise scale; coldstart empty; drift dropped; injection capped).
-               BOUNDED: thintext clusters (0.984 vs 0.863 distinct), cursor-loss dup, offline-fail,
-               bge similarity floor. OUT OF SCOPE: WAL>1k, PRNG collision. NO showstoppers.
-verifier:      L4 stress — PASS; gate (no showstopper + bounded documented) — PASS
-outcome:       success
-external_calls: [Write test, ruff, pytest, measurement script, git commit]
-```
-
-```
-span_id:       s21
-parent_id:     s20
-pass:          7
-step_type:     reflect
-input_state:   stressed system; 6/7 predicates met, P6 deferred
-action:        Write SHIP_REPORT.md (SPEC compliance, limitations, verifier coverage, ledger deltas,
-               next). Artifact: branch feat/bge-default-semantic +607/-20, 4 commits. Operator: SHIP.
-output_state:  Run accepted. Branch stays local — push requires separate per-call approval (NOT done).
-verifier:      operator decision recorded — SHIP
-outcome:       success
-external_calls: [Write SHIP_REPORT, git diff, AskUserQuestion]
-```
-
-```
-span_id:       s22
-parent_id:     s21
-pass:          7
-step_type:     reflect
-input_state:   ledger after SHIP
-action:        SLEEP — scan recipes (empty), candidates (3 @ consolidated_from=1).
-output_state:  No promotions (need 3-shot), no archives, no overlap merges. 3 candidates held for
-               future consolidation. Run CLOSED.
-verifier:      SLEEP scan — complete
-outcome:       success
-external_calls: [ls, grep]
-```
-
----
-
-## RUN CLOSED — 2026-05-27
-
-Brief B shipped. 6/7 SPEC predicates met (P6 PENDING, Threadripper). Outcome
-proven end-to-end. Artifact: `comfy-moneta-bridge@feat/bge-default-semantic`,
-4 commits, unpushed (push awaits separate per-call approval). 296 tests green.

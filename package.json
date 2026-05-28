@@ -1,0 +1,14 @@
+{
+  "name": "comfy-cozy-panel",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "JS verifier stack for the Comfy-Cozy panel — write-back v1 (Tier 1+2). Tests live under tests/panel/ and run via Vitest.",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "vitest": "^1.6.0"
+  }
+}
