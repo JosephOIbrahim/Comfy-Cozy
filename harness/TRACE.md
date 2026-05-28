@@ -692,3 +692,37 @@ verifier:      L4 stress (8 scenarios incl. performance, concurrency,
 outcome:       success
 external_calls: [Write, Edit x3, Bash (npm test x2)]
 ```
+
+```
+span_id:       s25
+parent_id:     s24
+pass:          7
+step_type:     execute
+leaf_id:       L-11 + SHIP
+input_state:   PASS 6 closed (111 tests, NO SHOWSTOPPER, F-5 amended);
+               operator authorized PASS-5-proxy + drive-through path.
+action:        L-11 P7 verification: ran `git diff master --
+               agent/mcp_server.py` → empty (ZERO DIFF). P7 HOLDS.
+               Read Brief B SHIP_REPORT for format reference. Wrote
+               harness/SHIP_REPORT.md with SPEC compliance per-predicate
+               table (7/7 met), CAPSULE mitigation status (F-1..F-6
+               closed, F-7/F-8 bounded), verifier coverage (87 vitest
+               + 24 pytest + ruff clean), known limitations (real-
+               canvas L3 still PASS-5-manual deferred; session-routing
+               architectural concern flagged for follow-up), deployment
+               artifact summary (29 files, +6535/-453, 10 commits
+               unpushed), deploy sequence (PASS-5 manual → operator
+               merge), recommended next (PASS-5, F-7/F-8 follow-ups,
+               Tier-3 brief, session routing investigation, refcount
+               cleanup).
+output_state:  harness/SHIP_REPORT.md complete and current. Branch ready
+               for operator review + merge gate. Push NOT executed —
+               per Git Authority Map, push requires explicit operator
+               approval per call.
+verifier:      L0 (git diff filter: P7 ZERO DIFF on agent/mcp_server.py)
+               + content review (SPEC predicates mapped 1:1 to
+               implementation evidence; F-findings mapped 1:1 to leaves;
+               limitations enumerated)
+outcome:       success — PASS 7 SHIP gate ready
+external_calls: [Bash (git diff, git rev-list), Read (Brief B SHIP), Write]
+```
