@@ -31,6 +31,40 @@ Substrate annotation *(harness/PLAN.md vocab)*: `comfy-cozy (cognitive/pipeline/
 
 ---
 
+## Diagrams *(derived from this RFC + live symbol names; introduce no new claims)*
+
+**Dependency DAG** — build order fixed/SCOUT-confirmed; Action 3 depends on Action 1's egress.
+
+```mermaid
+flowchart LR
+    A1["Action 1 — egress path (long-lived handle + session-end cadence)"]
+    A3["Action 3 — Blueprint Capture<br/>serialize resolved-LIVRPS stack<br/>discharges parent §9 E4+E5(i) · maps §0b"]
+    RSI["RSI Selection Loop v1 (parent RFC)"]
+    A1 -->|"egress: deposit → consolidate → query (Action 3 depends on Action 1)"| A3
+    A3 -->|"provides §3 learned unit"| RSI
+```
+
+**Blueprint capture flow** — the cache sits ABOVE the engine; `_resolve` and the LIVRPS `P<R<V<I<L<S` / S=6 order are read-only and UNCHANGED (§A3.4, §A3.7). The single new wiring — routing compose through the engine — is additive, not a resolution change (§A3.6).
+
+```mermaid
+flowchart LR
+    intent["intent"]
+    compose["compose_workflow()<br/>template + flat params · compose.py:60-131"]
+    engine["CognitiveGraphEngine.mutate_workflow(opinion = I or L)<br/>graph.py:54-84 · NEW: route compose through engine"]
+    resolve["to_api_json() = _resolve_from_raw()<br/>read-only pure fn of (base_raw, ordered deltas)<br/>graph.py:106-139 — UNCHANGED (patent IP)"]
+    execute["EXECUTE (unchanged)"]
+    serial["DeltaLayer.to_dict() — NEW<br/>blueprint = &#123;base_raw, deltas[]&#125;"]
+    chunk["ExperienceChunk.blueprint — NEW field<br/>+ workflow_hash + delta_count"]
+    cache["intent-keyed cache<br/>dict[sha256(intent) → Blueprint]<br/>ABOVE the engine (§A3.4)"]
+    intent --> compose -->|"NEW wiring (§A3.2)"| engine
+    engine --> resolve --> execute
+    engine --> serial --> chunk --> cache
+    cache -->|"re-run: hit → replay → resolve"| resolve
+    cache -->|"per-tier invalidation: drop stale I-layer, keep L/S (§A3.3)"| engine
+```
+
+---
+
 ## §A3.1 — Current state *(grounded in source)*
 
 - **The autonomous path never instantiates the engine.** `cognitive/pipeline/autonomous.py:26` imports `CognitiveGraphEngine` and **never references it again** (grep-confirmed). The path composes a flat API dict, executes it, learns a flat `ExperienceChunk`.

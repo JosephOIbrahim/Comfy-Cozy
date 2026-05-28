@@ -31,6 +31,43 @@ Substrate annotation *(harness/PLAN.md vocab)*: `comfy-cozy (agent/brain/, agent
 
 ---
 
+## Diagrams *(derived from this RFC + live symbol names; introduce no new claims)*
+
+**Dependency DAG** — build order is fixed/SCOUT-confirmed; the egress edge uses the frozen four-op API (`deposit`/`query`) consumed unchanged; S=6/LIVRPS untouched.
+
+```mermaid
+flowchart LR
+    A1["Action 1 — Substrate Egress<br/>record_outcome → in-process deposit<br/>discharges parent §9 E5(ii)+E6 · maps §0a/§0e/§0f"]
+    A3["Action 3 — captured blueprints → reusable recipes"]
+    RSI["RSI Selection Loop v1 (parent RFC)"]
+    A1 -->|"egress: deposit → consolidate → query (Action 3 depends on Action 1)"| A3
+    A3 -->|"build order → RSI loop"| RSI
+```
+
+**Egress: before → after** — BEFORE has no cursor/replay and no Moneta egress (§A1.1); "no cursor" is the AFTER's idempotency property (§A1.5), not a current-state component.
+
+```mermaid
+flowchart TB
+    subgraph BEFORE["BEFORE — current state (§A1.1)"]
+        b_ro["record_outcome()<br/>agent/brain/memory.py:334"]
+        b_jsonl["append → sessions/&#123;session&#125;_outcomes.jsonl<br/>json.dumps(sort_keys) + flush + fsync"]
+        b_none["no Moneta egress · no cursor/replay exists"]
+        b_ro --> b_jsonl --> b_none
+    end
+    subgraph AFTER["AFTER — Action 1 (§A1.2–§A1.6)"]
+        a_ro["record_outcome()<br/>same entry point"]
+        a_dep["deposit(payload, embedding) → UUID<br/>frozen Moneta op · api.py:328"]
+        a_mon["Moneta WAL + snapshot<br/>store of record (§A1.5)"]
+        a_sleep["run_sleep_pass() via close()<br/>session-end · never SCRIBE (§A1.4)"]
+        a_ro --> a_dep --> a_mon --> a_sleep
+    end
+    BEFORE ==>|"deposit IS the record → no cursor/replay (§A1.5)"| AFTER
+```
+
+*Handle (§A1.3): one long-lived `Moneta` per `storage_uri`, `threading.Lock`-guarded. Decay (§A1.6): `protected_floor=0.0`, 6 h wall-clock half-life, dormant-until-fire. Four-op API consumed unchanged; S=6 untouched (§A1.9).*
+
+---
+
 ## §A1.1 — Current state *(grounded in source)*
 
 - `record_outcome()` = `agent/brain/memory.py:334` `_handle_record_outcome` → `_append_outcome` (`:295`, write at `:314-317`) → `self.cfg.sessions_dir / "{session}_outcomes.jsonl"` (`:237-240`).
