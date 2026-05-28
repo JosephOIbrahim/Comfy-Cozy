@@ -553,3 +553,43 @@ verifier:      L1 (10 new L-8 tests + 24 prior in same file + 5 deltaFailures
 outcome:       success
 external_calls: [Write, Edit x3, Bash (npm test x2)]
 ```
+
+```
+span_id:       s22
+parent_id:     s21
+pass:          4
+step_type:     execute
+leaf_id:       L-10
+input_state:   L-8 ready (link apply complete); PLAN L-10 contract
+               (integration / SPEC-fit oracle composing all leaves)
+action:        Created tests/panel/integration.test.js. Composes the push
+               pipeline as superduperPanel.pushAgentToCanvas does:
+                 clearDeltaFailures
+                 → withObserverPause(graph, () => applyTouchedSet(app, wf, t))
+               12 scenarios directly assert SPEC predicates:
+                 P1 link parity (connect args match server shape; widget value
+                    matches server new_value)
+                 P2 manual-edit survival (director widget survives link write;
+                    director sibling widget survives agent widget edit)
+                 P3 surface enumeration (single push hits tier3_add,
+                    tier3_delete, stale_node_ref, missing_slot, malformed,
+                    link_rejected — all six documented types); every failure
+                    has type + node_id
+                 P4 no echo (observer restored after success; observer
+                    restored after applyTouchedSet throws; paused observer
+                    doesn't re-trigger original during apply)
+                 F-1 end-to-end (multi-touched + multi-director-edit; all
+                    survive)
+                 mixed widget+link in one push
+                 empty touched no-op (observer canonical)
+output_state:  tests/panel/integration.test.js (new, 12 scenarios).
+               PASS 4 EXECUTE substantively complete: all SPEC-bearing
+               leaves L-0..L-8 + L-10 green. L-11 (P7 git-diff filter)
+               deferred to PASS 7 SHIP.
+verifier:      L1 + L3 (the 12-scenario suite IS the SPEC-fit oracle for
+               stub integration; real-canvas L3 is PASS 5 manual). All
+               prior tests still green; new total 90/90 (66 vitest + 24
+               pytest) — L-10 GREEN
+outcome:       success
+external_calls: [Write, Bash (npm test)]
+```
