@@ -13,6 +13,11 @@ export function makeFakeNode(id, opts = {}) {
     disconnectInput: [],
     disconnectOutput: [],
   };
+  const returns = {
+    connect: opts.connectReturns ?? true,
+    disconnectInput: opts.disconnectInputReturns ?? true,
+    disconnectOutput: opts.disconnectOutputReturns ?? true,
+  };
   const node = {
     id,
     widgets: opts.widgets ?? [],
@@ -21,17 +26,18 @@ export function makeFakeNode(id, opts = {}) {
     color: undefined,
     connect(outputSlot, targetNode, targetSlot) {
       calls.connect.push({ outputSlot, targetNode, targetSlot });
-      return true;
+      return returns.connect;
     },
     disconnectInput(slot) {
       calls.disconnectInput.push(slot);
-      return true;
+      return returns.disconnectInput;
     },
     disconnectOutput(slot, targetNode) {
       calls.disconnectOutput.push({ slot, targetNode });
-      return true;
+      return returns.disconnectOutput;
     },
     _calls: calls,
+    _returns: returns,
   };
   return node;
 }

@@ -13,7 +13,7 @@
  *   L-3  ID-shape parse + parse-failure surfacing  (this file)
  *   L-4  Tier-3 detection (top-level)              (this file)
  *   L-5  unknown-kind / missing-slot surfacing     (this file)
- *   L-8  link primitive apply via LiteGraph        (DEFERRED to L-8)
+ *   L-8  link primitive apply via LiteGraph        (this file)
  *
  * Pure-ish: this module reads the `app` passed in. It does not import
  * the host app module. Tests pass a fake app from
@@ -77,7 +77,6 @@ export function applyTouchedSet(app, workflow, touched) {
 function _applyTouchedWidget(app, entry) {
   const parsed = _parseNodeId(entry.node_id);
   if (!parsed.ok) {
-    // L-3: non-numeric / unparseable node id
     addDeltaFailure({
       type: "malformed",
       node_id: entry.node_id,
@@ -88,9 +87,6 @@ function _applyTouchedWidget(app, entry) {
   }
   const node = app.graph.getNodeById(parsed.id);
   if (!node) {
-    // Per-touched stale ref: server cited a node not on canvas, and
-    // workflow didn't carry it either (else top-level Tier-3 detect
-    // would have surfaced it as tier3_add).
     addDeltaFailure({
       type: "stale_node_ref",
       node_id: entry.node_id,
@@ -110,7 +106,6 @@ function _applyTouchedWidget(app, entry) {
   }
   const widget = node.widgets.find((w) => w && w.name === entry.input_name);
   if (!widget) {
-    // L-5: widget with this name not on the canvas node
     addDeltaFailure({
       type: "missing_slot",
       node_id: entry.node_id,
@@ -125,8 +120,6 @@ function _applyTouchedWidget(app, entry) {
 }
 
 function _applyTouchedLink(app, entry) {
-  // L-3 / per-touched stale-ref surfaces mirror the widget path so links
-  // don't silent-drop on parse / missing-node either.
   const parsed = _parseNodeId(entry.node_id);
   if (!parsed.ok) {
     addDeltaFailure({
@@ -137,8 +130,8 @@ function _applyTouchedLink(app, entry) {
     });
     return;
   }
-  const node = app.graph.getNodeById(parsed.id);
-  if (!node) {
+  const toNode = app.graph.getNodeById(parsed.id);
+  if (!toNode) {
     addDeltaFailure({
       type: "stale_node_ref",
       node_id: entry.node_id,
@@ -147,9 +140,71 @@ function _applyTouchedLink(app, entry) {
     });
     return;
   }
-  // L-8 will implement: from_node.connect(...) / node.disconnectInput(...).
-  // For now, link entries are tracked but not applied — the touched-set
-  // still flows through so widget edits work today; links wait for L-8.
+
+  const oldVal = entry.old_value;
+  const newVal = entry.new_value;
+  // Compute deltas once. Same link (old == new) flips both flags off
+  // so this becomes a no-op — defensive guard for server emitting a
+  // same-value touched entry (the server's L-1 diff normally filters
+  // these out at workflow_patch source).
+  const needsDisconnect = _isLink(oldVal) && !_linkEq(oldVal, newVal);
+  const needsConnect = _isLink(newVal) && !_linkEq(oldVal, newVal);
+
+  // L-8: disconnect first when transitioning between link sources.
+  // LiteGraph's disconnectInput accepts the input slot NAME or index;
+  // we pass the name to match the connect_nodes server contract
+  // (workflow_patch.py:295-326).
+  if (needsDisconnect) {
+    const ok = toNode.disconnectInput(entry.input_name);
+    if (ok === false) {
+      addDeltaFailure({
+        type: "link_rejected",
+        node_id: entry.node_id,
+        input_name: entry.input_name,
+        reason: "disconnectInput returned falsy",
+      });
+      return;
+    }
+  }
+
+  if (needsConnect) {
+    const fromIdRaw = newVal[0];
+    const fromOutputIdx = newVal[1];
+    const fromParsed = _parseNodeId(fromIdRaw);
+    if (!fromParsed.ok) {
+      addDeltaFailure({
+        type: "malformed",
+        node_id: fromIdRaw,
+        input_name: entry.input_name,
+        reason: "non-numeric from-node id",
+      });
+      return;
+    }
+    const fromNode = app.graph.getNodeById(fromParsed.id);
+    if (!fromNode) {
+      addDeltaFailure({
+        type: "stale_node_ref",
+        node_id: fromIdRaw,
+        input_name: entry.input_name,
+        reason: "from-node not present on canvas",
+      });
+      return;
+    }
+    // L-8: LiteGraph's connect signature is
+    //   from_node.connect(from_slot, target_node, target_slot_or_name).
+    // Server emits from_output as int → pass directly. Target slot is
+    // the input NAME from the touched entry.
+    const ok = fromNode.connect(fromOutputIdx, toNode, entry.input_name);
+    if (ok === false) {
+      addDeltaFailure({
+        type: "link_rejected",
+        node_id: entry.node_id,
+        input_name: entry.input_name,
+        reason: "from-node connect returned falsy",
+      });
+      return;
+    }
+  }
 }
 
 function _detectTier3(graph, workflow) {
@@ -202,4 +257,18 @@ function _parseNodeId(raw) {
     return { ok: false };
   }
   return { ok: true, id: parseInt(s, 10) };
+}
+
+function _isLink(v) {
+  return (
+    Array.isArray(v) &&
+    v.length === 2 &&
+    typeof v[0] === "string" &&
+    typeof v[1] === "number" &&
+    !Number.isNaN(v[1])
+  );
+}
+
+function _linkEq(a, b) {
+  return _isLink(a) && _isLink(b) && a[0] === b[0] && a[1] === b[1];
 }

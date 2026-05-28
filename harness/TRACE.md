@@ -512,3 +512,44 @@ verifier:      L1 (3 L-5 tests: nonexistent input name, null widgets array,
 outcome:       success
 external_calls: [Bash (npm test)]
 ```
+
+```
+span_id:       s21
+parent_id:     s20
+pass:          4
+step_type:     execute
+leaf_id:       L-8
+input_state:   L-5 ready (surface enumeration complete for widget path); PLAN
+               L-8 contract (link primitive apply via LiteGraph)
+action:        Implemented _applyTouchedLink in _pushApplyTouched.js with
+               three-state transition handling:
+                 old null + new link → connect via
+                   fromNode.connect(fromOutput, toNode, input_name)
+                 old link + new null → toNode.disconnectInput(input_name)
+                 old A    + new B    → disconnect, then connect
+                 old == new          → no-op (defensive)
+               Added _isLink(v) and _linkEq(a, b) helpers. Failure surfaces
+               mirror the widget path: malformed (parse), stale_node_ref
+               (missing to-node OR from-node), and a new "link_rejected"
+               type for LiteGraph returning false on connect/disconnect.
+               Extended tests/panel/_stubs/litegraph.js: makeFakeNode accepts
+               opts.{connectReturns, disconnectInputReturns,
+               disconnectOutputReturns} so tests simulate LiteGraph rejection.
+               Bug surfaced + fixed: needsConnect only checked _isLink(new)
+               — would re-issue connect when old == new. Added !linkEq guard.
+output_state:  panel/web/js/_pushApplyTouched.js: _applyTouchedLink full
+               implementation; +_isLink, +_linkEq.
+               tests/panel/_stubs/litegraph.js: +returns options.
+               tests/panel/pushApplyTouched.test.js: L-8 deferred test removed;
+               L-8 describe block (10 tests) added.
+               F-1 mitigation NOW CLOSED FOR LINKS — director-edited
+               neighbours survive both widget AND link writes. P1 (link-state
+               parity, applied ops) is verifiable: connect args match server's
+               [from_node_id_str, from_output_int] shape via parseNodeId
+               conversion.
+verifier:      L1 (10 new L-8 tests + 24 prior in same file + 5 deltaFailures
+               + 11 pushControl + 4 sample = 54 vitest; 24 pytest unchanged;
+               new total 78/78) — L-8 GREEN
+outcome:       success
+external_calls: [Write, Edit x3, Bash (npm test x2)]
+```
