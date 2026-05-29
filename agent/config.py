@@ -6,9 +6,11 @@ import sys
 from pathlib import Path
 from dotenv import load_dotenv
 
-# Load .env from project root regardless of working directory (supports MCP server launch)
+# Load .env from project root regardless of working directory (supports MCP server launch).
+# override=True makes the project .env authoritative — it wins over any pre-set OS/shell env
+# var, so a stale shell var (e.g. a leftover COMFYUI_DATABASE) can't silently shadow .env.
 _PROJECT_ROOT = Path(__file__).parent.parent
-load_dotenv(_PROJECT_ROOT / ".env")
+load_dotenv(_PROJECT_ROOT / ".env", override=True)
 
 # LLM Provider selection — anthropic (default), openai, gemini, ollama
 LLM_PROVIDER = os.getenv("LLM_PROVIDER", "anthropic")
