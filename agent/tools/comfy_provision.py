@@ -228,6 +228,17 @@ def _validate_download_url(url: str) -> str | None:
         for pattern in blocked_patterns:
             if hostname.startswith(pattern):
                 return f"Access denied: download from '{hostname}' is not allowed."
+        # Host allowlist — only allowlisted registrable domains + their subdomains
+        # (covers CDN hosts like cdn-lfs.huggingface.co). Closes the arbitrary-source
+        # hole: _ALLOWED_DOWNLOAD_HOSTS was previously defined but never enforced.
+        # NOTE: a legitimate source on an UNLISTED domain (e.g. a third-party CDN) is
+        # rejected — add its domain to _ALLOWED_DOWNLOAD_HOSTS if a real source needs it.
+        if not any(hostname == d or hostname.endswith("." + d)
+                   for d in _ALLOWED_DOWNLOAD_HOSTS):
+            return (
+                f"Access denied: download host '{hostname}' is not in the "
+                f"allowlist ({', '.join(sorted(_ALLOWED_DOWNLOAD_HOSTS))})."
+            )
     except Exception as _e:  # Cycle 61: log unexpected URL parse errors for debuggability
         log.debug("Unexpected error validating download URL %r: %s", url[:100], _e)
         return "Invalid URL format."
