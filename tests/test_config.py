@@ -7,7 +7,8 @@ from unittest.mock import patch
 class TestApiKeyValidation:
     def test_valid_key_no_warning(self, capsys):
         """Valid sk-ant- key should not trigger a warning."""
-        with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "sk-ant-test123"}, clear=False):
+        with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "sk-ant-test123"}, clear=False), \
+             patch("dotenv.load_dotenv"):  # hermetic: .env (override=True) must not pull the real key
             # Re-import to refresh module-level ANTHROPIC_API_KEY constant
             import importlib
             import agent.config as config_mod
@@ -22,7 +23,8 @@ class TestApiKeyValidation:
 
     def test_invalid_key_format_warns(self, capsys):
         """Non sk-ant- key should print a warning to stderr."""
-        with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "bad-key-format"}, clear=False):
+        with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "bad-key-format"}, clear=False), \
+             patch("dotenv.load_dotenv"):  # hermetic: .env (override=True) must not replace the bad key
             import importlib
             import agent.config as config_mod
             importlib.reload(config_mod)
@@ -54,6 +56,26 @@ class TestApiKeyValidation:
              patch("dotenv.load_dotenv"):
             importlib.reload(config_mod)
             assert config_mod.ANTHROPIC_API_KEY is None
+
+
+class TestDotenvOverride:
+    def test_env_loaded_with_override_true(self):
+        """config.py loads .env with override=True so the project .env wins
+        over pre-set OS/shell env vars (a stale shell var can't shadow .env)."""
+        import importlib
+
+        import agent.config as config_mod
+
+        seen: dict = {}
+
+        def _spy(*args, **kwargs):
+            seen.update(kwargs)
+            return False
+
+        with patch("dotenv.load_dotenv", _spy):
+            importlib.reload(config_mod)
+        importlib.reload(config_mod)  # restore real config for subsequent tests
+        assert seen.get("override") is True
 
 
 class TestConfigDefaults:
