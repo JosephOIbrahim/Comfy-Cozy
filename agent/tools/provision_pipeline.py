@@ -66,6 +66,14 @@ TOOLS: list[dict] = [
                         "candidates for user selection. Default: false."
                     ),
                 },
+                "confirm": {
+                    "type": "boolean",
+                    "description": (
+                        "Approve this network/code-executing operation (model "
+                        "download). Required by the safety gate; the op is blocked "
+                        "unless this is true. Default false."
+                    ),
+                },
             },
             "required": ["query"],
         },
