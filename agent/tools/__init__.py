@@ -257,20 +257,46 @@ def handle(
             # ContextVar, which is set per-connection by routes.py and
             # mcp_server.py — so the sidebar's injected workflow lives in
             # its own session and the gate sees it correctly.
+            # session_active + has_undo feed the gate's consent + reversibility
+            # checks.  Workflow state can live in TWO stores that DIVERGE:
+            #   - ctx.workflow : the SessionContext's own WorkflowSession
+            #   - _get_state() : this connection's REGISTRY WorkflowSession,
+            #                    which the loaders (load_workflow_from_data /
+            #                    _load_workflow) actually write to.
+            # The sidebar/MCP path passes a session_id (ctx present), but the
+            # injected graph lands in the REGISTRY session — a different object
+            # from ctx.workflow.  Consult BOTH so a loaded workflow is seen
+            # regardless of which store holds it (fixes the dual-store wedge).
             _session_active = ctx is not None
-            _has_undo = bool(
-                ctx and hasattr(ctx, 'workflow')
-                and ctx.workflow.get("history")
-            )
-            if not _session_active:
+            _wf_loaded = False
+            _has_undo = False
+            if ctx is not None and hasattr(ctx, 'workflow'):
                 try:
-                    from .workflow_patch import _get_state
-                    _wf = _get_state().get("current_workflow")
-                    if _wf is not None:
-                        _session_active = True
-                        _has_undo = bool(_get_state().get("history"))
+                    if ctx.workflow.get("current_workflow") is not None:
+                        _wf_loaded = True
+                    if ctx.workflow.get("history"):
+                        _has_undo = True
                 except Exception:
                     pass
+            try:
+                from .workflow_patch import _get_state
+                _reg = _get_state()
+                if _reg.get("current_workflow") is not None:
+                    _wf_loaded = True
+                if _reg.get("history"):
+                    _has_undo = True
+            except Exception:
+                pass
+            # Fail open SAFELY: a LOADED-but-unmutated workflow is reversible via
+            # reset_workflow, which restores base_workflow (set once at load,
+            # never touched by writes) — so "a workflow is loaded" is itself a
+            # legitimate undo baseline, even before the first mutation seeds
+            # history.  A genuinely UNLOADED session (no current_workflow in
+            # either store) still fails CLOSED: _wf_loaded stays False so
+            # _has_undo stays False and REVERSIBLE writes are denied.
+            if _wf_loaded:
+                _session_active = True
+                _has_undo = True
 
             # Stage-state fallback for stage_* tools.  The workflow-state
             # fallback above misses the case where a CognitiveWorkflowStage
