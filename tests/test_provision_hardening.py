@@ -74,3 +74,47 @@ class TestS3PickleAndHash:
         f.write_bytes(b"hello world")
         assert _verify_sha256(f, hashlib.sha256(b"hello world").hexdigest()) is None  # match
         assert _verify_sha256(f, "deadbeef" * 8) is not None                          # mismatch
+
+
+# ---------------------------------------------------------------------------
+# s4 — repair_workflow(auto_install) gates the inner install behind confirm
+# ---------------------------------------------------------------------------
+class TestS4RepairInstallGate:
+    @staticmethod
+    def _wire(monkeypatch, calls):
+        """Fake find_missing_nodes (1 pack) + spy on the installer (no git/pip)."""
+        import json
+        import agent.tools.comfy_discover as disc
+        import agent.tools.comfy_provision as cp
+        monkeypatch.setattr(disc, "handle", lambda name, ti: json.dumps(
+            {"missing": [{"class_type": "Foo", "pack_url": "https://github.com/x/foo", "pack_name": "foo"}]}
+        ) if name == "find_missing_nodes" else json.dumps({}))
+        monkeypatch.setattr(cp, "_handle_install_node_pack",
+                            lambda ti: (calls.append(ti), json.dumps({"installed": True, "message": "ok"}))[1])
+
+    def test_auto_install_without_confirm_blocks(self, monkeypatch):  # NEGATIVE
+        import json
+        import agent.tools.comfy_provision as cp
+        calls = []
+        self._wire(monkeypatch, calls)
+        r = json.loads(cp._handle_repair_workflow({"auto_install": True}))
+        assert r["status"] == "needs_confirmation", r
+        assert calls == [], "install must NOT run without confirm"
+
+    def test_auto_install_with_confirm_proceeds(self, monkeypatch):  # POSITIVE
+        import json
+        import agent.tools.comfy_provision as cp
+        calls = []
+        self._wire(monkeypatch, calls)
+        r = json.loads(cp._handle_repair_workflow({"auto_install": True, "confirm": True}))
+        assert r["status"] != "needs_confirmation", r
+        assert len(calls) == 1, "confirmed install should run exactly once"
+
+    def test_report_only_not_gated(self, monkeypatch):  # POSITIVE (fluid report path)
+        import json
+        import agent.tools.comfy_provision as cp
+        calls = []
+        self._wire(monkeypatch, calls)
+        r = json.loads(cp._handle_repair_workflow({"auto_install": False}))
+        assert r["status"] != "needs_confirmation", r
+        assert calls == [], "report-only must not install"

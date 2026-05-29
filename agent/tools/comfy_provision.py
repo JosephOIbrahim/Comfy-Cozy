@@ -970,7 +970,30 @@ def _handle_repair_workflow(tool_input: dict) -> str:
         else:
             unresolved.append(class_type)
 
-    # Step 3: Install (if auto_install)
+    # Step 3: Install (if auto_install) — GATED.
+    # Auto-install = git clone + pip install = third-party code execution. repair_workflow is
+    # REVERSIBLE-classified (so the keystone gate does NOT ESCALATE it) and it calls
+    # _handle_install_node_pack directly (bypassing the central gate). So we gate the INSTALL
+    # action here: without confirm=true, report what WOULD be installed and install NOTHING.
+    # The find/report path stays fluid; only the code-executing install is gated.
+    _raw_confirm = tool_input.get("confirm", False)
+    confirmed = _raw_confirm if isinstance(_raw_confirm, bool) else str(_raw_confirm).lower() in ("true", "1", "yes")
+    if auto_install and packs_to_install and not confirmed:
+        return to_json({
+            "status": "needs_confirmation",
+            "missing_count": len(missing),
+            "packs_to_install": [
+                {"name": p["name"], "url": u, "nodes": p["nodes"]}
+                for u, p in packs_to_install.items()
+            ],
+            "unresolved_nodes": unresolved,
+            "message": (
+                f"Repair would install {len(packs_to_install)} node pack(s) via git clone + "
+                f"pip install (third-party code execution). Re-call repair_workflow with "
+                f"\"confirm\": true to proceed, or install manually."
+            ),
+        })
+
     install_results = []
     if auto_install and packs_to_install:
         for url, pack_info in packs_to_install.items():
