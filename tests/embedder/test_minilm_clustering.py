@@ -1,4 +1,4 @@
-"""Acceptance test for Item 7 (MiniLM embedder).
+"""Acceptance test for the cognitive embedder (BAAI/bge-small-en-v1.5).
 
 Confirms that `agent.embedder.embed` produces vectors that cluster
 within thematic groups under cosine similarity, while a parallel
@@ -187,31 +187,46 @@ class TestEmbedderShape:
             embed(123)  # type: ignore[arg-type]
 
 
-class TestMiniLMClustering:
-    """Acceptance gate: real embeddings cluster within themes."""
+class TestEmbedderClustering:
+    """Acceptance gate: real embeddings cluster within themes (scale-invariant).
 
-    def test_minilm_clusters_within_themes(self):
+    Asserts SEPARATION + per-theme ranking, NOT absolute cosine values. Modern
+    retrieval encoders (e.g. BGE) are anisotropic — their absolute cosine floor
+    is high (unrelated text ~0.5), so an absolute 'between < 0.3' threshold is
+    model-specific and wrong. What matters for retrieval is that same-theme is
+    clearly MORE similar than cross-theme, regardless of absolute scale.
+    """
+
+    def test_clusters_within_themes(self):
         vectors = {
             theme: [embed(text) for text in texts]
             for theme, texts in CORPUS.items()
         }
         within, between = _within_between_means(vectors)
 
-        assert within > 0.4, (
-            f"within-theme cosine avg {within:.3f} should be >0.4 — "
-            f"MiniLM is not clustering semantic groups as expected. "
-            f"between-theme avg: {between:.3f}"
+        # (1) Separation margin (scale-invariant): same-theme clearly more
+        # similar than cross-theme.
+        assert within - between > 0.2, (
+            f"separation {within - between:.3f} too small (need >0.2) — "
+            f"within={within:.3f} between={between:.3f}; the embedder is not "
+            f"distinguishing themes."
         )
-        assert between < 0.3, (
-            f"between-theme cosine avg {between:.3f} should be <0.3 — "
-            f"unrelated themes are sharing too much signal. "
-            f"within-theme avg: {within:.3f}"
-        )
-        # Separation margin: real test of "clustering."
-        assert within - between > 0.15, (
-            f"MiniLM separation {within - between:.3f} too small — "
-            f"within={within:.3f} between={between:.3f}"
-        )
+
+        # (2) Per-theme ranking: EVERY theme is more self-similar than its
+        # cross-theme similarity by a clear margin — the real retrieval property.
+        themes = list(vectors.keys())
+        for t in themes:
+            vs = vectors[t]
+            own = [_cosine(vs[i], vs[j])
+                   for i in range(len(vs)) for j in range(i + 1, len(vs))]
+            cross = [_cosine(v1, v2)
+                     for t2 in themes if t2 != t
+                     for v1 in vs for v2 in vectors[t2]]
+            own_mean, cross_mean = statistics.mean(own), statistics.mean(cross)
+            assert own_mean - cross_mean > 0.15, (
+                f"theme '{t}': within {own_mean:.3f} vs cross {cross_mean:.3f} — "
+                f"margin {own_mean - cross_mean:.3f} too small to retrieve reliably."
+            )
 
 
 class TestSyntheticControl:
