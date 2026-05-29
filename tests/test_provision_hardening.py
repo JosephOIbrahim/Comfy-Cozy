@@ -133,3 +133,25 @@ class TestS5ProvisionModelGatedAtEntry:
         assert "auto-blocked" in r.lower(), r
         # POSITIVE (confirmed dispatch) is covered transitively by the keystone crucible:
         # any PROVISION op with confirm=true falls through to dispatch (test_*_confirmed_dispatches).
+
+
+# ---------------------------------------------------------------------------
+# s6 — gate-level https-only on url keys + fix misleading "available immediately" message
+# ---------------------------------------------------------------------------
+class TestS6UrlScopeAndMessage:
+    def test_check_scope_rejects_non_https_url(self):  # NEGATIVE
+        from agent.gate.checks import check_scope
+        ok, reason = check_scope("download_model", {"url": "http://github.com/x/y"})
+        assert ok is False and "https" in reason.lower(), reason
+
+    def test_check_scope_allows_https_url(self):  # POSITIVE
+        from agent.gate.checks import check_scope
+        ok, _ = check_scope("download_model", {"url": "https://huggingface.co/x/y"})
+        assert ok is True
+
+    def test_download_message_not_misleading(self):  # message fix (source-level guard)
+        import inspect
+        import agent.tools.comfy_provision as cp
+        src = inspect.getsource(cp._handle_download_model)
+        assert "available immediately" not in src, "misleading 'available immediately' still present"
+        assert "estart" in src.lower(), "download success should mention restart/refresh"

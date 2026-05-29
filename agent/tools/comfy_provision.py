@@ -763,7 +763,8 @@ def _handle_download_model(tool_input: dict) -> str:
             "speed_mbps": round(speed_mbps, 1),
             "message": (
                 f"Downloaded '{filename}' ({size_gb:.1f} GB) to {model_type}/. "
-                f"It should be available immediately -- no restart needed."
+                f"Restart ComfyUI (or refresh its model list) for it to appear in the "
+                f"*_name dropdowns -- newly downloaded files are not picked up automatically."
             ),
         })
 
