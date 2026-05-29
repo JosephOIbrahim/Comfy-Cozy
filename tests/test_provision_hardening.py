@@ -34,6 +34,12 @@ class TestS2HostAllowlist:
         from agent.tools.comfy_provision import _validate_download_url
         assert _validate_download_url("https://cdn-lfs.huggingface.co/repo/blob") is None
 
+    def test_hf_xet_cdn_accepted(self):  # HF Xet backend — resolve/main 302s to cas-bridge.xethub.hf.co
+        from agent.tools.comfy_provision import _validate_download_url
+        assert _validate_download_url(
+            "https://cas-bridge.xethub.hf.co/xet-bridge-us/deadbeef/blob.safetensors"
+        ) is None
+
     def test_offlist_download_rejected_even_when_confirmed(self):
         # confirm=true passes the keystone; the handler must still reject the off-allowlist host.
         # (host check is the FIRST handler step — rejects before any mkdir/network.)

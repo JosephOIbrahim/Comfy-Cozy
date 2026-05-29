@@ -91,3 +91,17 @@ Prompt->RCE / autonomous-fetch surface CLOSED for the non-stage layer (s1 keysto
 explicit confirm; downloads are host-allowlisted + pickle-blocked + hash-verifiable; the gate enforces https on
 url keys. Stage-layer residue (s8/s9) is bounded by the keystone confirm until the agent/stage freeze lifts.
 No push — consolidated operator review pending; operator decides push/PR.
+
+---
+
+## Follow-up — post-merge live smoke test (Xet allowlist gap)
+
+A live model-download smoke test after PR #21 merged surfaced one gap in s2:
+`download_model(confirm=true)` for a public HuggingFace file was rejected at the
+redirect — HF now serves `resolve/main/...` via its Xet CDN
+(`cas-bridge.xethub.hf.co`), which is not a `huggingface.co` subdomain and so
+failed the per-hop host-allowlist. Fix: added `xethub.hf.co` to
+`_ALLOWED_DOWNLOAD_HOSTS` (matches `cas-bridge.*` via the subdomain rule) plus a
+closure-proof test. The keystone (s1) confirm-block and the per-hop allowlist
+re-validation both verified working against merged code during the same test.
+s2 watch-item ("unlisted CDN domains must be added to the allowlist") — RESOLVED for HF Xet.
