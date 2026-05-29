@@ -6,12 +6,9 @@ No network / no subprocess: positives use SSRF/scheme/host-rejected inputs so ha
 run but perform no real fetch/install.
 """
 
-import copy
-from collections import deque
-
 import pytest
 
-from agent.tools import handle, workflow_patch
+from agent.tools import handle
 
 
 @pytest.fixture(autouse=True)
