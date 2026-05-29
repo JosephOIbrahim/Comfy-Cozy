@@ -106,6 +106,20 @@ TOOLS: list[dict] = [
                         "(e.g. 'LTX2' inside loras/)."
                     ),
                 },
+                "expected_sha256": {
+                    "type": "string",
+                    "description": (
+                        "Optional SHA-256 hex digest. If given, the download is verified "
+                        "against it and deleted on mismatch."
+                    ),
+                },
+                "allow_pickle": {
+                    "type": "boolean",
+                    "description": (
+                        "Allow a pickle-format weight (.ckpt/.pt/.pth/.bin) — these can "
+                        "execute code on load. Default false; safetensors preferred."
+                    ),
+                },
             },
             "required": ["url", "model_type"],
         },
@@ -186,6 +200,39 @@ _ALLOWED_GIT_HOSTS = frozenset([
 _MODEL_EXTENSIONS = frozenset([
     ".safetensors", ".ckpt", ".pt", ".pth", ".bin", ".gguf", ".onnx",
 ])
+
+# Pickle-format weights execute arbitrary code on load (torch.load / pickle).
+# Blocked by default — require explicit allow_pickle=true for a trusted source.
+_PICKLE_EXTENSIONS = frozenset([".ckpt", ".pt", ".pth", ".bin"])
+
+
+def _pickle_blocked(suffix: str, tool_input: dict) -> bool:
+    """True if `suffix` is a pickle weight format and the caller did not opt in via
+    allow_pickle=true. Pickle weights (.ckpt/.pt/.pth/.bin) run code on load."""
+    if suffix.lower() not in _PICKLE_EXTENSIONS:
+        return False
+    raw = tool_input.get("allow_pickle", False)
+    allowed = raw if isinstance(raw, bool) else str(raw).lower() in ("true", "1", "yes")
+    return not allowed
+
+
+def _verify_sha256(path, expected_hex: str) -> "str | None":
+    """None if `path`'s SHA-256 matches expected_hex (case-insensitive), else an error
+    message. Hashes the already-downloaded file — no network I/O."""
+    import hashlib
+    h = hashlib.sha256()
+    try:
+        with open(path, "rb") as f:
+            for chunk in iter(lambda: f.read(1024 * 1024), b""):
+                h.update(chunk)
+    except OSError as e:
+        return f"Could not read the downloaded file for the hash check: {e}"
+    actual = h.hexdigest().lower()
+    if actual != expected_hex.lower():
+        return (f"SHA-256 mismatch: expected {expected_hex}, got {actual} — the "
+                f"downloaded file does not match the expected hash; discarded.")
+    return None
+
 
 # Allowed URL schemes/hosts for model downloads (SSRF prevention)
 _ALLOWED_DOWNLOAD_HOSTS = frozenset([
@@ -587,6 +634,16 @@ def _handle_download_model(tool_input: dict) -> str:
             "error": f"Unexpected file extension '{suffix}'.",
             "hint": f"Expected one of: {', '.join(sorted(_MODEL_EXTENSIONS))}",
         })
+    # Pickle-format weights run arbitrary code on load — refuse unless allow_pickle=true.
+    if _pickle_blocked(suffix, tool_input):
+        return to_json({
+            "error": (
+                f"Refusing to download a pickle-format model ('{suffix}') — it can "
+                f"execute arbitrary code when loaded. Prefer .safetensors. To override "
+                f"for a trusted source, re-call with \"allow_pickle\": true."
+            ),
+            "hint": "safetensors is the safe default.",
+        })
 
     # Download with progress — manual redirect following with per-hop SSRF validation.
     # follow_redirects=False is intentional: we re-validate every redirect target
@@ -682,6 +739,14 @@ def _handle_download_model(tool_input: dict) -> str:
                 ),
                 "url": url,
             })
+
+        # Optional integrity check before promoting the temp file to its final name.
+        expected_sha = (tool_input.get("expected_sha256") or "").strip()
+        if expected_sha:
+            sha_err = _verify_sha256(temp_path, expected_sha)
+            if sha_err:
+                temp_path.unlink(missing_ok=True)
+                return to_json({"error": sha_err, "url": url})
 
         # Rename temp to final
         temp_path.rename(target)

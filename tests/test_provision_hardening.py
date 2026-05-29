@@ -38,9 +38,39 @@ class TestS2HostAllowlist:
         assert _validate_download_url("https://cdn-lfs.huggingface.co/repo/blob") is None
 
     def test_offlist_download_rejected_even_when_confirmed(self):
-        # confirm=true passes the keystone; the handler must still reject the off-allowlist host
+        # confirm=true passes the keystone; the handler must still reject the off-allowlist host.
+        # (host check is the FIRST handler step — rejects before any mkdir/network.)
         r = handle("download_model", {
             "url": "https://evil.example.com/m.safetensors",
             "model_type": "checkpoints", "filename": "m.safetensors", "confirm": True,
         })
         assert "allowlist" in r.lower(), r
+
+
+# ---------------------------------------------------------------------------
+# s3 — pickle-format block (default-deny) + sha256 verify
+# ---------------------------------------------------------------------------
+class TestS3PickleAndHash:
+    def test_pickle_blocked_by_default(self):  # NEGATIVE
+        from agent.tools.comfy_provision import _pickle_blocked
+        assert _pickle_blocked(".ckpt", {}) is True
+        assert _pickle_blocked(".pt", {}) is True
+        assert _pickle_blocked(".bin", {}) is True
+
+    def test_safetensors_not_blocked(self):  # POSITIVE (safe format works)
+        from agent.tools.comfy_provision import _pickle_blocked
+        assert _pickle_blocked(".safetensors", {}) is False
+        assert _pickle_blocked(".gguf", {}) is False
+
+    def test_allow_pickle_override(self):  # POSITIVE (explicit opt-in works)
+        from agent.tools.comfy_provision import _pickle_blocked
+        assert _pickle_blocked(".ckpt", {"allow_pickle": True}) is False
+        assert _pickle_blocked(".ckpt", {"allow_pickle": "true"}) is False
+
+    def test_sha256_verify_helper(self, tmp_path):  # NEGATIVE+POSITIVE
+        import hashlib
+        from agent.tools.comfy_provision import _verify_sha256
+        f = tmp_path / "blob.bin"
+        f.write_bytes(b"hello world")
+        assert _verify_sha256(f, hashlib.sha256(b"hello world").hexdigest()) is None  # match
+        assert _verify_sha256(f, "deadbeef" * 8) is not None                          # mismatch
