@@ -344,10 +344,15 @@ def handle(
                 # surfaced to a human. Without it we BLOCK (do NOT dispatch), closing
                 # the prompt->autonomous-fetch / prompt->RCE hole. A genuinely
                 # confirmed call falls through to dispatch unchanged.
-                _confirmed = (
-                    isinstance(tool_input, dict)
-                    and tool_input.get("confirm") is True
-                )
+                if isinstance(tool_input, dict):
+                    _raw_confirm = tool_input.get("confirm", False)
+                    _confirmed = (
+                        _raw_confirm
+                        if isinstance(_raw_confirm, bool)
+                        else str(_raw_confirm).lower() in ("true", "1", "yes")
+                    )
+                else:
+                    _confirmed = False
                 if not _confirmed:
                     log.info("Gate ESCALATE-blocked '%s' (risk %d) — needs confirm",
                              name, gate_result.risk_level)

@@ -82,3 +82,33 @@ class TestEscalateBlocksWithoutConfirm:
         r = handle("uninstall_node_pack", {"name": "somepack"})
         assert ("destructive" in r.lower()) or ("cannot be auto-executed" in r.lower()), r
         assert _BLOCK not in r, r          # LOCKED message, distinct from the ESCALATE block
+
+
+class TestEscalateConfirmLenientParse:
+    """The keystone must admit the string forms an over-the-wire JSON client sends
+    (confirm='true') AND keep blocking when confirm is absent / False / 'false'.
+    Mirrors the repair_workflow handler parse (comfy_provision.py:985-986)."""
+
+    _PRIVATE_DL = {
+        "url": "https://10.0.0.1/m.safetensors",
+        "model_type": "checkpoints",
+        "filename": "m.safetensors",
+    }
+
+    @pytest.mark.parametrize("confirm_value", [True, "true", "True", "1", "yes"])
+    def test_truthy_confirm_passes_gate(self, confirm_value):
+        # gate must NOT block; handler then SSRF-rejects the private IP (no network)
+        r = handle("download_model", {**self._PRIVATE_DL, "confirm": confirm_value})
+        assert _BLOCK not in r, r
+        assert ("denied" in r.lower()) or ("not allowed" in r.lower()), r
+
+    @pytest.mark.parametrize("confirm_value", [False, "false", "False", "0", "no", ""])
+    def test_falsy_confirm_still_blocks(self, confirm_value):
+        r = handle("download_model", {**self._PRIVATE_DL, "confirm": confirm_value})
+        assert _BLOCK in r, r
+        assert "confirmation" in r.lower(), r
+
+    def test_absent_confirm_still_blocks(self):
+        r = handle("download_model", dict(self._PRIVATE_DL))
+        assert _BLOCK in r, r
+        assert "confirmation" in r.lower(), r

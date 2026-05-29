@@ -66,6 +66,14 @@ TOOLS: list[dict] = [
                         "repository name from the URL."
                     ),
                 },
+                "confirm": {
+                    "type": "boolean",
+                    "description": (
+                        "Approve this network/code-executing operation (git clone + "
+                        "pip install). Required by the safety gate; the op is blocked "
+                        "unless this is true. Default false."
+                    ),
+                },
             },
             "required": ["url"],
         },
@@ -120,6 +128,14 @@ TOOLS: list[dict] = [
                         "execute code on load. Default false; safetensors preferred."
                     ),
                 },
+                "confirm": {
+                    "type": "boolean",
+                    "description": (
+                        "Approve this network operation (model download). Required by "
+                        "the safety gate; the op is blocked unless this is true. "
+                        "Default false."
+                    ),
+                },
             },
             "required": ["url", "model_type"],
         },
@@ -158,6 +174,14 @@ TOOLS: list[dict] = [
                     "description": (
                         "If true (default), automatically install all found packs. "
                         "If false, just report what's missing without installing."
+                    ),
+                },
+                "confirm": {
+                    "type": "boolean",
+                    "description": (
+                        "Approve the code-executing installs this repair performs "
+                        "(git clone + pip install). Required by the safety gate; "
+                        "installs are skipped unless this is true. Default false."
                     ),
                 },
             },
