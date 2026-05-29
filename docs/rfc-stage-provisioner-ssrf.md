@@ -8,7 +8,7 @@
 ## Proposed fix (when FORGE_ENABLED for stage, post-Jun-16)
 Mirror the intelligence-layer hardening inside `provisioner._stream_download`:
 1. **SSRF guard** — before/at each hop, reject `localhost`, private/loopback/link-local/reserved IPs, CGNAT (RFC 6598), and metadata endpoints. Reuse the logic equivalent to `agent/tools/comfy_provision.py:_validate_download_url` / `_resolve_and_check_private` (consider extracting a shared `agent/net_safety.py` helper consumed by both, so stage and intelligence layers stay in lockstep).
-2. **Host allowlist** — enforce the same `_ALLOWED_DOWNLOAD_HOSTS` (domain + subdomain) on the initial `source_url`.
+2. **Host allowlist** — enforce the same `_ALLOWED_DOWNLOAD_HOSTS` (domain + subdomain) on the initial `source_url`. (That allowlist must include `xethub.hf.co` — HF's Xet CDN, where `resolve/main/...` now redirects; added to the intelligence-layer allowlist post-#21 after a live smoke test caught the rejection.)
 3. **Manual redirects** — `follow_redirects=False` with per-hop re-validation (today's `True` follows blindly).
 4. **Size cap** — abort past a hard byte limit (mirror `_MAX_DOWNLOAD_BYTES`, 20 GB).
 5. **sha256** — provisioner already verifies a registered hash; keep it, but see s9 (the hash can be prompt-injected).

@@ -238,6 +238,11 @@ def _verify_sha256(path, expected_hex: str) -> "str | None":
 _ALLOWED_DOWNLOAD_HOSTS = frozenset([
     "github.com", "gitlab.com", "bitbucket.org",
     "huggingface.co", "civitai.com", "codeberg.org",
+    # HuggingFace migrated LFS objects to its Xet CDN: a resolve/main/... URL
+    # 302-redirects to cas-bridge.xethub.hf.co. Matched here as a subdomain of
+    # xethub.hf.co. Without it, legitimate public HF downloads are rejected at
+    # the redirect hop (confirmed via a post-#21 live smoke test).
+    "xethub.hf.co",
 ])
 
 
