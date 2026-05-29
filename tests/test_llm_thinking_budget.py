@@ -2,11 +2,15 @@
 
 Behavior under test (inside-out branch):
   - Anthropic threads thinking_budget into stream/create as
-    `thinking={"type": "enabled", "budget_tokens": N}` when N > 0.
+    `thinking={"type": "enabled", "budget_tokens": N}` for legacy models
+    (Sonnet 4.5, 3.7, the generic test model).
+  - For Opus 4.7 / 4.6 and Sonnet 4.6, Anthropic emits the adaptive shape
+    `thinking={"type": "adaptive", "display": "summarized"}` plus
+    `output_config={"effort": THINKING_EFFORT}` — Opus 4.7 hard-rejects
+    the legacy shape with HTTP 400, so the model-aware branch is required.
   - Anthropic's convert_messages replays signature-bearing ThinkingBlocks
     verbatim (so multi-turn extended-thinking + tool_use stays valid).
-  - Signature-less ThinkingBlocks are silently dropped — a known-fragile
-    path pinned here for visibility (Action 2 was deferred).
+  - Signature-less ThinkingBlocks are dropped with a warning (action S1).
   - OpenAI / Gemini / Ollama accept thinking_budget without raising
     and do NOT forward it to their respective SDK calls.
 """
@@ -185,6 +189,362 @@ class TestAnthropicThinkingBudgetCreate:
                 "type": "enabled",
                 "budget_tokens": 2000,
             }
+
+
+# ============================================================================
+# Anthropic — adaptive thinking for Opus 4.7 / 4.6 and Sonnet 4.6
+# ============================================================================
+
+
+class TestAnthropicAdaptiveThinking:
+    """Opus 4.7 hard-rejects `{type: enabled, budget_tokens: N}` with HTTP 400.
+    Opus 4.6 and Sonnet 4.6 still accept legacy but adaptive is the
+    forward-compatible path. The model-aware branch in
+    `_build_thinking_kwargs` routes these three model prefixes to the
+    adaptive shape: `thinking={type: adaptive, display: summarized}` plus
+    `output_config={effort: THINKING_EFFORT}`.
+    """
+
+    @pytest.mark.parametrize(
+        "model",
+        [
+            "claude-opus-4-7",
+            "claude-opus-4-6",
+            "claude-sonnet-4-6",
+            "claude-opus-4-7-20260301",  # dated variant — prefix match
+        ],
+    )
+    def test_stream_uses_adaptive_shape_for_modern_models(self, model):
+        with patch("agent.llm._anthropic.anthropic") as mock_sdk:
+            provider = _make_anthropic(mock_sdk)
+            _wire_anthropic_stream(provider)
+            provider.stream(
+                model=model,
+                max_tokens=16384,
+                system="sys",
+                tools=[],
+                messages=[{"role": "user", "content": "hi"}],
+                thinking_budget=4000,
+            )
+            kwargs = provider._client.messages.stream.call_args.kwargs
+            assert kwargs["thinking"] == {
+                "type": "adaptive",
+                "display": "summarized",
+            }
+            assert kwargs["output_config"] == {"effort": "high"}
+            # Critical: legacy keys must not leak into the request.
+            assert "budget_tokens" not in kwargs.get("thinking", {})
+
+    def test_create_uses_adaptive_shape_for_opus_4_7(self):
+        with patch("agent.llm._anthropic.anthropic") as mock_sdk:
+            provider = _make_anthropic(mock_sdk)
+            _wire_anthropic_create(provider)
+            provider.create(
+                model="claude-opus-4-7",
+                max_tokens=4096,
+                system="sys",
+                messages=[{"role": "user", "content": "hi"}],
+                thinking_budget=2000,
+            )
+            kwargs = provider._client.messages.create.call_args.kwargs
+            assert kwargs["thinking"] == {
+                "type": "adaptive",
+                "display": "summarized",
+            }
+            assert kwargs["output_config"] == {"effort": "high"}
+
+    def test_thinking_budget_zero_omits_both_kwargs_for_adaptive_model(self):
+        """thinking_budget=0 disables thinking even on Opus 4.7 — neither
+        `thinking` nor `output_config` should appear."""
+        with patch("agent.llm._anthropic.anthropic") as mock_sdk:
+            provider = _make_anthropic(mock_sdk)
+            _wire_anthropic_stream(provider)
+            provider.stream(
+                model="claude-opus-4-7",
+                max_tokens=16384,
+                system="sys",
+                tools=[],
+                messages=[{"role": "user", "content": "hi"}],
+                # thinking_budget omitted — defaults to 0
+            )
+            kwargs = provider._client.messages.stream.call_args.kwargs
+            assert "thinking" not in kwargs
+            assert "output_config" not in kwargs
+
+    def test_adaptive_path_does_not_clamp_or_raise_on_small_max_tokens(self):
+        """The legacy max_tokens<=1024 guard does NOT apply to adaptive —
+        the model schedules its own reasoning under the umbrella ceiling."""
+        with patch("agent.llm._anthropic.anthropic") as mock_sdk:
+            provider = _make_anthropic(mock_sdk)
+            _wire_anthropic_stream(provider)
+            # Would raise on legacy path; must succeed on adaptive
+            provider.stream(
+                model="claude-opus-4-7",
+                max_tokens=1024,
+                system="sys",
+                tools=[],
+                messages=[{"role": "user", "content": "hi"}],
+                thinking_budget=4000,
+            )
+            kwargs = provider._client.messages.stream.call_args.kwargs
+            assert kwargs["thinking"]["type"] == "adaptive"
+
+    def test_thinking_effort_env_override_propagates(self, monkeypatch):
+        """THINKING_EFFORT env var overrides the default `high`."""
+        # Update the live module attribute (config has already imported
+        # the env value at module load). Lazy import inside the helper
+        # picks up the new value.
+        from agent import config as agent_config
+
+        monkeypatch.setattr(agent_config, "THINKING_EFFORT", "medium")
+        with patch("agent.llm._anthropic.anthropic") as mock_sdk:
+            provider = _make_anthropic(mock_sdk)
+            _wire_anthropic_stream(provider)
+            provider.stream(
+                model="claude-opus-4-7",
+                max_tokens=16384,
+                system="sys",
+                tools=[],
+                messages=[{"role": "user", "content": "hi"}],
+                thinking_budget=4000,
+            )
+            kwargs = provider._client.messages.stream.call_args.kwargs
+            assert kwargs["output_config"] == {"effort": "medium"}
+
+    def test_legacy_model_keeps_enabled_shape(self):
+        """Older models (Sonnet 4.5, 3.7) must keep the legacy shape —
+        adaptive is unavailable to them and would error."""
+        with patch("agent.llm._anthropic.anthropic") as mock_sdk:
+            provider = _make_anthropic(mock_sdk)
+            _wire_anthropic_stream(provider)
+            provider.stream(
+                model="claude-sonnet-4-5-20251022",
+                max_tokens=16384,
+                system="sys",
+                tools=[],
+                messages=[{"role": "user", "content": "hi"}],
+                thinking_budget=4000,
+            )
+            kwargs = provider._client.messages.stream.call_args.kwargs
+            assert kwargs["thinking"] == {
+                "type": "enabled",
+                "budget_tokens": 4000,
+            }
+            assert "output_config" not in kwargs
+
+
+# ============================================================================
+# Anthropic — SDK-version-robust transport for thinking kwargs
+# ============================================================================
+
+
+class TestAnthropicThinkingTransportAdapter:
+    """Coverage for `_adapt_thinking_transport`.
+
+    Decision LOGIC (which params, what effort) lives in `_build_thinking_kwargs`
+    and is untouched by this adapter. These tests pin the transport behavior:
+    per-key inspection of the target SDK method's signature, with extra_body
+    as the fallback when a key isn't natively declared.
+
+    Why this exists: anthropic 0.75 (the version installed on the deployed
+    Python 3.14 user-site under C:\\Python314) does not declare ``output_config``
+    on Messages.stream / .create, raising TypeError client-side before the
+    request reaches the API. The adapter routes the kwarg through extra_body,
+    which the SDK promotes to a top-level JSON body field — wire-equivalent.
+    """
+
+    def test_keeps_native_when_target_accepts_param(self):
+        from agent.llm._anthropic import _adapt_thinking_transport
+
+        def target(*, model, max_tokens, thinking, output_config, extra_body=None):
+            ...
+
+        out = _adapt_thinking_transport(
+            {"thinking": {"type": "adaptive"}, "output_config": {"effort": "high"}},
+            target,
+        )
+        assert out == {
+            "thinking": {"type": "adaptive"},
+            "output_config": {"effort": "high"},
+        }
+
+    def test_routes_to_extra_body_when_target_lacks_param(self):
+        from agent.llm._anthropic import _adapt_thinking_transport
+
+        def target(*, model, max_tokens, thinking, extra_body=None):
+            # mirrors anthropic 0.75: thinking native, output_config absent
+            ...
+
+        out = _adapt_thinking_transport(
+            {"thinking": {"type": "adaptive"}, "output_config": {"effort": "high"}},
+            target,
+        )
+        assert out == {
+            "thinking": {"type": "adaptive"},
+            "extra_body": {"output_config": {"effort": "high"}},
+        }
+
+    def test_merges_into_existing_extra_body(self):
+        from agent.llm._anthropic import _adapt_thinking_transport
+
+        def target(*, model, max_tokens, thinking, extra_body=None):
+            ...
+
+        out = _adapt_thinking_transport(
+            {
+                "thinking": {"type": "adaptive"},
+                "output_config": {"effort": "high"},
+                "extra_body": {"caller_supplied": "x"},
+            },
+            target,
+        )
+        # caller's existing extra_body is preserved; rerouted key is merged in
+        assert out["thinking"] == {"type": "adaptive"}
+        assert out["extra_body"] == {
+            "caller_supplied": "x",
+            "output_config": {"effort": "high"},
+        }
+
+    def test_per_key_independence_thinking_native_output_config_rerouted(self):
+        """Each helper-emitted key is evaluated against the target signature
+        independently. thinking may be native while output_config is not."""
+        from agent.llm._anthropic import _adapt_thinking_transport
+
+        def target(*, model, max_tokens, thinking, extra_body=None):
+            ...
+
+        out = _adapt_thinking_transport(
+            {"thinking": {"type": "adaptive"}, "output_config": {"effort": "high"}},
+            target,
+        )
+        assert out["thinking"] == {"type": "adaptive"}  # stays native
+        assert "output_config" not in out  # NOT top-level
+        assert out["extra_body"] == {"output_config": {"effort": "high"}}
+
+    def test_empty_helper_output_returns_empty(self):
+        from agent.llm._anthropic import _adapt_thinking_transport
+
+        def target(*, model, max_tokens):
+            ...
+
+        assert _adapt_thinking_transport({}, target) == {}
+
+    def test_target_without_native_or_extra_body_falls_through_unchanged(self):
+        """If the target lacks both the native name AND extra_body, we cannot
+        adapt — leave the kwarg alone so the SDK raises a loud TypeError
+        instead of silently dropping the param."""
+        from agent.llm._anthropic import _adapt_thinking_transport
+
+        def target(*, model, thinking):
+            ...
+
+        out = _adapt_thinking_transport(
+            {"thinking": {"type": "adaptive"}, "output_config": {"effort": "high"}},
+            target,
+        )
+        # output_config remains top-level — SDK will TypeError; that's the signal
+        assert out["output_config"] == {"effort": "high"}
+        assert "extra_body" not in out
+
+    def test_target_with_var_keyword_accepts_anything_natively(self):
+        """A target whose signature includes **kwargs accepts every name —
+        no rerouting needed. (This is what bare MagicMock looks like, so the
+        existing wired-through-provider tests still see native kwargs.)"""
+        from agent.llm._anthropic import _adapt_thinking_transport
+
+        def target(*, model, **anything):
+            ...
+
+        out = _adapt_thinking_transport(
+            {"thinking": {"type": "adaptive"}, "output_config": {"effort": "high"}},
+            target,
+        )
+        assert out == {
+            "thinking": {"type": "adaptive"},
+            "output_config": {"effort": "high"},
+        }
+
+    def test_uninspectable_target_falls_through_unchanged(self):
+        """When inspect.signature can't introspect the target (raises
+        ValueError/TypeError), pass the kwargs through. The SDK is the
+        source of truth — let it speak."""
+        from agent.llm._anthropic import _adapt_thinking_transport
+
+        class _NoSig:
+            __call__ = None  # makes inspect.signature unhappy
+
+        out = _adapt_thinking_transport(
+            {"thinking": {"type": "adaptive"}, "output_config": {"effort": "high"}},
+            _NoSig(),
+        )
+        assert out == {
+            "thinking": {"type": "adaptive"},
+            "output_config": {"effort": "high"},
+        }
+
+    def test_logs_rerouted_key_names_and_sdk_version(self, caplog):
+        from agent.llm._anthropic import _adapt_thinking_transport
+        import logging
+
+        def target(*, model, max_tokens, thinking, extra_body=None):
+            ...
+
+        with caplog.at_level(logging.INFO, logger="agent.llm._anthropic"):
+            _adapt_thinking_transport(
+                {
+                    "thinking": {"type": "adaptive"},
+                    "output_config": {"effort": "high"},
+                },
+                target,
+            )
+        rerouting_msgs = [
+            r.getMessage() for r in caplog.records
+            if r.levelno == logging.INFO and "extra_body" in r.getMessage()
+        ]
+        assert rerouting_msgs, "expected an INFO log naming extra_body"
+        assert any("output_config" in m for m in rerouting_msgs), (
+            f"expected the rerouted key name in the log; got: {rerouting_msgs}"
+        )
+
+    def test_no_log_emitted_on_native_path(self, caplog):
+        """Quiet path: when nothing is rerouted, no log line is emitted."""
+        from agent.llm._anthropic import _adapt_thinking_transport
+        import logging
+
+        def target(*, model, max_tokens, thinking, output_config, extra_body=None):
+            ...
+
+        with caplog.at_level(logging.INFO, logger="agent.llm._anthropic"):
+            _adapt_thinking_transport(
+                {
+                    "thinking": {"type": "adaptive"},
+                    "output_config": {"effort": "high"},
+                },
+                target,
+            )
+        rerouting_msgs = [
+            r.getMessage() for r in caplog.records
+            if r.levelno == logging.INFO and "extra_body" in r.getMessage()
+        ]
+        assert not rerouting_msgs, f"expected no rerouting log; got: {rerouting_msgs}"
+
+    def test_build_thinking_kwargs_output_byte_identical_for_opus_4_7(self):
+        """IP-boundary guard: the decision helper's emitted payload (WHICH
+        params, WHAT effort) must remain byte-identical to the prior fix
+        commit. Transport adaptation must not bleed into decision logic.
+        """
+        from agent.llm._anthropic import _build_thinking_kwargs
+
+        out = _build_thinking_kwargs(
+            thinking_budget=1024, max_tokens=2048, model="claude-opus-4-7"
+        )
+        assert out == {
+            "thinking": {"type": "adaptive", "display": "summarized"},
+            "output_config": {"effort": "high"},
+        }
+        # Strict-shape check: no extra_body, no transport-adapter artifacts
+        # creeping into the decision layer
+        assert set(out.keys()) == {"thinking", "output_config"}
 
 
 # ============================================================================

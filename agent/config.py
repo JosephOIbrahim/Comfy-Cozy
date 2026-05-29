@@ -110,6 +110,13 @@ MAX_AGENT_TURNS = 30
 THINKING_BUDGET = int(os.getenv("THINKING_BUDGET", "4000"))
 VISION_THINKING_BUDGET = int(os.getenv("VISION_THINKING_BUDGET", "2000"))
 
+# Adaptive-thinking effort level for Opus 4.7 / 4.6 and Sonnet 4.6.
+# Anthropic removed `{type: enabled, budget_tokens: N}` for Opus 4.7
+# (returns 400) and replaced it with `{type: adaptive}` + `output_config.effort`.
+# Levels: low | medium | high | xhigh | max. Default "high" matches the
+# prior "almost always think" semantics of THINKING_BUDGET=4000.
+THINKING_EFFORT = os.getenv("THINKING_EFFORT", "high")
+
 # Context management
 COMPACT_THRESHOLD = 120_000  # tokens — start compacting at this level
 
