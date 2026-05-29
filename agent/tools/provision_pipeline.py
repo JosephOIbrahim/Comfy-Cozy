@@ -204,6 +204,13 @@ def _handle_provision_model(tool_input: dict) -> str:
     detected_type = model_type or best.get("model_type", "checkpoints")
     filename = best.get("filename") or _filename_from_url(url)
 
+    # NOTE (security/s5): this calls download_model via the module handle, which does NOT
+    # re-run the central pre-dispatch gate. That is intentional and safe — provision_model is
+    # itself RiskLevel.PROVISION, so any prompt reaching this point has ALREADY passed the
+    # keystone confirmation gate (re-gating here would double-prompt the human). The inner
+    # call still inherits download_model's handler-level hardening (host allowlist, pickle
+    # block, sha256). Do NOT route this through agent.tools.handle — that double-gates and
+    # breaks the confirmed provision flow.
     try:
         download_result = json.loads(provision_handle("download_model", {
             "url": url,

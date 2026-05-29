@@ -118,3 +118,18 @@ class TestS4RepairInstallGate:
         r = json.loads(cp._handle_repair_workflow({"auto_install": False}))
         assert r["status"] != "needs_confirmation", r
         assert calls == [], "report-only must not install"
+
+
+# ---------------------------------------------------------------------------
+# s5 — provision_model is gated at entry by the keystone (cross-module bypass closed)
+# ---------------------------------------------------------------------------
+class TestS5ProvisionModelGatedAtEntry:
+    def test_provision_model_is_provision_risk(self):
+        from agent.gate.risk_levels import get_risk_level, RiskLevel
+        assert get_risk_level("provision_model") == RiskLevel.PROVISION
+
+    def test_provision_model_blocked_without_confirm(self):  # NEGATIVE — no dispatch, no discover/network
+        r = handle("provision_model", {"query": "some model", "auto_download": True})
+        assert "auto-blocked" in r.lower(), r
+        # POSITIVE (confirmed dispatch) is covered transitively by the keystone crucible:
+        # any PROVISION op with confirm=true falls through to dispatch (test_*_confirmed_dispatches).
