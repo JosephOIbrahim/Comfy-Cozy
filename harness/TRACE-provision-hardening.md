@@ -48,12 +48,46 @@ external_calls: []
 
 ---
 
-## Items pending (post-keystone)
-- s2 item-2: wire dead `_ALLOWED_DOWNLOAD_HOSTS` into `_validate_download_url` — BUILDABLE (comfy_provision.py)
-- s3 item-3: safetensors-restrict / pickle-block + sha256/type check — BUILDABLE (comfy_provision.py) [shares comfy_provision seam w/ s2,s6 — serialize]
-- s4 item-4: reclassify `repair_workflow(auto_install)` so the inner install gates — BUILDABLE (risk_levels.py + comfy_provision.py)
-- s5 item-5: route `provision_model`'s internal `download_model` through the gate — BUILDABLE (provision_pipeline.py)
-- s6 item-6: `check_scope` covers `url` keys; fix the misleading "available immediately" message — BUILDABLE (gate/checks.py + comfy_provision.py)
-- s7 item-7: CLAUDE.md auto-provision wording — PROPOSE-ONLY (diff, operator sign-off)
-- s8 item-8: `provisioner.py` SSRF + size-cap — DESIGN-ONLY RFC (agent/stage — frozen)
-- s9 item-9: `stage_tools.py` source/sha256 injection — DESIGN-ONLY RFC (agent/stage — frozen)
+## Spans s2-s9 (post-keystone fan-out) — all parent_id = m0
+
+```
+s2  FORGE   commit 6e66ca3  BUILDABLE agent/tools/comfy_provision.py
+    enforce _ALLOWED_DOWNLOAD_HOSTS (domain+subdomain) in _validate_download_url (was dead code)
+    crucible 4/4: off-allowlist rejected; allowlisted+CDN-subdomain accepted; confirmed off-allowlist download rejected.
+    regression: provision/download 209 pass. watch: unlisted CDN domains must be added to the allowlist.
+
+s3  FORGE   commit c949a70  BUILDABLE agent/tools/comfy_provision.py
+    block pickle (.ckpt/.pt/.pth/.bin) unless allow_pickle=true; optional expected_sha256 verify (_verify_sha256)
+    crucible 4/4: _pickle_blocked default-deny + allow/safetensors pass; sha256 match/mismatch.
+
+s4  FORGE   commit 3e5744c  BUILDABLE agent/tools/comfy_provision.py
+    repair_workflow auto-install gated behind confirm (REVERSIBLE-classified + bypasses central gate)
+    crucible 3/3 (monkeypatched, no git/pip): no-confirm blocks; confirm installs once; report-only ungated.
+
+s5  FORGE   commit 0011ee8  BUILDABLE agent/tools/provision_pipeline.py (guard-comment) — closed-by-keystone
+    provision_model is PROVISION -> already keystone-gated at entry; inner download_model intentionally NOT
+    re-gated (would double-prompt); inherits s2/s3 handler hardening.
+    crucible 2/2: provision_model blocked without confirm; classified PROVISION.
+
+s6  FORGE   commit ba09d71  BUILDABLE agent/gate/checks.py + agent/tools/comfy_provision.py
+    check_scope enforces https-only on url/source_url/download_url keys (were ignored);
+    download message no longer claims "available immediately -- no restart needed"
+    crucible 3/3 + full gate suite (33) green.
+
+s7  PROPOSE-ONLY (NOT committed)  CLAUDE.md
+    qualify "auto-provision ... no stopping to ask" for code-executing ops (download/install now need confirm).
+    Awaiting operator constitution sign-off.
+
+s8  DESIGN-ONLY RFC  docs/rfc-stage-provisioner-ssrf.md   FROZEN agent/stage/provisioner.py
+    SSRF + host-allowlist + manual-redirect + size-cap. Spec only; forge post-Jun-16.
+
+s9  DESIGN-ONLY RFC  docs/rfc-stage-write-injection.md    FROZEN agent/stage/stage_tools.py
+    protected-attribute policy: source_url/sha256 cannot be prompt-set ungated. Spec only; forge post-Jun-16.
+```
+
+## Verdict
+Prompt->RCE / autonomous-fetch surface CLOSED for the non-stage layer (s1 keystone + s2-s6): no PROVISION op
+(download_model / install_node_pack / repair_workflow auto-install / provision_model) runs from a prompt without
+explicit confirm; downloads are host-allowlisted + pickle-blocked + hash-verifiable; the gate enforces https on
+url keys. Stage-layer residue (s8/s9) is bounded by the keystone confirm until the agent/stage freeze lifts.
+No push — consolidated operator review pending; operator decides push/PR.
