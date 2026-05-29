@@ -50,6 +50,10 @@ _PATH_KEYS: frozenset[str] = frozenset(
     }
 )
 
+# URL-bearing keys — enforced https-only at the gate boundary (defense-in-depth;
+# the download/install handlers do the full SSRF + host-allowlist validation).
+_URL_KEYS: frozenset[str] = frozenset({"url", "source_url", "download_url"})
+
 
 # ---------------------------------------------------------------------------
 # Check 1: System Health
@@ -247,6 +251,16 @@ def check_scope(
                     False,
                     f"Path '{key}' resolves to protected system directory: "
                     f"'{resolved}'. Access denied.",
+                )
+
+    # URL keys: enforce https-only at the gate boundary (defense-in-depth — the
+    # download/install handlers perform the full SSRF + host-allowlist checks).
+    for key, value in tool_input.items():
+        if key in _URL_KEYS and isinstance(value, str) and value:
+            if not value.strip().lower().startswith("https://"):
+                return (
+                    False,
+                    f"URL in '{key}' must use https:// (got '{value[:60]}'). Blocked.",
                 )
 
     return True, "Scope check passed — all paths within allowed boundaries."

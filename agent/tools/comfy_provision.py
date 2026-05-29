@@ -106,6 +106,20 @@ TOOLS: list[dict] = [
                         "(e.g. 'LTX2' inside loras/)."
                     ),
                 },
+                "expected_sha256": {
+                    "type": "string",
+                    "description": (
+                        "Optional SHA-256 hex digest. If given, the download is verified "
+                        "against it and deleted on mismatch."
+                    ),
+                },
+                "allow_pickle": {
+                    "type": "boolean",
+                    "description": (
+                        "Allow a pickle-format weight (.ckpt/.pt/.pth/.bin) — these can "
+                        "execute code on load. Default false; safetensors preferred."
+                    ),
+                },
             },
             "required": ["url", "model_type"],
         },
@@ -187,6 +201,39 @@ _MODEL_EXTENSIONS = frozenset([
     ".safetensors", ".ckpt", ".pt", ".pth", ".bin", ".gguf", ".onnx",
 ])
 
+# Pickle-format weights execute arbitrary code on load (torch.load / pickle).
+# Blocked by default — require explicit allow_pickle=true for a trusted source.
+_PICKLE_EXTENSIONS = frozenset([".ckpt", ".pt", ".pth", ".bin"])
+
+
+def _pickle_blocked(suffix: str, tool_input: dict) -> bool:
+    """True if `suffix` is a pickle weight format and the caller did not opt in via
+    allow_pickle=true. Pickle weights (.ckpt/.pt/.pth/.bin) run code on load."""
+    if suffix.lower() not in _PICKLE_EXTENSIONS:
+        return False
+    raw = tool_input.get("allow_pickle", False)
+    allowed = raw if isinstance(raw, bool) else str(raw).lower() in ("true", "1", "yes")
+    return not allowed
+
+
+def _verify_sha256(path, expected_hex: str) -> "str | None":
+    """None if `path`'s SHA-256 matches expected_hex (case-insensitive), else an error
+    message. Hashes the already-downloaded file — no network I/O."""
+    import hashlib
+    h = hashlib.sha256()
+    try:
+        with open(path, "rb") as f:
+            for chunk in iter(lambda: f.read(1024 * 1024), b""):
+                h.update(chunk)
+    except OSError as e:
+        return f"Could not read the downloaded file for the hash check: {e}"
+    actual = h.hexdigest().lower()
+    if actual != expected_hex.lower():
+        return (f"SHA-256 mismatch: expected {expected_hex}, got {actual} — the "
+                f"downloaded file does not match the expected hash; discarded.")
+    return None
+
+
 # Allowed URL schemes/hosts for model downloads (SSRF prevention)
 _ALLOWED_DOWNLOAD_HOSTS = frozenset([
     "github.com", "gitlab.com", "bitbucket.org",
@@ -228,6 +275,17 @@ def _validate_download_url(url: str) -> str | None:
         for pattern in blocked_patterns:
             if hostname.startswith(pattern):
                 return f"Access denied: download from '{hostname}' is not allowed."
+        # Host allowlist — only allowlisted registrable domains + their subdomains
+        # (covers CDN hosts like cdn-lfs.huggingface.co). Closes the arbitrary-source
+        # hole: _ALLOWED_DOWNLOAD_HOSTS was previously defined but never enforced.
+        # NOTE: a legitimate source on an UNLISTED domain (e.g. a third-party CDN) is
+        # rejected — add its domain to _ALLOWED_DOWNLOAD_HOSTS if a real source needs it.
+        if not any(hostname == d or hostname.endswith("." + d)
+                   for d in _ALLOWED_DOWNLOAD_HOSTS):
+            return (
+                f"Access denied: download host '{hostname}' is not in the "
+                f"allowlist ({', '.join(sorted(_ALLOWED_DOWNLOAD_HOSTS))})."
+            )
     except Exception as _e:  # Cycle 61: log unexpected URL parse errors for debuggability
         log.debug("Unexpected error validating download URL %r: %s", url[:100], _e)
         return "Invalid URL format."
@@ -576,6 +634,16 @@ def _handle_download_model(tool_input: dict) -> str:
             "error": f"Unexpected file extension '{suffix}'.",
             "hint": f"Expected one of: {', '.join(sorted(_MODEL_EXTENSIONS))}",
         })
+    # Pickle-format weights run arbitrary code on load — refuse unless allow_pickle=true.
+    if _pickle_blocked(suffix, tool_input):
+        return to_json({
+            "error": (
+                f"Refusing to download a pickle-format model ('{suffix}') — it can "
+                f"execute arbitrary code when loaded. Prefer .safetensors. To override "
+                f"for a trusted source, re-call with \"allow_pickle\": true."
+            ),
+            "hint": "safetensors is the safe default.",
+        })
 
     # Download with progress — manual redirect following with per-hop SSRF validation.
     # follow_redirects=False is intentional: we re-validate every redirect target
@@ -672,6 +740,14 @@ def _handle_download_model(tool_input: dict) -> str:
                 "url": url,
             })
 
+        # Optional integrity check before promoting the temp file to its final name.
+        expected_sha = (tool_input.get("expected_sha256") or "").strip()
+        if expected_sha:
+            sha_err = _verify_sha256(temp_path, expected_sha)
+            if sha_err:
+                temp_path.unlink(missing_ok=True)
+                return to_json({"error": sha_err, "url": url})
+
         # Rename temp to final
         temp_path.rename(target)
         elapsed = time.time() - start_time
@@ -687,7 +763,8 @@ def _handle_download_model(tool_input: dict) -> str:
             "speed_mbps": round(speed_mbps, 1),
             "message": (
                 f"Downloaded '{filename}' ({size_gb:.1f} GB) to {model_type}/. "
-                f"It should be available immediately -- no restart needed."
+                f"Restart ComfyUI (or refresh its model list) for it to appear in the "
+                f"*_name dropdowns -- newly downloaded files are not picked up automatically."
             ),
         })
 
@@ -894,7 +971,30 @@ def _handle_repair_workflow(tool_input: dict) -> str:
         else:
             unresolved.append(class_type)
 
-    # Step 3: Install (if auto_install)
+    # Step 3: Install (if auto_install) — GATED.
+    # Auto-install = git clone + pip install = third-party code execution. repair_workflow is
+    # REVERSIBLE-classified (so the keystone gate does NOT ESCALATE it) and it calls
+    # _handle_install_node_pack directly (bypassing the central gate). So we gate the INSTALL
+    # action here: without confirm=true, report what WOULD be installed and install NOTHING.
+    # The find/report path stays fluid; only the code-executing install is gated.
+    _raw_confirm = tool_input.get("confirm", False)
+    confirmed = _raw_confirm if isinstance(_raw_confirm, bool) else str(_raw_confirm).lower() in ("true", "1", "yes")
+    if auto_install and packs_to_install and not confirmed:
+        return to_json({
+            "status": "needs_confirmation",
+            "missing_count": len(missing),
+            "packs_to_install": [
+                {"name": p["name"], "url": u, "nodes": p["nodes"]}
+                for u, p in packs_to_install.items()
+            ],
+            "unresolved_nodes": unresolved,
+            "message": (
+                f"Repair would install {len(packs_to_install)} node pack(s) via git clone + "
+                f"pip install (third-party code execution). Re-call repair_workflow with "
+                f"\"confirm\": true to proceed, or install manually."
+            ),
+        })
+
     install_results = []
     if auto_install and packs_to_install:
         for url, pack_info in packs_to_install.items():

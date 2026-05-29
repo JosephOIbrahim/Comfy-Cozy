@@ -337,10 +337,31 @@ def handle(
                     hint="This tool cannot be auto-executed.",
                 )
             elif gate_result.decision == GateDecision.ESCALATE:
-                log.info("Gate escalated '%s' (risk level %d)",
+                # ESCALATE = a PROVISION-class op (download_model, install_node_pack,
+                # provision_*) — a NETWORK fetch / CODE-EXECUTING install. It is NO
+                # LONGER auto-allowed: it now requires an explicit confirmation token
+                # in the call (`"confirm": true`), supplied after the escalation is
+                # surfaced to a human. Without it we BLOCK (do NOT dispatch), closing
+                # the prompt->autonomous-fetch / prompt->RCE hole. A genuinely
+                # confirmed call falls through to dispatch unchanged.
+                _confirmed = (
+                    isinstance(tool_input, dict)
+                    and tool_input.get("confirm") is True
+                )
+                if not _confirmed:
+                    log.info("Gate ESCALATE-blocked '%s' (risk %d) — needs confirm",
+                             name, gate_result.risk_level)
+                    from ..errors import error_json
+                    return error_json(
+                        f"'{name}' is a network/code-executing operation and needs "
+                        f"explicit confirmation before it runs — auto-blocked to "
+                        f"prevent unattended download/install.",
+                        hint="A human must approve; re-call with \"confirm\": true "
+                             "to proceed.",
+                    )
+                log.info("Gate ESCALATE-confirmed '%s' (risk %d) — proceeding",
                          name, gate_result.risk_level)
-                # Escalation logged but allowed through — the MCP client
-                # (Claude) decides whether to confirm with the user.
+                # confirmed -> fall through to dispatch
     except ImportError:
         pass  # Gate not available — degrade silently
     except Exception:
