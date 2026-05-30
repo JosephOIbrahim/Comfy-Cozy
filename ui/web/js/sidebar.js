@@ -54,6 +54,32 @@ function createMessageEl(role, text) {
   return msg;
 }
 
+/* ── Session store (module singleton — survives panel unmount) ──────
+ *  ComfyUI DESTROYS the sidebar DOM on every tab-switch and rebuilds it
+ *  empty on return (there is no unmount hook). So the conversation cannot
+ *  live in the DOM. This module-scoped store is the SOURCE OF TRUTH for the
+ *  message list; buildSidebar() rehydrates from it on each mount.
+ * ──────────────────────────────────────────────────────────────────── */
+const session = {
+  messages: [],   // durable records: {kind:"user"|"agent"|"system"|"panel", ...}
+};
+
+/** Render one durable message record into a freshly-built #sd-messages. */
+function _renderRecord(rec, messagesEl) {
+  if (rec.kind === "user" || rec.kind === "agent" || rec.kind === "system") {
+    messagesEl.appendChild(createMessageEl(rec.kind, rec.text));
+  } else if (rec.kind === "panel") {
+    const panelEl = createPanel(rec.panel);
+    if (!panelEl) return;
+    const wrapper = document.createElement("div");
+    wrapper.className = "sd-message sd-message--agent";
+    wrapper.style.padding = "0";
+    wrapper.style.background = "none";
+    wrapper.appendChild(panelEl);
+    messagesEl.appendChild(wrapper);
+  }
+}
+
 /* ── WebSocket connection ─────────────────────────────────────────── */
 
 class AgentConnection {
@@ -304,6 +330,11 @@ function buildSidebar(el) {
   const stageDetail = el.querySelector("#sd-stage-detail");
   const readbarEl = el.querySelector("#sd-readbar");
 
+  // Rehydrate the conversation. ComfyUI destroyed the previous panel's DOM on
+  // tab-switch, but the messages survive in the module-scoped session store.
+  for (const rec of session.messages) _renderRecord(rec, messagesEl);
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+
   // Auto-resize textarea
   inputEl.addEventListener("input", () => {
     inputEl.style.height = "auto";
@@ -329,6 +360,7 @@ function buildSidebar(el) {
     if (busy) return;
     const label = ACTION_LABELS[actionId] || actionId;
     messagesEl.appendChild(createMessageEl("user", label));
+    session.messages.push({ kind: "user", text: label });
 
     let sent;
     if (DIRECT_ACTIONS.has(actionId)) {
@@ -463,6 +495,7 @@ function buildSidebar(el) {
         } else {
           messagesEl.appendChild(createMessageEl("agent", finalText));
         }
+        session.messages.push({ kind: "agent", text: finalText });
         turnFinalized = true;
         scrollToBottom();
         break;
@@ -479,6 +512,7 @@ function buildSidebar(el) {
           wrapper.style.background = "none";
           wrapper.appendChild(panelEl);
           messagesEl.appendChild(wrapper);
+          session.messages.push({ kind: "panel", panel: data.panel });
           scrollToBottom();
         }
         break;
@@ -518,6 +552,7 @@ function buildSidebar(el) {
             body.textContent = "";
             body.classList.add("sd-text-body");
             body.appendChild(renderText(streamAccum));
+            session.messages.push({ kind: "agent", text: streamAccum });
           }
           // Turn is done — its final text is rendered (here or already by the
           // "message" path). Mark finalized so a trailing "message" no-ops.
@@ -614,6 +649,7 @@ function buildSidebar(el) {
         _clearThinking();
         setStage(null);
         messagesEl.appendChild(createMessageEl("system", data.message));
+        session.messages.push({ kind: "system", text: data.message });
         streamingEl = null;
         streamAccum = "";
         typingIndicator = null;
@@ -665,6 +701,7 @@ function buildSidebar(el) {
 
     // Show user message immediately
     messagesEl.appendChild(createMessageEl("user", text));
+    session.messages.push({ kind: "user", text });
     inputEl.value = "";
     inputEl.style.height = "auto";
 
@@ -713,13 +750,18 @@ function buildSidebar(el) {
 
     if (action === "agent_message" && btn.dataset.message) {
       messagesEl.appendChild(createMessageEl("user", btn.dataset.message));
+      session.messages.push({ kind: "user", text: btn.dataset.message });
       payload.message = btn.dataset.message;
     } else if (action === "install_node_pack") {
-      messagesEl.appendChild(createMessageEl("user", `Installing ${btn.dataset.name || "node pack"}...`));
+      const installMsg = `Installing ${btn.dataset.name || "node pack"}...`;
+      messagesEl.appendChild(createMessageEl("user", installMsg));
+      session.messages.push({ kind: "user", text: installMsg });
       if (btn.dataset.url) payload.url = btn.dataset.url;
       if (btn.dataset.name) payload.name = btn.dataset.name;
     } else if (action === "download_model") {
-      messagesEl.appendChild(createMessageEl("user", `Downloading ${btn.dataset.filename || "model"}...`));
+      const downloadMsg = `Downloading ${btn.dataset.filename || "model"}...`;
+      messagesEl.appendChild(createMessageEl("user", downloadMsg));
+      session.messages.push({ kind: "user", text: downloadMsg });
       if (btn.dataset.url) payload.url = btn.dataset.url;
       if (btn.dataset.modelType) payload.model_type = btn.dataset.modelType;
       if (btn.dataset.filename) payload.filename = btn.dataset.filename;
