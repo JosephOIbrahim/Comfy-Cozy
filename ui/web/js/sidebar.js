@@ -350,6 +350,7 @@ function buildSidebar(el) {
   let streamingEl = null;     // element receiving streamed text deltas
   let streamAccum = "";       // accumulated text during streaming
   let typingIndicator = null; // typing dots shown during stream
+  let turnFinalized = false;  // per-turn guard: the final agent text renders ONCE
   let dispatchCard = null;    // current agent dispatch card element
   let progressPanel = null;   // current progress panel element
   let pipelineState = {};     // tracks pipeline stage statuses
@@ -386,6 +387,11 @@ function buildSidebar(el) {
 
   function setBusy(state) {
     busy = state;
+    // A new turn is starting — re-arm the dup-render guard. This is the one
+    // choke point hit by every turn (sendMessage / quick actions / panel
+    // actions all call setBusy(true)), so it also covers message-only turns
+    // that never stream a text_delta.
+    if (state) turnFinalized = false;
     sendBtn.disabled = state;
     inputEl.disabled = state;
     sendBtn.style.opacity = state ? "0.3" : "1";
@@ -436,7 +442,13 @@ function buildSidebar(el) {
         break;
 
       case "message": {
-        // Full message — render with rich text, replacing streaming element
+        // Full message — render with rich text, replacing streaming element.
+        // The server sends "stage"==DONE *then* the assembled message for the
+        // same turn, so the DONE finalizer may have already rendered this text.
+        // Whichever path renders first sets turnFinalized; the other no-ops.
+        // (A turn emits exactly one "message", so this never drops a distinct
+        // next message — that belongs to the next turn, which re-arms the guard.)
+        if (turnFinalized) break;
         const finalText = data.content || streamAccum;
 
         if (streamingEl) {
@@ -451,6 +463,7 @@ function buildSidebar(el) {
         } else {
           messagesEl.appendChild(createMessageEl("agent", finalText));
         }
+        turnFinalized = true;
         scrollToBottom();
         break;
       }
@@ -506,6 +519,9 @@ function buildSidebar(el) {
             body.classList.add("sd-text-body");
             body.appendChild(renderText(streamAccum));
           }
+          // Turn is done — its final text is rendered (here or already by the
+          // "message" path). Mark finalized so a trailing "message" no-ops.
+          turnFinalized = true;
           streamingEl = null;
           streamAccum = "";
           typingIndicator = null;
