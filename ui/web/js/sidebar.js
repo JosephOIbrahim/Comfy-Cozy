@@ -61,7 +61,12 @@ function createMessageEl(role, text) {
  *  message list; buildSidebar() rehydrates from it on each mount.
  * ──────────────────────────────────────────────────────────────────── */
 const session = {
-  messages: [],   // durable records: {kind:"user"|"agent"|"system"|"panel", ...}
+  messages: [],         // durable records: {kind:"user"|"agent"|"system"|"panel", ...}
+  conn: null,           // the ONE AgentConnection — created lazily, reused across mounts
+  render: null,         // current panel's message handler (overwritten each mount)
+  onStatus: null,       // current panel's status handler (overwritten each mount)
+  streamAccum: "",      // accumulated streaming text (survives remount)
+  turnFinalized: false, // dup-render guard (#49) — survives remount
 };
 
 /** Render one durable message record into a freshly-built #sd-messages. */
@@ -139,6 +144,23 @@ class AgentConnection {
     this._closed = true;
     if (this.ws) this.ws.close();
   }
+}
+
+/**
+ * Return the ONE shared AgentConnection, creating + connecting it on first
+ * call and reusing it forever after. Its handlers delegate to whichever panel
+ * is currently mounted (session.render / session.onStatus), so the socket
+ * outlives every destroy/rebuild. This is the fix for the per-tab-visit
+ * /superduper/ws socket leak: a new panel NEVER opens a second socket.
+ */
+function _ensureConnection() {
+  if (session.conn) return session.conn;
+  session.conn = new AgentConnection(
+    (data) => { if (session.render) session.render(data); },
+    (status) => { if (session.onStatus) session.onStatus(status); },
+  );
+  session.conn.connect();
+  return session.conn;
 }
 
 /* ── Readability Controls ─────────────────────────────────────────── */
@@ -379,10 +401,8 @@ function buildSidebar(el) {
   quickActionsSlot.appendChild(quickActionsEl);
 
   let busy = false;
-  let streamingEl = null;     // element receiving streamed text deltas
-  let streamAccum = "";       // accumulated text during streaming
-  let typingIndicator = null; // typing dots shown during stream
-  let turnFinalized = false;  // per-turn guard: the final agent text renders ONCE
+  let streamingEl = null;     // element receiving streamed text deltas (DOM, per-mount)
+  let typingIndicator = null; // typing dots shown during stream (DOM, per-mount)
   let dispatchCard = null;    // current agent dispatch card element
   let progressPanel = null;   // current progress panel element
   let pipelineState = {};     // tracks pipeline stage statuses
@@ -423,7 +443,7 @@ function buildSidebar(el) {
     // choke point hit by every turn (sendMessage / quick actions / panel
     // actions all call setBusy(true)), so it also covers message-only turns
     // that never stream a text_delta.
-    if (state) turnFinalized = false;
+    if (state) session.turnFinalized = false;
     sendBtn.disabled = state;
     inputEl.disabled = state;
     sendBtn.style.opacity = state ? "0.3" : "1";
@@ -458,10 +478,10 @@ function buildSidebar(el) {
           streamingEl.appendChild(body);
 
           messagesEl.appendChild(streamingEl);
-          streamAccum = "";
+          session.streamAccum = "";
         }
 
-        streamAccum += data.text;
+        session.streamAccum += data.text;
 
         // Show typing indicator during streaming
         const streamBody = streamingEl.querySelector(".sd-message__body");
@@ -480,8 +500,8 @@ function buildSidebar(el) {
         // Whichever path renders first sets turnFinalized; the other no-ops.
         // (A turn emits exactly one "message", so this never drops a distinct
         // next message — that belongs to the next turn, which re-arms the guard.)
-        if (turnFinalized) break;
-        const finalText = data.content || streamAccum;
+        if (session.turnFinalized) break;
+        const finalText = data.content || session.streamAccum;
 
         if (streamingEl) {
           // Replace streaming content with final rendered text
@@ -490,13 +510,13 @@ function buildSidebar(el) {
           body.classList.add("sd-text-body");
           body.appendChild(renderText(finalText));
           streamingEl = null;
-          streamAccum = "";
+          session.streamAccum = "";
           typingIndicator = null;
         } else {
           messagesEl.appendChild(createMessageEl("agent", finalText));
         }
         session.messages.push({ kind: "agent", text: finalText });
-        turnFinalized = true;
+        session.turnFinalized = true;
         scrollToBottom();
         break;
       }
@@ -547,18 +567,18 @@ function buildSidebar(el) {
 
         if (data.stage === "DONE") {
           // Clean up streaming state
-          if (streamingEl && streamAccum) {
+          if (streamingEl && session.streamAccum) {
             const body = streamingEl.querySelector(".sd-message__body");
             body.textContent = "";
             body.classList.add("sd-text-body");
-            body.appendChild(renderText(streamAccum));
-            session.messages.push({ kind: "agent", text: streamAccum });
+            body.appendChild(renderText(session.streamAccum));
+            session.messages.push({ kind: "agent", text: session.streamAccum });
           }
           // Turn is done — its final text is rendered (here or already by the
           // "message" path). Mark finalized so a trailing "message" no-ops.
-          turnFinalized = true;
+          session.turnFinalized = true;
           streamingEl = null;
-          streamAccum = "";
+          session.streamAccum = "";
           typingIndicator = null;
           dispatchCard = null;
           if (progressPanel) {
@@ -651,7 +671,7 @@ function buildSidebar(el) {
         messagesEl.appendChild(createMessageEl("system", data.message));
         session.messages.push({ kind: "system", text: data.message });
         streamingEl = null;
-        streamAccum = "";
+        session.streamAccum = "";
         typingIndicator = null;
         setBusy(false);
         scrollToBottom();
@@ -669,8 +689,19 @@ function buildSidebar(el) {
 
   /* ── Connect ──────────────────────────────────────────────────── */
 
-  const conn = new AgentConnection(handleAgentMessage, handleStatus);
-  conn.connect();
+  // Register THIS panel as the service's SINGLE current render target,
+  // overwriting the prior one. We overwrite (not subscribe) on purpose: a
+  // listener-per-mount would just trade the socket leak for a handler leak.
+  // Only the latest-mounted panel is ever live.
+  session.render = handleAgentMessage;
+  session.onStatus = handleStatus;
+
+  // Reuse the ONE shared connection (created on first mount). We never
+  // construct a second AgentConnection — that was the per-tab-visit socket leak.
+  const conn = _ensureConnection();
+  // Reflect the live socket state on the freshly-built status dot.
+  handleStatus(conn.ws && conn.ws.readyState === WebSocket.OPEN
+    ? "connected" : "connecting");
 
   /* ── Send message ─────────────────────────────────────────────── */
 
