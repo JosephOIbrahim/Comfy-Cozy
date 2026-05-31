@@ -352,6 +352,71 @@ TOOLS: list[dict] = [
             "required": ["node_id", "input_name", "value"],
         },
     },
+    # --- Graph surgery (#6 / P1.2): editing != rewriting the whole graph ---
+    {
+        "name": "delete_node",
+        "description": (
+            "Delete a node from the loaded workflow and remove every link "
+            "pointing at it, leaving no dangling references. Reversible via "
+            "undo_workflow_patch. Use rewire_around instead if you want the "
+            "graph reconnected through the gap."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "node_id": {"type": "string", "description": "ID of the node to delete."},
+            },
+            "required": ["node_id"],
+        },
+    },
+    {
+        "name": "replace_node",
+        "description": (
+            "Swap a node's class_type in place, keeping its node ID so incoming "
+            "links stay intact. Existing input values/connections are preserved; "
+            "use input_mapping to rename inputs whose name changed in the new "
+            "class. Reversible via undo_workflow_patch."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "node_id": {"type": "string", "description": "ID of the node to replace."},
+                "new_class_type": {
+                    "type": "string",
+                    "description": "Replacement node class_type.",
+                },
+                "input_mapping": {
+                    "type": "object",
+                    "description": (
+                        "Optional {old_input_name: new_input_name} renames; "
+                        "unlisted inputs are kept as-is."
+                    ),
+                },
+            },
+            "required": ["node_id", "new_class_type"],
+        },
+    },
+    {
+        "name": "rewire_around",
+        "description": (
+            "Remove a node and route its downstream consumers back to its "
+            "upstream source — a passthrough bypass. When the node has exactly "
+            "one upstream connection, all downstream links are bridged to it; "
+            "otherwise (zero or several upstreams — ambiguous without slot types) "
+            "the downstream links are dropped and reported rather than mis-wired. "
+            "Reversible via undo_workflow_patch."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "node_id": {
+                    "type": "string",
+                    "description": "ID of the node to bypass and remove.",
+                },
+            },
+            "required": ["node_id"],
+        },
+    },
 ]
 
 # ---------------------------------------------------------------------------
@@ -883,6 +948,228 @@ def _handle_set_input(tool_input: dict) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Graph surgery (#6 / P1.2)
+# ---------------------------------------------------------------------------
+
+def _is_connection(value) -> bool:
+    """True if a value is a ComfyUI link: [src_node_id: str, output_slot: int]."""
+    return (
+        isinstance(value, (list, tuple))
+        and len(value) == 2
+        and isinstance(value[0], str)
+        and isinstance(value[1], int)
+        and not isinstance(value[1], bool)
+    )
+
+
+def _iter_incident_links(workflow: dict, target_id: str):
+    """Yield (consumer_id, input_name, sub_key, output_slot) for every link in
+    `workflow` that points at `target_id`.
+
+    `sub_key` is the inner key for COMFY_AUTOGROW_V3 dotted inputs
+    (inputs[group][sub]); None for flat inputs.
+    """
+    for cid, node in workflow.items():
+        if cid == target_id or not isinstance(node, dict):
+            continue
+        inputs = node.get("inputs")
+        if not isinstance(inputs, dict):
+            continue
+        for in_name, val in inputs.items():
+            if _is_connection(val) and val[0] == target_id:
+                yield cid, in_name, None, val[1]
+            elif isinstance(val, dict):
+                for sub, sv in val.items():
+                    if _is_connection(sv) and sv[0] == target_id:
+                        yield cid, in_name, sub, sv[1]
+
+
+def _rebuild_engine_if_present():
+    """Rebuild the engine from current state after a direct-write surgery so it
+    stays in sync. No-op if the cognitive engine isn't active. MUST hold lock.
+    """
+    if _get_engine() is not None:
+        try:
+            _set_engine(_create_engine(_get_state()["current_workflow"]))
+        except Exception as exc:  # surgery already applied; engine is optional
+            log.warning("Could not rebuild engine after surgery: %s. Engine disabled.", exc)
+            _set_engine(None)
+
+
+def _handle_delete_node(tool_input: dict) -> str:
+    node_id = tool_input.get("node_id")
+    if not node_id or not isinstance(node_id, str):
+        return to_json({"error": "node_id is required and must be a non-empty string."})
+    err = _ensure_loaded()
+    if err:
+        return to_json({"error": err})
+    workflow = _get_state()["current_workflow"]
+    if node_id not in workflow:
+        return to_json({"error": f"Node '{node_id}' not found in workflow."})
+
+    # Snapshot for undo (reversibility, invariant #8)
+    _get_state()["history"].append(copy.deepcopy(workflow))
+
+    node = workflow[node_id]
+    class_type = node.get("class_type", "?") if isinstance(node, dict) else "?"
+
+    # Remove every link pointing at this node — no dangling references.
+    removed_links = []
+    for cid, in_name, sub, _slot in list(_iter_incident_links(workflow, node_id)):
+        node_inputs = workflow[cid]["inputs"]
+        if sub is None:
+            del node_inputs[in_name]
+            removed_links.append({"node": cid, "input": in_name})
+        else:
+            del node_inputs[in_name][sub]
+            removed_links.append({"node": cid, "input": f"{in_name}.{sub}"})
+
+    del workflow[node_id]
+    _rebuild_engine_if_present()
+
+    return to_json({
+        "deleted": True,
+        "node_id": node_id,
+        "class_type": class_type,
+        "removed_links": removed_links,
+        "total_nodes": len(workflow),
+        "undo_available": True,
+    })
+
+
+def _handle_replace_node(tool_input: dict) -> str:
+    node_id = tool_input.get("node_id")
+    new_class = tool_input.get("new_class_type")
+    if not node_id or not isinstance(node_id, str):
+        return to_json({"error": "node_id is required and must be a non-empty string."})
+    if not new_class or not isinstance(new_class, str):
+        return to_json({"error": "new_class_type is required and must be a non-empty string."})
+    err = _ensure_loaded()
+    if err:
+        return to_json({"error": err})
+    workflow = _get_state()["current_workflow"]
+    if node_id not in workflow:
+        return to_json({"error": f"Node '{node_id}' not found in workflow."})
+    if not isinstance(workflow[node_id], dict):
+        return to_json({"error": f"Malformed workflow: node '{node_id}' is not a dict."})
+
+    mapping = tool_input.get("input_mapping") or {}
+    if not isinstance(mapping, dict):
+        return to_json({"error": "input_mapping must be an object {old_input: new_input}."})
+
+    _get_state()["history"].append(copy.deepcopy(workflow))
+
+    old_class = workflow[node_id].get("class_type", "?")
+    old_inputs = workflow[node_id].get("inputs", {}) or {}
+
+    # Preserve existing inputs/connections; apply rename mapping where given.
+    new_inputs = {}
+    renamed, kept = [], []
+    for name, val in old_inputs.items():
+        if name in mapping:
+            new_inputs[mapping[name]] = val
+            renamed.append({"from": name, "to": mapping[name]})
+        else:
+            new_inputs[name] = val
+            kept.append(name)
+
+    workflow[node_id]["class_type"] = new_class
+    workflow[node_id]["inputs"] = new_inputs
+    _rebuild_engine_if_present()
+
+    return to_json({
+        "replaced": True,
+        "node_id": node_id,
+        "from_class": old_class,
+        "to_class": new_class,
+        "renamed_inputs": renamed,
+        "preserved_inputs": kept,
+        # Downstream consumers reference node_id, which is unchanged.
+        "incoming_links_preserved": True,
+        "undo_available": True,
+    })
+
+
+def _handle_rewire_around(tool_input: dict) -> str:
+    node_id = tool_input.get("node_id")
+    if not node_id or not isinstance(node_id, str):
+        return to_json({"error": "node_id is required and must be a non-empty string."})
+    err = _ensure_loaded()
+    if err:
+        return to_json({"error": err})
+    workflow = _get_state()["current_workflow"]
+    if node_id not in workflow:
+        return to_json({"error": f"Node '{node_id}' not found in workflow."})
+    if not isinstance(workflow[node_id], dict):
+        return to_json({"error": f"Malformed workflow: node '{node_id}' is not a dict."})
+
+    _get_state()["history"].append(copy.deepcopy(workflow))
+
+    class_type = workflow[node_id].get("class_type", "?")
+
+    # Upstream sources feeding this node (its own input connections).
+    upstream = []
+    for val in (workflow[node_id].get("inputs") or {}).values():
+        if _is_connection(val):
+            upstream.append(val)
+        elif isinstance(val, dict):
+            for sv in val.values():
+                if _is_connection(sv):
+                    upstream.append(sv)
+
+    # Downstream consumers reading this node's outputs.
+    downstream = list(_iter_incident_links(workflow, node_id))
+
+    # Honest heuristic: auto-bridge only the unambiguous single-upstream
+    # passthrough. Zero/multi upstream can't be disambiguated without slot
+    # types (offline module) → drop + report, never mis-wire.
+    bridge_conn = upstream[0] if len(upstream) == 1 else None
+    bridged, dropped = [], []
+    for cid, in_name, sub, _slot in downstream:
+        node_inputs = workflow[cid]["inputs"]
+        label = in_name if sub is None else f"{in_name}.{sub}"
+        if bridge_conn is not None:
+            if sub is None:
+                node_inputs[in_name] = list(bridge_conn)
+            else:
+                node_inputs[in_name][sub] = list(bridge_conn)
+            bridged.append({
+                "node": cid,
+                "input": label,
+                "now_from": f"{bridge_conn[0]}[{bridge_conn[1]}]",
+            })
+        else:
+            if sub is None:
+                del node_inputs[in_name]
+            else:
+                del node_inputs[in_name][sub]
+            dropped.append({"node": cid, "input": label})
+
+    del workflow[node_id]
+    _rebuild_engine_if_present()
+
+    drop_reason = None
+    if bridge_conn is None and downstream:
+        drop_reason = (
+            f"{len(upstream)} upstream sources — cannot disambiguate slot types "
+            "offline; dropped downstream links instead of guessing."
+            if upstream
+            else "no upstream source to bridge to; dropped downstream links."
+        )
+
+    return to_json({
+        "rewired": True,
+        "node_id": node_id,
+        "class_type": class_type,
+        "bridged": bridged,
+        "dropped": dropped,
+        "drop_reason": drop_reason,
+        "total_nodes": len(workflow),
+        "undo_available": True,
+    })
+
+
+# ---------------------------------------------------------------------------
 # Dispatch
 # ---------------------------------------------------------------------------
 
@@ -912,6 +1199,12 @@ def handle(name: str, tool_input: dict) -> str:
                 return _handle_connect_nodes(tool_input)
             elif name == "set_input":
                 return _handle_set_input(tool_input)
+            elif name == "delete_node":
+                return _handle_delete_node(tool_input)
+            elif name == "replace_node":
+                return _handle_replace_node(tool_input)
+            elif name == "rewire_around":
+                return _handle_rewire_around(tool_input)
             else:
                 return to_json({"error": f"Unknown tool: {name}"})
         except Exception as e:

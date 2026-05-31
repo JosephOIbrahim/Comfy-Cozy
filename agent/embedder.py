@@ -1,12 +1,12 @@
-"""MiniLM embedder for cognitive memory retrieval.
+"""BGE embedder for cognitive memory retrieval.
 
-Lazy-loaded `sentence-transformers/all-MiniLM-L6-v2` model produces
-384-dimension L2-normalized vectors for semantic similarity search.
+Lazy-loaded `BAAI/bge-small-en-v1.5` model produces 384-dimension
+L2-normalized vectors for semantic similarity search.
 
-The model is downloaded from HuggingFace on first call (~80MB cache
+The model is downloaded from HuggingFace on first call (~130MB cache
 at `~/.cache/huggingface/hub/`) and held in process for subsequent
-calls. Encoding latency on M-series CPU: ~5ms per short string after
-the first warm-up.
+calls. Used for symmetric text-similarity (no query prefix); the
+asymmetric query/passage prefix is a future consumer concern.
 
 This module exposes the embedder API only — it does NOT touch the
 existing `record_outcome` path or the comfy-moneta-bridge JSONL
@@ -25,7 +25,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from sentence_transformers import SentenceTransformer
 
-_MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
+_MODEL_NAME = "BAAI/bge-small-en-v1.5"
 EMBED_DIM = 384
 
 _model: "SentenceTransformer | None" = None
@@ -45,7 +45,13 @@ def _load_model() -> "SentenceTransformer":
     with _model_lock:
         if _model is not None:
             return _model
-        from sentence_transformers import SentenceTransformer
+        try:
+            from sentence_transformers import SentenceTransformer
+        except ImportError as exc:
+            raise RuntimeError(
+                "Semantic embeddings need the 'embed' extra — install with "
+                "`pip install -e \".[embed]\"` (pulls sentence-transformers + torch)."
+            ) from exc
         _model = SentenceTransformer(_MODEL_NAME)
         return _model
 

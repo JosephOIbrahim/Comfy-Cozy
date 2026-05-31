@@ -24,7 +24,9 @@ _INTELLIGENCE_MODULE_NAMES = [
     "comfy_execute", "comfy_discover", "session_tools", "workflow_templates",
     "civitai_api", "model_compat", "verify_execution", "github_releases",
     "pipeline", "image_metadata", "node_replacement", "comfy_provision",
-    "auto_wire", "provision_pipeline",
+    "auto_wire", "provision_pipeline", "canvas_bridge", "vision_cache",
+    "local_assets", "proactive_memory", "ui_api_parser", "exec_profile",
+    "output_watcher",
 ]
 _STAGE_MODULE_NAMES = [
     "provision_tools", "stage_tools", "foresight_tools",
@@ -257,20 +259,46 @@ def handle(
             # ContextVar, which is set per-connection by routes.py and
             # mcp_server.py — so the sidebar's injected workflow lives in
             # its own session and the gate sees it correctly.
+            # session_active + has_undo feed the gate's consent + reversibility
+            # checks.  Workflow state can live in TWO stores that DIVERGE:
+            #   - ctx.workflow : the SessionContext's own WorkflowSession
+            #   - _get_state() : this connection's REGISTRY WorkflowSession,
+            #                    which the loaders (load_workflow_from_data /
+            #                    _load_workflow) actually write to.
+            # The sidebar/MCP path passes a session_id (ctx present), but the
+            # injected graph lands in the REGISTRY session — a different object
+            # from ctx.workflow.  Consult BOTH so a loaded workflow is seen
+            # regardless of which store holds it (fixes the dual-store wedge).
             _session_active = ctx is not None
-            _has_undo = bool(
-                ctx and hasattr(ctx, 'workflow')
-                and ctx.workflow.get("history")
-            )
-            if not _session_active:
+            _wf_loaded = False
+            _has_undo = False
+            if ctx is not None and hasattr(ctx, 'workflow'):
                 try:
-                    from .workflow_patch import _get_state
-                    _wf = _get_state().get("current_workflow")
-                    if _wf is not None:
-                        _session_active = True
-                        _has_undo = bool(_get_state().get("history"))
+                    if ctx.workflow.get("current_workflow") is not None:
+                        _wf_loaded = True
+                    if ctx.workflow.get("history"):
+                        _has_undo = True
                 except Exception:
                     pass
+            try:
+                from .workflow_patch import _get_state
+                _reg = _get_state()
+                if _reg.get("current_workflow") is not None:
+                    _wf_loaded = True
+                if _reg.get("history"):
+                    _has_undo = True
+            except Exception:
+                pass
+            # Fail open SAFELY: a LOADED-but-unmutated workflow is reversible via
+            # reset_workflow, which restores base_workflow (set once at load,
+            # never touched by writes) — so "a workflow is loaded" is itself a
+            # legitimate undo baseline, even before the first mutation seeds
+            # history.  A genuinely UNLOADED session (no current_workflow in
+            # either store) still fails CLOSED: _wf_loaded stays False so
+            # _has_undo stays False and REVERSIBLE writes are denied.
+            if _wf_loaded:
+                _session_active = True
+                _has_undo = True
 
             # Stage-state fallback for stage_* tools.  The workflow-state
             # fallback above misses the case where a CognitiveWorkflowStage
@@ -311,10 +339,36 @@ def handle(
                     hint="This tool cannot be auto-executed.",
                 )
             elif gate_result.decision == GateDecision.ESCALATE:
-                log.info("Gate escalated '%s' (risk level %d)",
+                # ESCALATE = a PROVISION-class op (download_model, install_node_pack,
+                # provision_*) — a NETWORK fetch / CODE-EXECUTING install. It is NO
+                # LONGER auto-allowed: it now requires an explicit confirmation token
+                # in the call (`"confirm": true`), supplied after the escalation is
+                # surfaced to a human. Without it we BLOCK (do NOT dispatch), closing
+                # the prompt->autonomous-fetch / prompt->RCE hole. A genuinely
+                # confirmed call falls through to dispatch unchanged.
+                if isinstance(tool_input, dict):
+                    _raw_confirm = tool_input.get("confirm", False)
+                    _confirmed = (
+                        _raw_confirm
+                        if isinstance(_raw_confirm, bool)
+                        else str(_raw_confirm).lower() in ("true", "1", "yes")
+                    )
+                else:
+                    _confirmed = False
+                if not _confirmed:
+                    log.info("Gate ESCALATE-blocked '%s' (risk %d) — needs confirm",
+                             name, gate_result.risk_level)
+                    from ..errors import error_json
+                    return error_json(
+                        f"'{name}' is a network/code-executing operation and needs "
+                        f"explicit confirmation before it runs — auto-blocked to "
+                        f"prevent unattended download/install.",
+                        hint="A human must approve; re-call with \"confirm\": true "
+                             "to proceed.",
+                    )
+                log.info("Gate ESCALATE-confirmed '%s' (risk %d) — proceeding",
                          name, gate_result.risk_level)
-                # Escalation logged but allowed through — the MCP client
-                # (Claude) decides whether to confirm with the user.
+                # confirmed -> fall through to dispatch
     except ImportError:
         pass  # Gate not available — degrade silently
     except Exception:

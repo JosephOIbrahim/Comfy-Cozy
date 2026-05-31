@@ -6,6 +6,7 @@ Handles prompt caching, streaming, tool format, and error translation.
 
 from __future__ import annotations
 
+import inspect
 import logging
 from typing import Any, Callable
 
@@ -67,9 +68,10 @@ class AnthropicProvider(LLMProvider):
         }
         # Streaming loop routes delta.thinking -> on_thinking;
         # ThinkingBlocks with signature emitted in final response.
-        thinking_kwarg = _build_thinking_kwarg(thinking_budget, max_tokens)
-        if thinking_kwarg is not None:
-            stream_kwargs["thinking"] = thinking_kwarg
+        _thinking_kwargs = _build_thinking_kwargs(thinking_budget, max_tokens, model)
+        stream_kwargs.update(
+            _adapt_thinking_transport(_thinking_kwargs, self._client.messages.stream)
+        )
 
         try:
             with self._client.messages.stream(**stream_kwargs) as stream:
@@ -137,9 +139,7 @@ class AnthropicProvider(LLMProvider):
             "system": system,
             "messages": native_messages,
         }
-        thinking_kwarg = _build_thinking_kwarg(thinking_budget, max_tokens)
-        if thinking_kwarg is not None:
-            kwargs["thinking"] = thinking_kwarg
+        _thinking_kwargs = _build_thinking_kwargs(thinking_budget, max_tokens, model)
         start = time.monotonic()
 
         try:
@@ -147,6 +147,7 @@ class AnthropicProvider(LLMProvider):
                 client = anthropic.Anthropic(timeout=timeout)
             else:
                 client = self._client
+            kwargs.update(_adapt_thinking_transport(_thinking_kwargs, client.messages.create))
             response = client.messages.create(**kwargs)
         except anthropic.AuthenticationError as e:
             _record_llm_metric("anthropic", "error", time.monotonic() - start)
@@ -281,20 +282,55 @@ class AnthropicProvider(LLMProvider):
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _build_thinking_kwarg(thinking_budget: int, max_tokens: int) -> dict | None:
-    """Compute the `thinking` kwarg for Anthropic stream/create.
+# Models that require the adaptive-thinking shape. Opus 4.7 hard-rejects
+# the legacy `{type: enabled, budget_tokens}` with HTTP 400; Opus 4.6 and
+# Sonnet 4.6 still accept legacy but adaptive is the forward-compatible
+# path, so we route them here too. Older models (Sonnet 4.5, 3.7, etc.)
+# stay on the legacy branch — adaptive is unavailable to them.
+_ADAPTIVE_THINKING_MODEL_PREFIXES = (
+    "claude-opus-4-7",
+    "claude-opus-4-6",
+    "claude-sonnet-4-6",
+)
 
-    Returns None when extended thinking is disabled (thinking_budget <= 0).
-    Returns {"type": "enabled", "budget_tokens": N} otherwise, with N
-    clamped to fit within max_tokens.
 
-    Raises ValueError when thinking is requested but max_tokens is too
-    small to satisfy Anthropic's `budget_tokens < max_tokens` constraint.
-    The clamp floor is 1024, so max_tokens must be strictly greater than
-    1024 for any positive budget to be valid (review action C3).
+def _uses_adaptive_thinking(model: str) -> bool:
+    name = (model or "").lower()
+    return any(name.startswith(p) for p in _ADAPTIVE_THINKING_MODEL_PREFIXES)
+
+
+def _build_thinking_kwargs(thinking_budget: int, max_tokens: int, model: str) -> dict:
+    """Compute the thinking-related kwargs for Anthropic stream/create.
+
+    Returns a dict to merge into the call kwargs. Empty dict means thinking
+    is disabled and neither `thinking` nor `output_config` should be sent.
+
+    For adaptive-thinking models (Opus 4.7 / 4.6, Sonnet 4.6):
+        {"thinking": {"type": "adaptive", "display": "summarized"},
+         "output_config": {"effort": THINKING_EFFORT}}
+        Opus 4.7 hard-rejects the legacy shape (HTTP 400); the older two
+        accept it but adaptive is the forward-compatible path.
+
+    For legacy models (Sonnet 4.5, 3.7, etc.):
+        {"thinking": {"type": "enabled", "budget_tokens": N}} with N
+        clamped so `budget_tokens < max_tokens` holds.
+
+    Raises ValueError on the legacy path when max_tokens <= 1024 — the
+    clamp floor is 1024, so the API would reject it (review action C3).
+    Adaptive path has no max_tokens precondition: the model schedules its
+    own reasoning under the umbrella max_tokens ceiling.
     """
     if not thinking_budget or thinking_budget <= 0:
-        return None
+        return {}
+    if _uses_adaptive_thinking(model):
+        # Lazy import so importlib.reload(agent.config) in other tests
+        # doesn't bind us to a stale THINKING_EFFORT value.
+        from agent import config as _agent_config
+
+        return {
+            "thinking": {"type": "adaptive", "display": "summarized"},
+            "output_config": {"effort": _agent_config.THINKING_EFFORT},
+        }
     if max_tokens <= 1024:
         raise ValueError(
             f"thinking_budget={thinking_budget} cannot be enabled with "
@@ -303,9 +339,76 @@ def _build_thinking_kwarg(thinking_budget: int, max_tokens: int) -> dict | None:
             f"max_tokens above 1024 or pass thinking_budget=0."
         )
     return {
-        "type": "enabled",
-        "budget_tokens": min(thinking_budget, max(max_tokens - 1024, 1024)),
+        "thinking": {
+            "type": "enabled",
+            "budget_tokens": min(thinking_budget, max(max_tokens - 1024, 1024)),
+        }
     }
+
+
+def _adapt_thinking_transport(thinking_kwargs: dict, target_method) -> dict:
+    """Adapt _build_thinking_kwargs' output to the target SDK method's signature.
+
+    Decision logic — WHICH params and WHAT effort — lives in
+    _build_thinking_kwargs and is preserved byte-identical. This function only
+    adapts HOW those params reach the SDK based on what the bound target
+    method actually accepts.
+
+    Per-key, independent of other keys:
+      - native parameter name in target signature → keep as top-level kwarg
+      - target has **kwargs (VAR_KEYWORD) → accept-anything, keep native
+      - otherwise route into extra_body, MERGING with any existing
+        extra_body (never overwrite)
+      - if the target lacks both the native name AND extra_body, leave the
+        kwarg in place so the SDK's TypeError surfaces loudly (don't paper
+        over a truly incompatible runtime)
+
+    Wire-side semantics: the anthropic SDK promotes ``extra_body`` keys to
+    the top of the JSON request body — payload is identical to the native
+    path. This guard exists because anthropic 0.75 (shipping on the deployed
+    Python 3.14 user-site) does not declare ``output_config`` on
+    Messages.stream / .create, even though the API accepts it. On SDKs that
+    DO declare it natively (0.91+ verified), this function returns the
+    helper's output unchanged — no behavior change on the modern surface.
+    """
+    if not thinking_kwargs:
+        return thinking_kwargs
+    try:
+        params = inspect.signature(target_method).parameters
+    except (TypeError, ValueError):
+        # Couldn't introspect (e.g. a bare MagicMock with no spec). Leave
+        # the kwargs alone — the SDK is the source of truth for what it
+        # accepts; if it errors, that's a real signal worth surfacing.
+        return thinking_kwargs
+
+    if any(p.kind is inspect.Parameter.VAR_KEYWORD for p in params.values()):
+        return thinking_kwargs  # target accepts **kwargs → every name passes
+
+    native: dict = {}
+    rerouted: dict = {}
+    for key, value in thinking_kwargs.items():
+        if key in params:
+            native[key] = value
+        else:
+            rerouted[key] = value
+    if not rerouted:
+        return thinking_kwargs
+
+    if "extra_body" in params:
+        existing = native.get("extra_body") or {}
+        if not isinstance(existing, dict):
+            existing = {}
+        merged = dict(existing)
+        merged.update(rerouted)
+        native["extra_body"] = merged
+        log.info(
+            "anthropic SDK %s lacks native thinking param(s) %s; routed via extra_body",
+            getattr(anthropic, "__version__", "?"),
+            sorted(rerouted.keys()),
+        )
+        return native
+
+    return thinking_kwargs
 
 
 def _cached_system(system) -> list[dict]:

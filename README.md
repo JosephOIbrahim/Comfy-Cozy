@@ -30,12 +30,22 @@ graph LR
 
 > **TL;DR**
 > - Plain-English co-pilot for ComfyUI. You describe the change; the agent loads workflows, swaps models, patches parameters, runs generations, evaluates output.
-> - **113 MCP tools** across **4 LLM providers** — Claude, GPT-4o, Gemini, Ollama. Swap providers with one env var.
+> - **125 MCP tools** across **4 LLM providers** — Claude, GPT-4o, Gemini, Ollama. Swap providers with one env var.
 > - Every mutation is a **reversible delta layer** (LIVRPS). Full undo stack. Nothing destructive lands without your say-so.
 > - **Experience persists.** Session 1 ships with built-in knowledge. After ~30 runs the agent starts biasing toward what's actually worked for you.
 > - Ships three ways: **inside Claude Code/Desktop (MCP)**, **standalone CLI**, **native ComfyUI sidebar**. Pick one.
 
 ---
+
+## Demo
+
+**Demo 1 — overview**
+
+[![Comfy-Cozy demo 1](docs/demo-1-thumbnail.jpg)](https://vimeo.com/1193607778)
+
+**Demo 2 — walkthrough**
+
+[![Comfy-Cozy demo 2](docs/demo-2-thumbnail.jpg)](https://vimeo.com/1193622319)
 
 ## See It In Action
 
@@ -54,7 +64,7 @@ graph LR
 
 ## Sponsor This Project
 
-Comfy Cozy is production software. 4,180+ tests (all mocked, runnable in under a minute) cover the 113 MCP tools that drive the workflow lifecycle end-to-end. Four LLM providers — Anthropic, OpenAI, Gemini, Ollama — sit behind a single abstraction with parity across all four. The [CHANGELOG](CHANGELOG.md) tracks active hardening and new work.
+Comfy Cozy is production software. 4,400+ tests (all mocked, runnable in under a minute) cover the 125 MCP tools that drive the workflow lifecycle end-to-end. Four LLM providers — Anthropic, OpenAI, Gemini, Ollama — sit behind a single abstraction with parity across all four. The [CHANGELOG](CHANGELOG.md) tracks active hardening and new work.
 
 If Comfy Cozy saves you time inside ComfyUI, sponsorship is the most direct way to keep it moving.
 
@@ -113,7 +123,7 @@ One command. No build step. No Docker. No conda. Just pip.
 <summary>Want the test suite too? (optional, click to expand)</summary>
 
 ```bash
-pip install -e ".[dev]"           # + 4,100+ passing tests
+pip install -e ".[dev]"           # + 4,400+ passing tests
 pip install -e ".[dev,stage]"     # + USD stage subsystem (~200MB, most users skip)
 ```
 
@@ -217,9 +227,55 @@ graph LR
 
 ---
 
+## Optional: the Agent Bridge node pack (live canvas + render timing)
+
+Want the agent to **load workflows straight onto your canvas**, **see the edits you make by hand**, and **tell you exactly which node ate your render time**? Install the one extra node pack. It's optional -- everything else works without it -- but it unlocks three things ComfyUI's stock API can't give the agent.
+
+```mermaid
+graph LR
+    Agent[Comfy Cozy] -->|"push_workflow_to_canvas"| Push["POST /agent/push_workflow"]
+    Push --> Canvas["Your ComfyUI canvas<br/>(every open tab reloads)"]
+    Canvas -->|"you hand-edit a node"| Buf["POST /agent/canvas_changed"]
+    Buf -->|"get_canvas_state"| Agent
+    Render["Your render finishes"] -->|"per-node timing"| Prof["GET /agent/exec_profile/{id}"]
+    Prof -->|"get_execution_profile"| Agent
+
+    classDef orange fill:#d99458,color:#1a1a1a,stroke:#1a1a1a
+    classDef yellow fill:#d9c958,color:#1a1a1a,stroke:#1a1a1a
+    class Canvas,Render orange
+    class Agent,Push,Buf,Prof yellow
+```
+
+**What you get:**
+- *"Load my portrait workflow onto the canvas"* -- it appears in your browser, no file juggling
+- *"What did I just change?"* -- the agent reads your hand edits back off the canvas
+- *"Why was that render slow?"* -- real per-node timing, so optimization stops being guesswork
+
+**Install (one symlink, then restart):**
+
+**Windows (run as Administrator):**
+
+```cmd
+cd C:\path\to\ComfyUI\custom_nodes
+mklink /D comfy_agent_bridge C:\path\to\Comfy-Cozy\node_pack\comfy_agent_bridge
+```
+
+**Linux / macOS:**
+
+```bash
+cd /path/to/ComfyUI/custom_nodes
+ln -s /path/to/Comfy-Cozy/node_pack/comfy_agent_bridge comfy_agent_bridge
+```
+
+Restart ComfyUI. You'll see `comfy_agent_bridge: routes registered` in the log -- that's it. If a bridge feature ever returns a "node pack not installed" message, it means ComfyUI needs a restart to pick the pack up.
+
+> **Under the hood:** these three routes are covered by a live contract test suite (`tests/integration/test_bridge_routes_integration.py`) that boots against a real ComfyUI and asserts each route answers correctly -- so "installed but silently broken" can't slip through. Run it with `python -m pytest tests/integration/test_bridge_routes_integration.py -v` while ComfyUI is running.
+
+---
+
 ## Pick Your LLM
 
-Comfy Cozy is **provider-agnostic**. Same 113 tools, same streaming, same vision analysis -- swap one env var.
+Comfy Cozy is **provider-agnostic**. Same 125 tools, same streaming, same vision analysis -- swap one env var.
 
 ### Anthropic (default)
 
@@ -300,7 +356,7 @@ All four providers share the same abstraction layer (`agent/llm/`):
 
 ```mermaid
 graph LR
-    Agent[Agent Loop<br/>113 tools] --> LLM{LLM_PROVIDER}
+    Agent[Agent Loop<br/>125 tools] --> LLM{LLM_PROVIDER}
     LLM -->|anthropic| A["Claude<br/>Streaming + Cache"]
     LLM -->|openai| B["GPT-4o<br/>Tool Calls"]
     LLM -->|gemini| C["Gemini<br/>Function Decl."]
@@ -381,7 +437,7 @@ API accepts the next request.
 
 ### A. Inside Claude Code / Claude Desktop (recommended)
 
-The agent runs as an MCP server -- Claude can use all 113 tools directly.
+The agent runs as an MCP server -- Claude can use all 125 tools directly.
 
 Add this to your Claude Code or Claude Desktop MCP config:
 
@@ -468,7 +524,7 @@ graph TB
     end
     subgraph Backend ["Agent Backend (Python)"]
         Routes["49 REST Routes<br/>+ WebSocket"]
-        Tools["113 Tools<br/>workflow -- models -- vision -- session -- provision"]
+        Tools["125 Tools<br/>workflow -- models -- vision -- session -- provision"]
         Engine["IAIEngine<br/>ComfyUIAdapter<br/>queue / interrupt / history / ws"]
         Cog["Cognitive Engine<br/>LIVRPS delta stack -- CWM -- experience"]
     end
@@ -503,7 +559,7 @@ graph TB
 
 ```mermaid
 graph LR
-    You([You]) --> Agent[113 Tools]
+    You([You]) --> Agent[125 Tools]
     Agent --> Understand[UNDERSTAND<br/>What do you have?]
     Understand --> Discover[DISCOVER<br/>What do you need?]
     Discover --> Pilot[PILOT<br/>Make the changes]
@@ -863,7 +919,7 @@ graph TB
     subgraph Foundation ["Foundation Layer"]
         DAG["Workflow Intelligence DAG<br/>6 pure computation nodes"]
         OBS["Time-Sampled State<br/>Monotonic step index"]
-        CAP["Capability Registry<br/>113 tools indexed"]
+        CAP["Capability Registry<br/>125 tools indexed"]
     end
 
     subgraph Safety ["Safety Layer"]
@@ -1147,12 +1203,12 @@ The acceptance test (`tests/embedder/test_minilm_clustering.py`) verifies the co
 
 ### Tool Inventory
 
-**113 tools reachable via the central dispatcher** (`agent/tools/__init__.py:handle()`). The dispatcher routes through TWO maps:
+**125 tools reachable via the central dispatcher** (`agent/tools/__init__.py:handle()`). The dispatcher routes through TWO maps:
 
-- `_HANDLERS` (86 entries) — tools registered via module-level `TOOLS:` lists. Loaded eagerly at import time for the intelligence + stage layers.
+- `_HANDLERS` (98 entries) — tools registered via module-level `TOOLS:` lists. Loaded eagerly at import time for the intelligence + stage layers.
 - `_BRAIN_TOOL_NAMES` (27 entries) — tools registered via `BrainAgent` SDK subclasses (`__init_subclass__` auto-registration in `agent/brain/_sdk.py`). Loaded lazily on first call when `BRAIN_ENABLED=true` to break import cycles.
 
-Sum: 86 + 27 = 113. Verify the live count with:
+Sum: 98 + 27 = 125. Verify the live count with:
 ```python
 from agent.tools import _HANDLERS, _BRAIN_TOOL_NAMES, _ensure_brain
 _ensure_brain()  # forces lazy brain registration
@@ -1161,10 +1217,10 @@ print(len(_HANDLERS) + len(_BRAIN_TOOL_NAMES))
 
 | Layer | Count | Dispatch | Highlights |
 |-------|-------|----------|------------|
-| **Intelligence** (`agent/tools/`) | 64 | TOOLS list → `_HANDLERS` | Workflow parsing, model search (CivitAI + HF + 31k nodes), delta patching, auto-wire, provisioning, execution |
+| **Intelligence** (`agent/tools/`) | 76 | TOOLS list → `_HANDLERS` | Workflow parsing, model search (CivitAI + HF + 31k nodes), delta patching, graph surgery, canvas bridge, UI→API parsing, execution profiling, auto-wire, provisioning, execution |
 | **Stage** (`agent/stage/`) | 22 | TOOLS list → `_HANDLERS` | USD cognitive state, LIVRPS composition, predictive experiments, scene composition |
 | **Brain** (`agent/brain/`) | 27 | BrainAgent SDK → `_BRAIN_TOOL_NAMES` | Vision analysis, goal planning, pattern memory, GPU optimization, artistic intent capture, iteration tracking |
-| **Total** | **113** | | |
+| **Total** | **125** | | |
 
 ### Workflow Lifecycle
 
@@ -1202,7 +1258,8 @@ agent/
                       so the agent's execution path is backend-pluggable
   embedder.py         MiniLM (all-MiniLM-L6-v2) -- 384-dim L2-normalized vectors
                       Lazy-loaded, thread-safe, opt-in via requirements.txt
-  tools/              63 tools -- workflow ops, model search, provisioning, auto-wire
+  tools/              76 tools -- workflow ops, model search, provisioning, auto-wire,
+                      graph surgery, canvas bridge, UI->API parser, execution profiling
                       workflow_patch.py wraps the cognitive engine for non-destructive PILOT
                       comfy_execute.py routes execution traffic through agent/engine/
   brain/              27 tools -- vision, planning, memory, optimization
@@ -1239,11 +1296,12 @@ panel/
     superduperPanel.js    Headless canvas↔agent bridge entry point
     agentClient.js        HTTP client incl. getWorkflowApiWithTouched / ackPush
     graphMode.js          GRAPH-mode panel + delta-failure status bar + modal
-tests/                4,100+ pytest + 87 Vitest, all mocked, ~60s + ~250ms
+tests/                4,400+ pytest + 87 Vitest, all mocked, ~60s + ~250ms
   panel/                  Vitest suite for write-back v1 (sample, deltaFailures,
                           pushApplyTouched, pushControl, pushOrchestrator,
                           integration, stress + LiteGraph stubs)
   integration/        Skips cleanly when ComfyUI not running
+                      test_bridge_routes_integration.py -- live agent<->node-pack seam
 ```
 
 ### Production Hardening
@@ -1325,7 +1383,7 @@ All settings live in your `.env` file:
 No ComfyUI needed -- everything is mocked:
 
 ```bash
-python -m pytest tests/ -v        # 4,100+ passing tests, ~70s
+python -m pytest tests/ -v        # 4,400+ passing tests, ~70s
 
 # Skip tests that require a real ComfyUI server or API keys
 python -m pytest tests/ -v -m "not integration"

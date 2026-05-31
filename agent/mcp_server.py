@@ -28,6 +28,7 @@ from mcp.server.stdio import stdio_server
 import mcp.types as types
 
 from .progress import ProgressReporter
+from ._build import BUILD_HASH, BUILD_DIRTY
 
 log = logging.getLogger(__name__)
 
@@ -280,6 +281,7 @@ def create_mcp_server() -> "Server":
                 "status": "ok",
                 "server": "comfyui-agent",
                 "version": __version__,
+                "build": {"hash": BUILD_HASH, "dirty": BUILD_DIRTY},
                 "tools": {
                     "intelligence": intel_count,
                     "brain": brain_count,

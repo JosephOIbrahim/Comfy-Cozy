@@ -116,6 +116,14 @@ TOOL_RISK_LEVELS: dict[str, RiskLevel] = {
     # Validate (read-only check)
     "validate_before_execute": RiskLevel.READ_ONLY,
     "validate_scene": RiskLevel.READ_ONLY,
+    # Agent tooling reads (Tracks 2-4): pure reads, no workflow mutation
+    "get_canvas_state": RiskLevel.READ_ONLY,        # #1 read-back (PULL)
+    "parse_ui_workflow": RiskLevel.READ_ONLY,       # #2 UI->API parser
+    "list_assets": RiskLevel.READ_ONLY,             # #7 local asset listing
+    "get_execution_profile": RiskLevel.READ_ONLY,   # #5 duration-only profile
+    "surface_relevant_memory": RiskLevel.READ_ONLY, # #10 memory recall
+    "watch_outputs_begin": RiskLevel.READ_ONLY,     # #8 snapshot (no mutation)
+    "watch_outputs_diff": RiskLevel.READ_ONLY,      # #8 diff (no mutation)
     # ------------------------------------------------------------------
     # REVERSIBLE (1) — workflow mutations, undoable
     # ------------------------------------------------------------------
@@ -179,6 +187,9 @@ TOOL_RISK_LEVELS: dict[str, RiskLevel] = {
     "hash_compare_images": RiskLevel.EXECUTION,
     "run_pipeline": RiskLevel.EXECUTION,
     "verify_execution": RiskLevel.EXECUTION,  # Cycle 64: was missing (triggers GPU output analysis)
+    # Agent tooling effects (Tracks 2-4)
+    "push_workflow_to_canvas": RiskLevel.EXECUTION,  # #1 push: external canvas effect
+    "analyze_image_cached": RiskLevel.EXECUTION,     # #9: delegates to analyze_image on miss
     # ------------------------------------------------------------------
     # PROVISION (3) — filesystem modifications (downloads, installs)
     # ------------------------------------------------------------------

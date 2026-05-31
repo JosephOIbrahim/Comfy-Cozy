@@ -902,8 +902,13 @@ while True:
             assert usda_path.exists()
             assert not (tmp_path / "crash_resume.usda.tmp").exists()
 
-            # Brutally kill the child
-            _os.kill(proc.pid, _signal.SIGKILL)
+            # Brutally kill the child. SIGKILL is POSIX-only; on Windows
+            # (no signal.SIGKILL) Popen.kill() calls TerminateProcess, which
+            # is an equally abrupt, uncatchable kill — same test intent.
+            if hasattr(_signal, "SIGKILL"):
+                _os.kill(proc.pid, _signal.SIGKILL)
+            else:
+                proc.kill()
             proc.wait(timeout=5.0)
         finally:
             if proc.poll() is None:

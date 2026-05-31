@@ -115,9 +115,50 @@ class TestGetNodeInfo:
             },
         }
         with patch("agent.tools.comfy_api._get", return_value=mock_data):
-            result = json.loads(comfy_api.handle("get_node_info", {"node_type": "KSampler"}))
+            result = json.loads(
+                comfy_api.handle("get_node_info", {"node_type": "KSampler", "detail": "full"})
+            )
             assert result["class_type"] == "KSampler"
             assert "seed" in result["input"]["required"]
+
+    def test_default_is_summary_keeps_required(self):
+        """#4: default tier is 'summary'; required inputs are never dropped (P1.1 fidelity)."""
+        mock_data = {
+            "KSampler": {
+                "display_name": "KSampler",
+                "category": "sampling",
+                "description": "Runs a sampler",
+                "input": {"required": {"model": ["MODEL"], "seed": ["INT", {"default": 0}]}},
+                "output": ["LATENT"],
+            },
+        }
+        with patch("agent.tools.comfy_api._get", return_value=mock_data):
+            result = json.loads(comfy_api.handle("get_node_info", {"node_type": "KSampler"}))
+        assert result["detail"] == "summary"
+        assert set(result["required_inputs"]) == {"model", "seed"}
+        assert "input" not in result  # full schema compacted out at summary
+
+    def test_signature_tier_keeps_required_with_types(self):
+        """#4: 'signature' lists required inputs as [name, type] within the 1KB budget."""
+        mock_data = {
+            "KSampler": {
+                "category": "sampling",
+                "input": {
+                    "required": {"model": ["MODEL"], "seed": ["INT", {"default": 0}]},
+                    "optional": {"extra": ["LATENT"]},
+                },
+                "output": ["LATENT"],
+            },
+        }
+        with patch("agent.tools.comfy_api._get", return_value=mock_data):
+            out = comfy_api.handle(
+                "get_node_info", {"node_type": "KSampler", "detail": "signature"}
+            )
+        data = json.loads(out)
+        assert data["detail"] == "signature"
+        assert dict(data["required"]) == {"model": "MODEL", "seed": "INT"}
+        assert data["optional"] == ["extra"]
+        assert len(out) <= 1024
 
     def test_not_found_suggests(self):
         # First call returns empty (specific node), second returns all
@@ -222,6 +263,7 @@ class TestAutogrowNodeInfo:
         with patch("agent.tools.comfy_api._get", return_value=mock_data):
             result = json.loads(comfy_api.handle("get_node_info", {
                 "node_type": "ComfyMathExpression",
+                "detail": "full",
             }))
         assert "autogrow_inputs" in result
         hints = result["autogrow_inputs"]
@@ -253,6 +295,7 @@ class TestAutogrowNodeInfo:
         with patch("agent.tools.comfy_api._get", return_value=mock_data):
             result = json.loads(comfy_api.handle("get_node_info", {
                 "node_type": "KSampler",
+                "detail": "full",
             }))
         assert "autogrow_inputs" not in result
 

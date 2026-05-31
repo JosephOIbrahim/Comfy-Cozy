@@ -6,9 +6,11 @@ import sys
 from pathlib import Path
 from dotenv import load_dotenv
 
-# Load .env from project root regardless of working directory (supports MCP server launch)
+# Load .env from project root regardless of working directory (supports MCP server launch).
+# override=True makes the project .env authoritative — it wins over any pre-set OS/shell env
+# var, so a stale shell var (e.g. a leftover COMFYUI_DATABASE) can't silently shadow .env.
 _PROJECT_ROOT = Path(__file__).parent.parent
-load_dotenv(_PROJECT_ROOT / ".env")
+load_dotenv(_PROJECT_ROOT / ".env", override=True)
 
 # LLM Provider selection — anthropic (default), openai, gemini, ollama
 LLM_PROVIDER = os.getenv("LLM_PROVIDER", "anthropic")
@@ -109,6 +111,13 @@ MAX_AGENT_TURNS = 30
 # their own budgets below.
 THINKING_BUDGET = int(os.getenv("THINKING_BUDGET", "4000"))
 VISION_THINKING_BUDGET = int(os.getenv("VISION_THINKING_BUDGET", "2000"))
+
+# Adaptive-thinking effort level for Opus 4.7 / 4.6 and Sonnet 4.6.
+# Anthropic removed `{type: enabled, budget_tokens: N}` for Opus 4.7
+# (returns 400) and replaced it with `{type: adaptive}` + `output_config.effort`.
+# Levels: low | medium | high | xhigh | max. Default "high" matches the
+# prior "almost always think" semantics of THINKING_BUDGET=4000.
+THINKING_EFFORT = os.getenv("THINKING_EFFORT", "high")
 
 # Context management
 COMPACT_THRESHOLD = 120_000  # tokens — start compacting at this level
