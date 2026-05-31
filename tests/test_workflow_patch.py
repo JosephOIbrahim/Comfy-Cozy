@@ -1161,3 +1161,178 @@ class TestConnectNodesFromOutputBounds:
         # May succeed or fail for other reasons; must NOT be the upper-bound error
         assert "unreasonably large" not in result.get("error", "")
         assert "max 100" not in result.get("error", "")
+
+
+@pytest.fixture
+def surgery_workflow(tmp_path):
+    """Linear-ish API workflow with multi-consumer + multi-upstream nodes.
+
+    1 CheckpointLoaderSimple -> MODEL/CLIP/VAE
+    2 CLIPTextEncode (positive)  clip<-[1,1]
+    3 CLIPTextEncode (negative)  clip<-[1,1]
+    4 KSampler  model<-[1,0] positive<-[2,0] negative<-[3,0] latent<-[6,0]
+    5 VAEDecode samples<-[4,0] vae<-[1,2]   (TWO upstreams -> ambiguous)
+    6 EmptyLatentImage
+    7 SaveImage images<-[5,0]
+    """
+    data = {
+        "1": {"class_type": "CheckpointLoaderSimple", "inputs": {"ckpt_name": "sd15.safetensors"}},
+        "2": {"class_type": "CLIPTextEncode", "inputs": {"text": "hi", "clip": ["1", 1]}},
+        "3": {"class_type": "CLIPTextEncode", "inputs": {"text": "bad", "clip": ["1", 1]}},
+        "4": {"class_type": "KSampler", "inputs": {
+            "model": ["1", 0], "positive": ["2", 0], "negative": ["3", 0],
+            "latent_image": ["6", 0], "seed": 1,
+        }},
+        "5": {"class_type": "VAEDecode", "inputs": {"samples": ["4", 0], "vae": ["1", 2]}},
+        "6": {"class_type": "EmptyLatentImage", "inputs": {"width": 512}},
+        "7": {"class_type": "SaveImage", "inputs": {"images": ["5", 0]}},
+    }
+    path = tmp_path / "surgery_wf.json"
+    path.write_text(json.dumps(data), encoding="utf-8")
+    return path
+
+
+def _load_surgery(surgery_workflow):
+    workflow_patch.handle("apply_workflow_patch", {
+        "path": str(surgery_workflow), "patches": [],
+    })
+
+
+class TestGraphSurgery:
+    """#6 / P1.2 — delete_node, replace_node, rewire_around."""
+
+    # --- delete_node ---
+    def test_delete_removes_node_and_incident_links(self, surgery_workflow):
+        _load_surgery(surgery_workflow)
+        result = json.loads(workflow_patch.handle("delete_node", {"node_id": "3"}))
+        assert result["deleted"] is True
+        wf = workflow_patch.get_current_workflow()
+        assert "3" not in wf
+        # KSampler.negative fed from node 3 → link removed, no dangling
+        assert "negative" not in wf["4"]["inputs"]
+        assert any(x["node"] == "4" and x["input"] == "negative" for x in result["removed_links"])
+
+    def test_delete_leaves_no_dangling_references(self, surgery_workflow):
+        _load_surgery(surgery_workflow)
+        workflow_patch.handle("delete_node", {"node_id": "1"})  # feeds 2,3,4,5
+        wf = workflow_patch.get_current_workflow()
+        dangling = [
+            (n, k)
+            for n, nd in wf.items()
+            for k, v in nd.get("inputs", {}).items()
+            if isinstance(v, list) and len(v) == 2 and v[0] == "1"
+        ]
+        assert dangling == []
+
+    def test_delete_is_reversible(self, surgery_workflow):
+        _load_surgery(surgery_workflow)
+        workflow_patch.handle("delete_node", {"node_id": "3"})
+        workflow_patch.handle("undo_workflow_patch", {})
+        wf = workflow_patch.get_current_workflow()
+        assert "3" in wf
+        assert wf["4"]["inputs"]["negative"] == ["3", 0]
+
+    def test_delete_nonexistent_errors(self, surgery_workflow):
+        _load_surgery(surgery_workflow)
+        result = json.loads(workflow_patch.handle("delete_node", {"node_id": "999"}))
+        assert "error" in result and "not found" in result["error"]
+
+    def test_delete_empty_id_errors(self, surgery_workflow):
+        _load_surgery(surgery_workflow)
+        result = json.loads(workflow_patch.handle("delete_node", {"node_id": ""}))
+        assert "error" in result
+
+    def test_delete_without_load_errors(self):
+        result = json.loads(workflow_patch.handle("delete_node", {"node_id": "1"}))
+        assert "error" in result
+
+    # --- replace_node ---
+    def test_replace_swaps_class_keeps_id_and_incoming(self, surgery_workflow):
+        _load_surgery(surgery_workflow)
+        result = json.loads(workflow_patch.handle("replace_node", {
+            "node_id": "4", "new_class_type": "KSamplerAdvanced",
+            "input_mapping": {"seed": "noise_seed"},
+        }))
+        assert result["replaced"] is True
+        wf = workflow_patch.get_current_workflow()
+        assert wf["4"]["class_type"] == "KSamplerAdvanced"
+        assert wf["4"]["inputs"].get("noise_seed") == 1
+        assert "seed" not in wf["4"]["inputs"]
+        # preserved connections + downstream link intact (5 still reads [4,0])
+        assert wf["4"]["inputs"]["model"] == ["1", 0]
+        assert wf["5"]["inputs"]["samples"] == ["4", 0]
+
+    def test_replace_is_reversible(self, surgery_workflow):
+        _load_surgery(surgery_workflow)
+        workflow_patch.handle("replace_node", {"node_id": "4", "new_class_type": "X"})
+        workflow_patch.handle("undo_workflow_patch", {})
+        assert workflow_patch.get_current_workflow()["4"]["class_type"] == "KSampler"
+
+    def test_replace_missing_class_errors(self, surgery_workflow):
+        _load_surgery(surgery_workflow)
+        result = json.loads(workflow_patch.handle("replace_node", {"node_id": "4"}))
+        assert "error" in result
+
+    def test_replace_bad_mapping_errors(self, surgery_workflow):
+        _load_surgery(surgery_workflow)
+        result = json.loads(workflow_patch.handle("replace_node", {
+            "node_id": "4", "new_class_type": "X", "input_mapping": "nope",
+        }))
+        assert "error" in result
+
+    def test_replace_nonexistent_errors(self, surgery_workflow):
+        _load_surgery(surgery_workflow)
+        result = json.loads(workflow_patch.handle("replace_node", {
+            "node_id": "999", "new_class_type": "X",
+        }))
+        assert "error" in result
+
+    # --- rewire_around ---
+    def test_rewire_single_upstream_bridges(self, surgery_workflow):
+        _load_surgery(surgery_workflow)
+        # node 2 has ONE upstream (clip<-[1,1]); downstream KSampler.positive=[2,0]
+        result = json.loads(workflow_patch.handle("rewire_around", {"node_id": "2"}))
+        assert result["rewired"] is True
+        wf = workflow_patch.get_current_workflow()
+        assert "2" not in wf
+        assert wf["4"]["inputs"]["positive"] == ["1", 1]  # bridged to upstream
+        assert any(x["node"] == "4" and x["input"] == "positive" for x in result["bridged"])
+
+    def test_rewire_multi_upstream_drops_not_miswires(self, surgery_workflow):
+        _load_surgery(surgery_workflow)
+        # node 5 (VAEDecode) has TWO upstreams → ambiguous → drop + report
+        result = json.loads(workflow_patch.handle("rewire_around", {"node_id": "5"}))
+        wf = workflow_patch.get_current_workflow()
+        assert "5" not in wf
+        assert "images" not in wf["7"]["inputs"]  # dropped, not dangling
+        assert any(x["node"] == "7" and x["input"] == "images" for x in result["dropped"])
+        assert result["drop_reason"] and "upstream" in result["drop_reason"]
+
+    def test_rewire_zero_upstream_drops_with_reason(self, surgery_workflow):
+        _load_surgery(surgery_workflow)
+        result = json.loads(workflow_patch.handle("rewire_around", {"node_id": "1"}))
+        assert len(result["dropped"]) > 0
+        assert "no upstream" in (result["drop_reason"] or "")
+
+    def test_rewire_is_reversible(self, surgery_workflow):
+        _load_surgery(surgery_workflow)
+        workflow_patch.handle("rewire_around", {"node_id": "2"})
+        workflow_patch.handle("undo_workflow_patch", {})
+        wf = workflow_patch.get_current_workflow()
+        assert "2" in wf
+        assert wf["4"]["inputs"]["positive"] == ["2", 0]
+
+    def test_rewire_nonexistent_errors(self, surgery_workflow):
+        _load_surgery(surgery_workflow)
+        result = json.loads(workflow_patch.handle("rewire_around", {"node_id": "999"}))
+        assert "error" in result
+
+    def test_rewire_no_dangling_after_bridge(self, surgery_workflow):
+        _load_surgery(surgery_workflow)
+        workflow_patch.handle("rewire_around", {"node_id": "2"})
+        wf = workflow_patch.get_current_workflow()
+        dangling = [
+            v for nd in wf.values() for v in nd.get("inputs", {}).values()
+            if isinstance(v, list) and len(v) == 2 and v[0] == "2"
+        ]
+        assert dangling == []

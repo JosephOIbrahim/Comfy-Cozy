@@ -735,7 +735,9 @@ def _validate_intent_mutations(intent_spec) -> list[dict]:
             # Fetch node info (cached per node_class)
             if node_class not in node_cache:
                 try:
-                    raw = _tools_mod.handle("get_node_info", {"node_type": node_class})
+                    raw = _tools_mod.handle(
+                        "get_node_info", {"node_type": node_class, "detail": "full"}
+                    )
                     parsed = _json.loads(raw) if isinstance(raw, str) else raw
                     node_cache[node_class] = parsed if not parsed.get("error") else None
                 except Exception as _e:  # Cycle 62: log instead of silently swallow

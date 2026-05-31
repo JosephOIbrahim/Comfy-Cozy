@@ -94,10 +94,12 @@ TOOLS: list[dict] = [
     {
         "name": "get_node_info",
         "description": (
-            "Get detailed info for a specific ComfyUI node type: "
-            "its required/optional inputs with types and defaults, "
-            "output types, category, and description. "
-            "Use the exact class_type name (e.g. 'KSampler', 'CLIPTextEncode')."
+            "Get info for a specific ComfyUI node type: its required/optional "
+            "inputs with types and defaults, output types, category, and description. "
+            "Use the exact class_type name (e.g. 'KSampler', 'CLIPTextEncode'). "
+            "Use 'detail' to control response size: 'summary' (default) is tiny, "
+            "'signature' adds required input types, 'full' is the complete schema. "
+            "Required inputs are never dropped at any tier."
         ),
         "input_schema": {
             "type": "object",
@@ -105,6 +107,15 @@ TOOLS: list[dict] = [
                 "node_type": {
                     "type": "string",
                     "description": "Exact class_type name of the node.",
+                },
+                "detail": {
+                    "type": "string",
+                    "enum": ["summary", "signature", "full"],
+                    "description": (
+                        "Disclosure tier (default 'summary'). 'summary' ~200 tok: "
+                        "required input names + outputs. 'signature' ~1KB: required "
+                        "inputs with types. 'full': complete schema with defaults/tooltips."
+                    ),
                 },
             },
             "required": ["node_type"],
@@ -279,10 +290,72 @@ def _handle_get_all_nodes(tool_input: dict) -> str:
     })
 
 
+def _spec_type(spec) -> str:
+    """Short type label for an /object_info input spec (e.g. 'MODEL', 'INT', 'COMBO')."""
+    if isinstance(spec, (list, tuple)) and spec:
+        t = spec[0]
+        if isinstance(t, str):
+            return t
+        if isinstance(t, (list, tuple)):
+            return "COMBO"
+    return "UNKNOWN"
+
+
+def _node_info_tier(node_type: str, info: dict, detail: str) -> str:
+    """Compact disclosure tier for get_node_info (#4 progressive disclosure).
+
+    summary   (~200 tok): required input NAMES + outputs (types/defaults dropped).
+    signature (~1KB):      required inputs as [name, type] (defaults/tooltips dropped).
+
+    Required inputs are NEVER dropped at either tier (P1.1 fidelity rule); inputs are
+    emitted as ordered lists so they keep /object_info order regardless of to_json sort.
+    Oversize responses keep all required inputs and add a 'detail=full' hint.
+    """
+    req = info.get("input", {}).get("required", {}) or {}
+    opt = info.get("input", {}).get("optional", {}) or {}
+    outputs = list(info.get("output", []) or [])
+
+    if detail == "signature":
+        compact = {
+            "class_type": node_type,
+            "category": info.get("category", ""),
+            "detail": "signature",
+            "required": [[n, _spec_type(s)] for n, s in req.items()],
+            "optional": list(opt.keys()),
+            "outputs": outputs,
+        }
+        limit = 1024  # P1.1: signature <= 1KB
+    else:  # summary
+        desc = " ".join((info.get("description") or "").split())
+        if len(desc) > 120:
+            desc = desc[:117] + "..."
+        compact = {
+            "class_type": node_type,
+            "category": info.get("category", ""),
+            "detail": "summary",
+            "description": desc,
+            "required_inputs": list(req.keys()),
+            "outputs": outputs,
+        }
+        limit = 800  # P1.1: summary ~200 tokens
+
+    out = to_json(compact)
+    if len(out) > limit:
+        compact["_more"] = (
+            f"Compacted to '{detail}'. Call get_node_info with detail='full' "
+            "for defaults, tooltips, and optional-input types."
+        )
+        out = to_json(compact)
+    return out
+
+
 def _handle_get_node_info(tool_input: dict) -> str:
     node_type = tool_input.get("node_type")  # Cycle 46: guard required field
     if not node_type or not isinstance(node_type, str):
         return to_json({"error": "node_type is required and must be a non-empty string."})
+    detail = tool_input.get("detail", "summary")  # #4 progressive disclosure
+    if detail not in ("summary", "signature", "full"):
+        detail = "summary"
     all_info = _get(f"/object_info/{node_type}", timeout=10.0)
 
     info = all_info.get(node_type)
@@ -301,6 +374,11 @@ def _handle_get_node_info(tool_input: dict) -> str:
                 "error": f"Node type '{node_type}' not found.",
                 "similar_nodes": similar,
             })
+
+    # #4 progressive disclosure: compact tiers before the full build.
+    # Required inputs are never dropped at any tier (P1.1 fidelity rule).
+    if detail != "full":
+        return _node_info_tier(node_type, info, detail)
 
     result = {
         "class_type": node_type,

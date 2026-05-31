@@ -24,7 +24,9 @@ _INTELLIGENCE_MODULE_NAMES = [
     "comfy_execute", "comfy_discover", "session_tools", "workflow_templates",
     "civitai_api", "model_compat", "verify_execution", "github_releases",
     "pipeline", "image_metadata", "node_replacement", "comfy_provision",
-    "auto_wire", "provision_pipeline",
+    "auto_wire", "provision_pipeline", "canvas_bridge", "vision_cache",
+    "local_assets", "proactive_memory", "ui_api_parser", "exec_profile",
+    "output_watcher",
 ]
 _STAGE_MODULE_NAMES = [
     "provision_tools", "stage_tools", "foresight_tools",
