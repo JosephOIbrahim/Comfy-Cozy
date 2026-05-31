@@ -30,7 +30,7 @@ graph LR
 
 > **TL;DR**
 > - Plain-English co-pilot for ComfyUI. You describe the change; the agent loads workflows, swaps models, patches parameters, runs generations, evaluates output.
-> - **113 MCP tools** across **4 LLM providers** — Claude, GPT-4o, Gemini, Ollama. Swap providers with one env var.
+> - **125 MCP tools** across **4 LLM providers** — Claude, GPT-4o, Gemini, Ollama. Swap providers with one env var.
 > - Every mutation is a **reversible delta layer** (LIVRPS). Full undo stack. Nothing destructive lands without your say-so.
 > - **Experience persists.** Session 1 ships with built-in knowledge. After ~30 runs the agent starts biasing toward what's actually worked for you.
 > - Ships three ways: **inside Claude Code/Desktop (MCP)**, **standalone CLI**, **native ComfyUI sidebar**. Pick one.
@@ -64,7 +64,7 @@ graph LR
 
 ## Sponsor This Project
 
-Comfy Cozy is production software. 4,180+ tests (all mocked, runnable in under a minute) cover the 113 MCP tools that drive the workflow lifecycle end-to-end. Four LLM providers — Anthropic, OpenAI, Gemini, Ollama — sit behind a single abstraction with parity across all four. The [CHANGELOG](CHANGELOG.md) tracks active hardening and new work.
+Comfy Cozy is production software. 4,400+ tests (all mocked, runnable in under a minute) cover the 125 MCP tools that drive the workflow lifecycle end-to-end. Four LLM providers — Anthropic, OpenAI, Gemini, Ollama — sit behind a single abstraction with parity across all four. The [CHANGELOG](CHANGELOG.md) tracks active hardening and new work.
 
 If Comfy Cozy saves you time inside ComfyUI, sponsorship is the most direct way to keep it moving.
 
@@ -229,7 +229,7 @@ graph LR
 
 ## Pick Your LLM
 
-Comfy Cozy is **provider-agnostic**. Same 113 tools, same streaming, same vision analysis -- swap one env var.
+Comfy Cozy is **provider-agnostic**. Same 125 tools, same streaming, same vision analysis -- swap one env var.
 
 ### Anthropic (default)
 
@@ -310,7 +310,7 @@ All four providers share the same abstraction layer (`agent/llm/`):
 
 ```mermaid
 graph LR
-    Agent[Agent Loop<br/>113 tools] --> LLM{LLM_PROVIDER}
+    Agent[Agent Loop<br/>125 tools] --> LLM{LLM_PROVIDER}
     LLM -->|anthropic| A["Claude<br/>Streaming + Cache"]
     LLM -->|openai| B["GPT-4o<br/>Tool Calls"]
     LLM -->|gemini| C["Gemini<br/>Function Decl."]
@@ -391,7 +391,7 @@ API accepts the next request.
 
 ### A. Inside Claude Code / Claude Desktop (recommended)
 
-The agent runs as an MCP server -- Claude can use all 113 tools directly.
+The agent runs as an MCP server -- Claude can use all 125 tools directly.
 
 Add this to your Claude Code or Claude Desktop MCP config:
 
@@ -478,7 +478,7 @@ graph TB
     end
     subgraph Backend ["Agent Backend (Python)"]
         Routes["49 REST Routes<br/>+ WebSocket"]
-        Tools["113 Tools<br/>workflow -- models -- vision -- session -- provision"]
+        Tools["125 Tools<br/>workflow -- models -- vision -- session -- provision"]
         Engine["IAIEngine<br/>ComfyUIAdapter<br/>queue / interrupt / history / ws"]
         Cog["Cognitive Engine<br/>LIVRPS delta stack -- CWM -- experience"]
     end
@@ -513,7 +513,7 @@ graph TB
 
 ```mermaid
 graph LR
-    You([You]) --> Agent[113 Tools]
+    You([You]) --> Agent[125 Tools]
     Agent --> Understand[UNDERSTAND<br/>What do you have?]
     Understand --> Discover[DISCOVER<br/>What do you need?]
     Discover --> Pilot[PILOT<br/>Make the changes]
@@ -806,7 +806,7 @@ graph TB
     subgraph Foundation ["Foundation Layer"]
         DAG["Workflow Intelligence DAG<br/>6 pure computation nodes"]
         OBS["Time-Sampled State<br/>Monotonic step index"]
-        CAP["Capability Registry<br/>113 tools indexed"]
+        CAP["Capability Registry<br/>125 tools indexed"]
     end
 
     subgraph Safety ["Safety Layer"]
@@ -1090,12 +1090,12 @@ The acceptance test (`tests/embedder/test_minilm_clustering.py`) verifies the co
 
 ### Tool Inventory
 
-**113 tools reachable via the central dispatcher** (`agent/tools/__init__.py:handle()`). The dispatcher routes through TWO maps:
+**125 tools reachable via the central dispatcher** (`agent/tools/__init__.py:handle()`). The dispatcher routes through TWO maps:
 
-- `_HANDLERS` (86 entries) — tools registered via module-level `TOOLS:` lists. Loaded eagerly at import time for the intelligence + stage layers.
+- `_HANDLERS` (98 entries) — tools registered via module-level `TOOLS:` lists. Loaded eagerly at import time for the intelligence + stage layers.
 - `_BRAIN_TOOL_NAMES` (27 entries) — tools registered via `BrainAgent` SDK subclasses (`__init_subclass__` auto-registration in `agent/brain/_sdk.py`). Loaded lazily on first call when `BRAIN_ENABLED=true` to break import cycles.
 
-Sum: 86 + 27 = 113. Verify the live count with:
+Sum: 98 + 27 = 125. Verify the live count with:
 ```python
 from agent.tools import _HANDLERS, _BRAIN_TOOL_NAMES, _ensure_brain
 _ensure_brain()  # forces lazy brain registration
@@ -1104,10 +1104,10 @@ print(len(_HANDLERS) + len(_BRAIN_TOOL_NAMES))
 
 | Layer | Count | Dispatch | Highlights |
 |-------|-------|----------|------------|
-| **Intelligence** (`agent/tools/`) | 64 | TOOLS list → `_HANDLERS` | Workflow parsing, model search (CivitAI + HF + 31k nodes), delta patching, auto-wire, provisioning, execution |
+| **Intelligence** (`agent/tools/`) | 76 | TOOLS list → `_HANDLERS` | Workflow parsing, model search (CivitAI + HF + 31k nodes), delta patching, graph surgery, canvas bridge, UI→API parsing, execution profiling, auto-wire, provisioning, execution |
 | **Stage** (`agent/stage/`) | 22 | TOOLS list → `_HANDLERS` | USD cognitive state, LIVRPS composition, predictive experiments, scene composition |
 | **Brain** (`agent/brain/`) | 27 | BrainAgent SDK → `_BRAIN_TOOL_NAMES` | Vision analysis, goal planning, pattern memory, GPU optimization, artistic intent capture, iteration tracking |
-| **Total** | **113** | | |
+| **Total** | **125** | | |
 
 ### Workflow Lifecycle
 
@@ -1145,7 +1145,8 @@ agent/
                       so the agent's execution path is backend-pluggable
   embedder.py         MiniLM (all-MiniLM-L6-v2) -- 384-dim L2-normalized vectors
                       Lazy-loaded, thread-safe, opt-in via requirements.txt
-  tools/              63 tools -- workflow ops, model search, provisioning, auto-wire
+  tools/              76 tools -- workflow ops, model search, provisioning, auto-wire,
+                      graph surgery, canvas bridge, UI->API parser, execution profiling
                       workflow_patch.py wraps the cognitive engine for non-destructive PILOT
                       comfy_execute.py routes execution traffic through agent/engine/
   brain/              27 tools -- vision, planning, memory, optimization
