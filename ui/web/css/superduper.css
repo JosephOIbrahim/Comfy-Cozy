@@ -321,8 +321,13 @@
 .sd-code-inline {
   font-family: var(--sd-font-mono);
   font-size: var(--type-caption);
-  background: var(--sd-surface-3);
+  /* Use the input-field pairing (--input-text on --comfy-input-bg) — the same
+     guaranteed-contrast combo .sd-code-block uses. The prior --sd-surface-3
+     (--button-active-surface) background collided with --sd-text-1 in some
+     themes, rendering inline code as solid bars with invisible text. */
+  background: var(--sd-input-bg);
   color: var(--sd-text-1);
+  border: 1px solid var(--sd-border-2);
   padding: 1px 5px;
   border-radius: 2px;
   letter-spacing: 0.01em;
