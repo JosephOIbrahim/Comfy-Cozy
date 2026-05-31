@@ -61,6 +61,22 @@ class TestToolRegistry:
             "delete_node",
             "replace_node",
             "rewire_around",
+            # Canvas bridge (#1 push + read-back)
+            "push_workflow_to_canvas",
+            "get_canvas_state",
+            # UI->API parser (#2)
+            "parse_ui_workflow",
+            # Local assets (#7)
+            "list_assets",
+            # Vision cache (#9)
+            "analyze_image_cached",
+            # Proactive memory (#10)
+            "surface_relevant_memory",
+            # Output watcher (#8)
+            "watch_outputs_begin",
+            "watch_outputs_diff",
+            # Execution profiling (#5)
+            "get_execution_profile",
             # Execution
             "validate_before_execute",
             "execute_workflow",
@@ -193,7 +209,7 @@ class TestToolRegistry:
         )
 
     def test_total_tool_count(self):
-        assert len(ALL_TOOLS) == 116, f"Expected 116 tools, got {len(ALL_TOOLS)}"
+        assert len(ALL_TOOLS) == 125, f"Expected 125 tools, got {len(ALL_TOOLS)}"
 
     def test_brain_tool_error_returns_json(self):
         """Brain tool exceptions should be caught and returned as JSON errors."""
