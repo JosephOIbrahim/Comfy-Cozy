@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.0.0] - 2026-05-31 — The Autonomous Co-Pilot
+
 ### Added
 - **Opus 4.7 LLM upgrade**: three-tier model selection — `AGENT_MODEL` (main agent loop), `FAST_MODEL` (short triage / classification), and `VISION_MODEL` (vision tools) — each independently overridable via env, backed by canonical `_DEFAULT_AGENT_MODELS` and `_DEFAULT_FAST_MODELS` tables in `agent/config.py`. Extended thinking enabled by default on Anthropic via new `THINKING_BUDGET` (4000 tokens per agent turn) and `VISION_THINKING_BUDGET` (2000 tokens) env vars; signature-bearing `ThinkingBlock`s are replayed verbatim across multi-turn so extended-thinking + tool-use stays valid. `build_system_prompt_blocks` returns up to three structured system blocks with explicit `cache_control: ephemeral` breakpoints so Anthropic prompt caching hits across stable prefix + topical knowledge + volatile session context.
 - **Observability**: `agent/metrics.py` — Counter, Histogram, Gauge (thread-safe, pure stdlib). 7 pre-registered metrics. JSON + Prometheus text export. Tool dispatch and all 4 LLM providers instrumented with timing and counters.
