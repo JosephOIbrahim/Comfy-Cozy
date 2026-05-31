@@ -57,6 +57,10 @@ class TestToolRegistry:
             "add_node",
             "connect_nodes",
             "set_input",
+            # Graph surgery (#6 / P1.2)
+            "delete_node",
+            "replace_node",
+            "rewire_around",
             # Execution
             "validate_before_execute",
             "execute_workflow",
@@ -189,7 +193,7 @@ class TestToolRegistry:
         )
 
     def test_total_tool_count(self):
-        assert len(ALL_TOOLS) == 113, f"Expected 113 tools, got {len(ALL_TOOLS)}"
+        assert len(ALL_TOOLS) == 116, f"Expected 116 tools, got {len(ALL_TOOLS)}"
 
     def test_brain_tool_error_returns_json(self):
         """Brain tool exceptions should be caught and returned as JSON errors."""
