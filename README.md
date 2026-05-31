@@ -123,7 +123,7 @@ One command. No build step. No Docker. No conda. Just pip.
 <summary>Want the test suite too? (optional, click to expand)</summary>
 
 ```bash
-pip install -e ".[dev]"           # + 4,100+ passing tests
+pip install -e ".[dev]"           # + 4,400+ passing tests
 pip install -e ".[dev,stage]"     # + USD stage subsystem (~200MB, most users skip)
 ```
 
@@ -224,6 +224,52 @@ graph LR
 **Both symlinks are required:**
 - **`comfy-cozy-panel`** -- Canvas sync bridge (runs headlessly -- keeps the agent in sync with your live graph)
 - **`comfy-cozy-ui`** -- The visible sidebar: chat window, quick actions, status
+
+---
+
+## Optional: the Agent Bridge node pack (live canvas + render timing)
+
+Want the agent to **load workflows straight onto your canvas**, **see the edits you make by hand**, and **tell you exactly which node ate your render time**? Install the one extra node pack. It's optional -- everything else works without it -- but it unlocks three things ComfyUI's stock API can't give the agent.
+
+```mermaid
+graph LR
+    Agent[Comfy Cozy] -->|"push_workflow_to_canvas"| Push["POST /agent/push_workflow"]
+    Push --> Canvas["Your ComfyUI canvas<br/>(every open tab reloads)"]
+    Canvas -->|"you hand-edit a node"| Buf["POST /agent/canvas_changed"]
+    Buf -->|"get_canvas_state"| Agent
+    Render["Your render finishes"] -->|"per-node timing"| Prof["GET /agent/exec_profile/{id}"]
+    Prof -->|"get_execution_profile"| Agent
+
+    classDef orange fill:#d99458,color:#1a1a1a,stroke:#1a1a1a
+    classDef yellow fill:#d9c958,color:#1a1a1a,stroke:#1a1a1a
+    class Canvas,Render orange
+    class Agent,Push,Buf,Prof yellow
+```
+
+**What you get:**
+- *"Load my portrait workflow onto the canvas"* -- it appears in your browser, no file juggling
+- *"What did I just change?"* -- the agent reads your hand edits back off the canvas
+- *"Why was that render slow?"* -- real per-node timing, so optimization stops being guesswork
+
+**Install (one symlink, then restart):**
+
+**Windows (run as Administrator):**
+
+```cmd
+cd C:\path\to\ComfyUI\custom_nodes
+mklink /D comfy_agent_bridge C:\path\to\Comfy-Cozy\node_pack\comfy_agent_bridge
+```
+
+**Linux / macOS:**
+
+```bash
+cd /path/to/ComfyUI/custom_nodes
+ln -s /path/to/Comfy-Cozy/node_pack/comfy_agent_bridge comfy_agent_bridge
+```
+
+Restart ComfyUI. You'll see `comfy_agent_bridge: routes registered` in the log -- that's it. If a bridge feature ever returns a "node pack not installed" message, it means ComfyUI needs a restart to pick the pack up.
+
+> **Under the hood:** these three routes are covered by a live contract test suite (`tests/integration/test_bridge_routes_integration.py`) that boots against a real ComfyUI and asserts each route answers correctly -- so "installed but silently broken" can't slip through. Run it with `python -m pytest tests/integration/test_bridge_routes_integration.py -v` while ComfyUI is running.
 
 ---
 
@@ -1174,8 +1220,9 @@ panel/
   __init__.py         WEB_DIRECTORY + route registration + sys.path injection
   server/routes.py    49 REST routes -- full tool surface
   web/js/             Headless canvas↔agent bridge (no visible UI -- sidebar is primary)
-tests/                4,100+ passing tests, all mocked, ~60s
+tests/                4,400+ passing tests, all mocked, ~60s
   integration/        Skips cleanly when ComfyUI not running
+                      test_bridge_routes_integration.py -- live agent<->node-pack seam
 ```
 
 ### Production Hardening
@@ -1257,7 +1304,7 @@ All settings live in your `.env` file:
 No ComfyUI needed -- everything is mocked:
 
 ```bash
-python -m pytest tests/ -v        # 4,100+ passing tests, ~70s
+python -m pytest tests/ -v        # 4,400+ passing tests, ~70s
 
 # Skip tests that require a real ComfyUI server or API keys
 python -m pytest tests/ -v -m "not integration"
