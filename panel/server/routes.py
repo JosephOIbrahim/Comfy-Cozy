@@ -25,6 +25,7 @@ def _tool_call(tool_name, tool_input):
     """
     from agent._conn_ctx import current_conn_session
     from agent.tools import handle
+
     return handle(tool_name, tool_input, session_id=current_conn_session())
 
 
@@ -44,6 +45,7 @@ def setup_routes():
     """Mount panel routes on PromptServer."""
     try:
         from server import PromptServer
+
         routes = PromptServer.instance.routes
     except Exception:
         log.debug("PromptServer not available — routes not mounted")
@@ -76,6 +78,7 @@ def setup_routes():
             if rejected:
                 return rejected
             from agent.tools.workflow_patch import get_current_workflow, get_engine
+
             workflow = get_current_workflow()
             engine = get_engine()
 
@@ -93,13 +96,15 @@ def setup_routes():
                 ok, errors = engine.verify_stack_integrity()
                 result["integrity"] = {"intact": ok, "errors": errors}
                 for delta in engine.delta_stack:
-                    result["deltas"].append({
-                        "layer_id": delta.layer_id,
-                        "opinion": delta.opinion,
-                        "description": delta.description,
-                        "timestamp": delta.timestamp,
-                        "mutations": delta.mutations,
-                    })
+                    result["deltas"].append(
+                        {
+                            "layer_id": delta.layer_id,
+                            "opinion": delta.opinion,
+                            "description": delta.description,
+                            "timestamp": delta.timestamp,
+                            "mutations": delta.mutations,
+                        }
+                    )
 
             if workflow:
                 for nid, ndata in sorted(workflow.items()):
@@ -128,10 +133,63 @@ def setup_routes():
             if rejected:
                 return rejected
             from agent.tools.workflow_patch import get_current_workflow
+
             workflow = get_current_workflow()
             if workflow is None:
                 return web.json_response({"error": "No workflow loaded"}, status=404)
             return web.json_response({"workflow": workflow})
+        except Exception as e:
+            log.error("Route %s error: %s", request.path, e, exc_info=True)
+            return web.json_response({"error": "Internal server error"}, status=500)
+
+    @routes.get("/comfy-cozy/get-workflow-api-with-touched")
+    async def get_workflow_api_with_touched(request):
+        """Return the current agent workflow + the touched-set delta.
+
+        The touched-set lists only the inputs the agent has changed since
+        the last successful push — used by pushAgentToCanvas to avoid
+        clobbering director-edited slots (write-back v1, L-1).
+        """
+        try:
+            rejected = _guard(request, "read")
+            if rejected:
+                return rejected
+            from agent._conn_ctx import current_conn_session
+            from agent.tools.workflow_patch import get_current_workflow
+            from .touched import compute_touched
+
+            workflow = get_current_workflow()
+            if workflow is None:
+                return web.json_response({"error": "No workflow loaded"}, status=404)
+            session_id = current_conn_session()
+            touched = compute_touched(session_id, workflow)
+            return web.json_response({"workflow": workflow, "touched": touched})
+        except Exception as e:
+            log.error("Route %s error: %s", request.path, e, exc_info=True)
+            return web.json_response({"error": "Internal server error"}, status=500)
+
+    @routes.post("/comfy-cozy/ack-push")
+    async def ack_push(request):
+        """Acknowledge a successful push from the panel.
+
+        Snapshots the current workflow as the new last-pushed baseline.
+        Subsequent compute_touched calls diff against this snapshot
+        (write-back v1, L-1).
+        """
+        try:
+            rejected = _guard(request, "mutation")
+            if rejected:
+                return rejected
+            from agent._conn_ctx import current_conn_session
+            from agent.tools.workflow_patch import get_current_workflow
+            from .touched import record_last_pushed
+
+            workflow = get_current_workflow()
+            if workflow is None:
+                return web.json_response({"error": "No workflow loaded"}, status=404)
+            session_id = current_conn_session()
+            record_last_pushed(session_id, workflow)
+            return web.json_response({"ok": True})
         except Exception as e:
             log.error("Route %s error: %s", request.path, e, exc_info=True)
             return web.json_response({"error": "Internal server error"}, status=500)
@@ -169,16 +227,26 @@ def setup_routes():
             source = body.get("source", "<panel>")
 
             from agent.tools.workflow_patch import load_workflow_from_data
+
             err = load_workflow_from_data(workflow_data, source=source)
             if err:
                 return web.json_response({"error": err}, status=400)
+
+            # L-1: snapshot the freshly-loaded workflow as the
+            # last-pushed baseline for this session (write-back v1).
+            try:
+                from agent._conn_ctx import current_conn_session
+                from .touched import record_last_pushed
+
+                record_last_pushed(current_conn_session(), workflow_data)
+            except Exception:
+                log.debug("touched.record_last_pushed failed on load", exc_info=True)
 
             result = {"loaded": True}
 
             # Count nodes for context
             nodes = {
-                k: v for k, v in workflow_data.items()
-                if isinstance(v, dict) and "class_type" in v
+                k: v for k, v in workflow_data.items() if isinstance(v, dict) and "class_type" in v
             }
             result["node_count"] = len(nodes)
 
@@ -186,6 +254,7 @@ def setup_routes():
             try:
                 missing_json = _tool_call("find_missing_nodes", {})
                 import json as _json
+
                 missing_data = _json.loads(missing_json)
                 missing = missing_data.get("missing", [])
                 if missing:
@@ -280,6 +349,18 @@ def setup_routes():
             if rejected:
                 return rejected
             result = _tool_call("reset_workflow", {})
+            # L-1: snapshot the post-reset workflow as the last-pushed
+            # baseline (write-back v1).
+            try:
+                from agent._conn_ctx import current_conn_session
+                from agent.tools.workflow_patch import get_current_workflow
+                from .touched import record_last_pushed
+
+                post_reset = get_current_workflow()
+                if post_reset is not None:
+                    record_last_pushed(current_conn_session(), post_reset)
+            except Exception:
+                log.debug("touched.record_last_pushed failed on reset", exc_info=True)
             return web.Response(text=result, content_type="application/json")
         except Exception as e:
             log.error("Route %s error: %s", request.path, e, exc_info=True)
@@ -408,18 +489,21 @@ def setup_routes():
                 return rejected
             from cognitive.experience.accumulator import ExperienceAccumulator
             from agent.config import EXPERIENCE_FILE
+
             try:
                 acc = ExperienceAccumulator.load(str(EXPERIENCE_FILE))
             except Exception:
                 acc = ExperienceAccumulator()
             return web.json_response(acc.get_stats())
         except ImportError:
-            return web.json_response({
-                "total_generations": 0,
-                "learning_phase": "prior",
-                "experience_weight": 0,
-                "message": "Cognitive module not available",
-            })
+            return web.json_response(
+                {
+                    "total_generations": 0,
+                    "learning_phase": "prior",
+                    "experience_weight": 0,
+                    "message": "Cognitive module not available",
+                }
+            )
         except Exception as e:
             log.error("Route %s error: %s", request.path, e, exc_info=True)
             return web.json_response({"error": "Internal server error"}, status=500)
@@ -430,10 +514,12 @@ def setup_routes():
         rejected = _guard(request, "read")
         if rejected:
             return rejected
-        return web.json_response({
-            "status": "idle",
-            "message": "No autoresearch run active",
-        })
+        return web.json_response(
+            {
+                "status": "idle",
+                "message": "No autoresearch run active",
+            }
+        )
 
     # ── Discovery ─────────────────────────────────────────────────
 
@@ -846,6 +932,7 @@ def setup_routes():
     # ── Chat WebSocket ─────────────────────────────────────────────
     try:
         from .chat import websocket_handler as chat_ws_handler
+
         routes.get("/comfy-cozy/ws")(chat_ws_handler)
     except Exception as e:
         log.debug("Chat WebSocket not available: %s", e)

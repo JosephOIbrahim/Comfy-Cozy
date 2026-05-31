@@ -1,5 +1,11 @@
 /* ── GRAPH Mode — Workflow Inspector ────────────────────────────── */
 
+import {
+  getDeltaFailures,
+  clearDeltaFailures,
+  deltaFailureCount,
+} from "./_deltaFailures.js";
+
 export function createGraphMode(container, client) {
   const statusBar = _createStatusBar(container, client);
   container.appendChild(statusBar);
@@ -387,6 +393,19 @@ async function _refreshStatusBar(bar, client) {
         });
       }
     }
+
+    // ── Delta-failure entries (write-back v1, L-7) ──────────────
+    const failureCount = deltaFailureCount();
+    if (failureCount > 0) {
+      warnings.push({
+        text: `${failureCount} delta${failureCount > 1 ? "s" : ""} not applied`,
+        action: "Details",
+        handler: () => _showDeltaFailureModal(getDeltaFailures(), () => {
+          clearDeltaFailures();
+          _refreshStatusBar(bar, client);
+        }),
+      });
+    }
   } catch {
     // Network error — skip status bar
   }
@@ -423,4 +442,63 @@ async function _refreshStatusBar(bar, client) {
 
     bar.appendChild(row);
   }
+}
+
+/* ── Delta-failure modal (write-back v1, L-7) ────────────────────── */
+
+function _showDeltaFailureModal(entries, onClose) {
+  const overlay = document.createElement("div");
+  overlay.style.cssText =
+    "position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9999;" +
+    "display:flex;align-items:center;justify-content:center;";
+
+  const panel = document.createElement("div");
+  panel.style.cssText =
+    "background:var(--cz-surface,#1e1e1e);color:var(--cz-text,#eee);" +
+    "padding:var(--cz-5,16px);border-radius:var(--cz-r,6px);" +
+    "max-width:600px;max-height:80vh;overflow:auto;" +
+    "font-family:var(--cz-mono,monospace);font-size:12px;";
+
+  const title = document.createElement("h3");
+  title.textContent = `${entries.length} delta${entries.length > 1 ? "s" : ""} not applied`;
+  title.style.cssText = "margin:0 0 var(--cz-3,8px) 0;font-size:14px;";
+  panel.appendChild(title);
+
+  const list = document.createElement("div");
+  list.style.cssText = "display:flex;flex-direction:column;gap:var(--cz-2,4px);";
+  for (const entry of entries) {
+    const row = document.createElement("div");
+    row.style.cssText =
+      "padding:var(--cz-2,4px);background:rgba(255,255,255,0.05);" +
+      "border-radius:3px;word-break:break-all;";
+    const parts = [`[${entry.type}]`];
+    if (entry.node_id !== undefined) parts.push(`node=${entry.node_id}`);
+    if (entry.input_name) parts.push(`input=${entry.input_name}`);
+    if (entry.class_type) parts.push(`class=${entry.class_type}`);
+    if (entry.reason) parts.push(`reason=${entry.reason}`);
+    if (entry.raw_value !== undefined) parts.push(`raw=${JSON.stringify(entry.raw_value)}`);
+    row.textContent = parts.join(" ");
+    list.appendChild(row);
+  }
+  panel.appendChild(list);
+
+  const closeBtn = document.createElement("button");
+  closeBtn.className = "sdp-btn";
+  closeBtn.textContent = "Close";
+  closeBtn.style.cssText = "margin-top:var(--cz-3,8px);";
+  closeBtn.addEventListener("click", () => {
+    overlay.remove();
+    if (onClose) onClose();
+  });
+  panel.appendChild(closeBtn);
+
+  overlay.addEventListener("click", (e) => {
+    if (e.target === overlay) {
+      overlay.remove();
+      if (onClose) onClose();
+    }
+  });
+
+  overlay.appendChild(panel);
+  document.body.appendChild(overlay);
 }

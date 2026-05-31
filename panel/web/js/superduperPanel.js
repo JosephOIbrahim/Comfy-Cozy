@@ -11,6 +11,8 @@
 
 import { app } from "../../../scripts/app.js";
 import { AgentClient } from "./agentClient.js";
+import { debounce } from "./_pushControl.js";
+import { runPushAgentToCanvas } from "./_pushOrchestrator.js";
 
 const client = new AgentClient();
 
@@ -92,29 +94,10 @@ async function setupCanvasSync() {
  * differ; connections (arrays) are left untouched.
  */
 async function pushAgentToCanvas() {
-  try {
-    const workflow = await client.getWorkflowApi();
-    if (!workflow || !app.graph) return;
-
-    for (const [nodeId, nodeData] of Object.entries(workflow)) {
-      if (!nodeData || !nodeData.inputs) continue;
-      const node = app.graph.getNodeById(parseInt(nodeId, 10));
-      if (!node || !node.widgets) continue;
-
-      for (const widget of node.widgets) {
-        const apiValue = nodeData.inputs[widget.name];
-        if (apiValue !== undefined && !Array.isArray(apiValue)) {
-          if (widget.value !== apiValue) {
-            widget.value = apiValue;
-          }
-        }
-      }
-    }
-
-    app.canvas.setDirty(true, true);
-  } catch (e) {
-    console.debug("[Comfy Cozy] Canvas push failed:", e);
-  }
+  // Full pipeline composed in _pushOrchestrator.runPushAgentToCanvas.
+  // Extracted for PASS-5-proxy testability (vi.fn() stubs for client and
+  // fake app). Production wires the host app import + AgentClient.
+  return runPushAgentToCanvas(app, client);
 }
 
 /**
@@ -135,8 +118,13 @@ function highlightNode(nodeId) {
   }, 600);
 }
 
+// L-6: debounce rapid workflow-changed events. 100 ms window coalesces
+// bursts (e.g., the agent emitting several connect_nodes deltas in rapid
+// succession) into a single push. F-5 mitigation.
+const _debouncedPushAgentToCanvas = debounce(pushAgentToCanvas, 100);
+
 document.addEventListener("comfy-cozy:workflow-changed", () => {
-  pushAgentToCanvas();
+  _debouncedPushAgentToCanvas();
 });
 
 document.addEventListener("comfy-cozy:node_touch", (e) => {

@@ -1,0 +1,551 @@
+import { describe, it, expect, beforeEach } from "vitest";
+import {
+  makeFakeNode,
+  makeFakeGraph,
+  makeFakeApp,
+} from "./_stubs/litegraph.js";
+import { applyTouchedSet } from "../../panel/web/js/_pushApplyTouched.js";
+import {
+  getDeltaFailures,
+  clearDeltaFailures,
+} from "../../panel/web/js/_deltaFailures.js";
+
+/**
+ * Canvas fixture: nodes 5 (KSampler with cfg+steps widgets) and 9
+ * (VAEDecode with samples widget). The server workflow that MATCHES
+ * this canvas is `wfBase()` — tests that don't want to trigger Tier-3
+ * detect pass this; tests that DO want Tier-3 build a different shape.
+ */
+const wfBase = () => ({
+  "5": { class_type: "KSampler", inputs: {} },
+  "9": { class_type: "VAEDecode", inputs: {} },
+});
+
+describe("applyTouchedSet — L-2 widget apply + L-3/L-4/L-5 surfacing", () => {
+  let node5;
+  let node9;
+  let graph;
+  let app;
+
+  beforeEach(() => {
+    clearDeltaFailures();
+    node5 = makeFakeNode(5, {
+      widgets: [
+        { name: "cfg", value: 7.0 },
+        { name: "steps", value: 20 },
+      ],
+    });
+    node9 = makeFakeNode(9, {
+      widgets: [{ name: "samples", value: null }],
+    });
+    graph = makeFakeGraph({ 5: node5, 9: node9 });
+    app = makeFakeApp(graph);
+  });
+
+  /* ───── L-2 baseline ─────────────────────────────────────────────── */
+
+  it("empty touched is a no-op", () => {
+    applyTouchedSet(app, wfBase(), []);
+    expect(node5.widgets[0].value).toBe(7.0);
+    expect(getDeltaFailures()).toEqual([]);
+  });
+
+  it("widget entry writes widget.value", () => {
+    applyTouchedSet(app, wfBase(), [
+      { node_id: "5", input_name: "cfg", kind: "widget", new_value: 8.0 },
+    ]);
+    expect(node5.widgets[0].value).toBe(8.0);
+    expect(getDeltaFailures()).toEqual([]);
+  });
+
+  it("widget entry where value already equal is a no-op", () => {
+    applyTouchedSet(app, wfBase(), [
+      { node_id: "5", input_name: "cfg", kind: "widget", new_value: 7.0 },
+    ]);
+    expect(node5.widgets[0].value).toBe(7.0);
+    expect(getDeltaFailures()).toEqual([]);
+  });
+
+  it("multiple widget entries applied in order", () => {
+    applyTouchedSet(app, wfBase(), [
+      { node_id: "5", input_name: "cfg", kind: "widget", new_value: 8.0 },
+      { node_id: "5", input_name: "steps", kind: "widget", new_value: 25 },
+    ]);
+    expect(node5.widgets[0].value).toBe(8.0);
+    expect(node5.widgets[1].value).toBe(25);
+    expect(getDeltaFailures()).toEqual([]);
+  });
+
+  /* ───── L-3: ID parse failure surfacing ──────────────────────────── */
+
+  describe("L-3 ID parse failures", () => {
+    it("non-numeric node id surfaces malformed (widget)", () => {
+      applyTouchedSet(app, wfBase(), [
+        {
+          node_id: "my-node",
+          input_name: "cfg",
+          kind: "widget",
+          new_value: 8.0,
+        },
+      ]);
+      const failures = getDeltaFailures();
+      expect(failures).toHaveLength(1);
+      expect(failures[0]).toMatchObject({
+        type: "malformed",
+        node_id: "my-node",
+        input_name: "cfg",
+        reason: "non-numeric node id",
+      });
+      expect(node5.widgets[0].value).toBe(7.0);
+    });
+
+    it("non-numeric node id surfaces malformed (link)", () => {
+      applyTouchedSet(app, wfBase(), [
+        {
+          node_id: "subgraph:0",
+          input_name: "samples",
+          kind: "link",
+          new_value: ["7", 0],
+        },
+      ]);
+      const failures = getDeltaFailures();
+      expect(failures).toHaveLength(1);
+      expect(failures[0].type).toBe("malformed");
+      expect(failures[0].reason).toBe("non-numeric node id");
+    });
+
+    it("empty string node id surfaces malformed", () => {
+      applyTouchedSet(app, wfBase(), [
+        { node_id: "", input_name: "x", kind: "widget", new_value: 1 },
+      ]);
+      expect(getDeltaFailures()[0].type).toBe("malformed");
+    });
+
+    it("null node id surfaces malformed", () => {
+      applyTouchedSet(app, wfBase(), [
+        { node_id: null, input_name: "x", kind: "widget", new_value: 1 },
+      ]);
+      expect(getDeltaFailures()[0].type).toBe("malformed");
+    });
+
+    it("numeric string '42' passes parse and applies", () => {
+      const node42 = makeFakeNode(42, {
+        widgets: [{ name: "x", value: 0 }],
+      });
+      graph._nodesById[42] = node42;
+      const wf = wfBase();
+      wf["42"] = { class_type: "Some", inputs: {} };
+      applyTouchedSet(app, wf, [
+        { node_id: "42", input_name: "x", kind: "widget", new_value: 9 },
+      ]);
+      expect(getDeltaFailures()).toEqual([]);
+      expect(node42.widgets[0].value).toBe(9);
+    });
+  });
+
+  /* ───── L-4: Tier-3 detection (top-level) ────────────────────────── */
+
+  describe("L-4 Tier-3 detection", () => {
+    it("server-only node surfaces tier3_add", () => {
+      const wf = wfBase();
+      wf["12"] = { class_type: "LatentUpscale", inputs: {} };
+      applyTouchedSet(app, wf, []);
+      const failures = getDeltaFailures();
+      expect(failures).toHaveLength(1);
+      expect(failures[0]).toMatchObject({
+        type: "tier3_add",
+        node_id: "12",
+        class_type: "LatentUpscale",
+      });
+    });
+
+    it("canvas-only node surfaces tier3_delete", () => {
+      // server has only node 5; canvas has 5 and 9 → 9 is canvas-only
+      const wf = { "5": { class_type: "KSampler", inputs: {} } };
+      applyTouchedSet(app, wf, []);
+      const failures = getDeltaFailures();
+      expect(failures).toHaveLength(1);
+      expect(failures[0]).toMatchObject({
+        type: "tier3_delete",
+        node_id: "9",
+      });
+    });
+
+    it("Tier-3 add + delete coexist", () => {
+      // server has 5 and 12; canvas has 5 and 9 → 12 is add, 9 is delete
+      const wf = {
+        "5": { class_type: "KSampler", inputs: {} },
+        "12": { class_type: "LatentUpscale", inputs: {} },
+      };
+      applyTouchedSet(app, wf, []);
+      const types = getDeltaFailures()
+        .map((f) => f.type)
+        .sort();
+      expect(types).toEqual(["tier3_add", "tier3_delete"]);
+    });
+
+    it("touched entry on Tier-3 node is skipped in main loop", () => {
+      const wf = wfBase();
+      wf["12"] = { class_type: "LatentUpscale", inputs: {} };
+      applyTouchedSet(app, wf, [
+        { node_id: "12", input_name: "x", kind: "widget", new_value: 1 },
+      ]);
+      const failures = getDeltaFailures();
+      const tier3 = failures.filter((f) => f.type === "tier3_add");
+      const stale = failures.filter((f) => f.type === "stale_node_ref");
+      expect(tier3).toHaveLength(1);
+      expect(stale).toHaveLength(0);
+    });
+  });
+
+  describe("L-4 per-touched stale node ref", () => {
+    it("touched entry for missing node (not in workflow either) surfaces stale_node_ref", () => {
+      // wfBase has 5 and 9; touched references 99 — not in workflow,
+      // not on canvas — purely stale agent reference.
+      applyTouchedSet(app, wfBase(), [
+        { node_id: "99", input_name: "cfg", kind: "widget", new_value: 8.0 },
+      ]);
+      const failures = getDeltaFailures();
+      expect(failures).toHaveLength(1);
+      expect(failures[0].type).toBe("stale_node_ref");
+      expect(node5.widgets[0].value).toBe(7.0);
+    });
+  });
+
+  /* ───── L-5: missing-slot + unknown-kind ─────────────────────────── */
+
+  describe("L-5 missing-slot + unknown-kind", () => {
+    it("widget entry for missing input name surfaces missing_slot", () => {
+      applyTouchedSet(app, wfBase(), [
+        {
+          node_id: "5",
+          input_name: "nonexistent",
+          kind: "widget",
+          new_value: 8.0,
+        },
+      ]);
+      const failures = getDeltaFailures();
+      expect(failures).toHaveLength(1);
+      expect(failures[0]).toMatchObject({
+        type: "missing_slot",
+        node_id: "5",
+        input_name: "nonexistent",
+        reason: "widget not found",
+      });
+      expect(node5.widgets[0].value).toBe(7.0);
+    });
+
+    it("widget entry on node with null widgets array surfaces missing_slot", () => {
+      const node10 = makeFakeNode(10);
+      node10.widgets = null;
+      graph._nodesById[10] = node10;
+      const wf = wfBase();
+      wf["10"] = { class_type: "Some", inputs: {} };
+      applyTouchedSet(app, wf, [
+        { node_id: "10", input_name: "x", kind: "widget", new_value: 1 },
+      ]);
+      const failures = getDeltaFailures();
+      expect(failures).toHaveLength(1);
+      expect(failures[0].type).toBe("missing_slot");
+      expect(failures[0].reason).toBe("node has no widgets");
+    });
+
+    it("unknown kind surfaces malformed", () => {
+      applyTouchedSet(app, wfBase(), [
+        {
+          node_id: "5",
+          input_name: "cfg",
+          kind: "unknown",
+          new_value: 8.0,
+        },
+      ]);
+      const failures = getDeltaFailures();
+      expect(failures).toHaveLength(1);
+      expect(failures[0]).toMatchObject({
+        type: "malformed",
+        node_id: "5",
+        input_name: "cfg",
+        raw_value: 8.0,
+      });
+      expect(failures[0].reason).toContain("unknown");
+    });
+  });
+
+  /* ───── L-8: link apply via LiteGraph ────────────────────────────── */
+
+  describe("L-8 link apply (connect/disconnect)", () => {
+    let n5, n7, n8, n9;
+    let g, a;
+    const wfLink = () => ({
+      "5": { class_type: "KSampler", inputs: {} },
+      "7": { class_type: "CLIPTextEncode", inputs: {} },
+      "8": { class_type: "CLIPTextEncode", inputs: {} },
+      "9": { class_type: "VAEDecode", inputs: {} },
+    });
+
+    beforeEach(() => {
+      clearDeltaFailures();
+      n5 = makeFakeNode(5);
+      n7 = makeFakeNode(7);
+      n8 = makeFakeNode(8);
+      n9 = makeFakeNode(9);
+      g = makeFakeGraph({ 5: n5, 7: n7, 8: n8, 9: n9 });
+      a = makeFakeApp(g);
+    });
+
+    it("connect: old null + new link → fromNode.connect called", () => {
+      applyTouchedSet(a, wfLink(), [
+        {
+          node_id: "9",
+          input_name: "samples",
+          kind: "link",
+          old_value: null,
+          new_value: ["7", 0],
+        },
+      ]);
+      expect(n7._calls.connect).toHaveLength(1);
+      expect(n7._calls.connect[0]).toEqual({
+        outputSlot: 0,
+        targetNode: n9,
+        targetSlot: "samples",
+      });
+      expect(n9._calls.disconnectInput).toEqual([]);
+      expect(getDeltaFailures()).toEqual([]);
+    });
+
+    it("disconnect: old link + new null → toNode.disconnectInput called", () => {
+      applyTouchedSet(a, wfLink(), [
+        {
+          node_id: "9",
+          input_name: "samples",
+          kind: "link",
+          old_value: ["7", 0],
+          new_value: null,
+        },
+      ]);
+      expect(n9._calls.disconnectInput).toEqual(["samples"]);
+      expect(n7._calls.connect).toEqual([]);
+      expect(getDeltaFailures()).toEqual([]);
+    });
+
+    it("reconnect: old link A + new link B → disconnect then connect", () => {
+      applyTouchedSet(a, wfLink(), [
+        {
+          node_id: "9",
+          input_name: "samples",
+          kind: "link",
+          old_value: ["7", 0],
+          new_value: ["8", 0],
+        },
+      ]);
+      expect(n9._calls.disconnectInput).toEqual(["samples"]);
+      expect(n8._calls.connect).toHaveLength(1);
+      expect(n8._calls.connect[0]).toEqual({
+        outputSlot: 0,
+        targetNode: n9,
+        targetSlot: "samples",
+      });
+      expect(n7._calls.connect).toEqual([]);
+      expect(getDeltaFailures()).toEqual([]);
+    });
+
+    it("same link (old === new) is a no-op", () => {
+      applyTouchedSet(a, wfLink(), [
+        {
+          node_id: "9",
+          input_name: "samples",
+          kind: "link",
+          old_value: ["7", 0],
+          new_value: ["7", 0],
+        },
+      ]);
+      expect(n9._calls.disconnectInput).toEqual([]);
+      expect(n7._calls.connect).toEqual([]);
+      expect(getDeltaFailures()).toEqual([]);
+    });
+
+    it("from-node not on canvas surfaces stale_node_ref", () => {
+      applyTouchedSet(a, wfLink(), [
+        {
+          node_id: "9",
+          input_name: "samples",
+          kind: "link",
+          old_value: null,
+          new_value: ["99", 0],
+        },
+      ]);
+      const failures = getDeltaFailures();
+      expect(failures).toHaveLength(1);
+      expect(failures[0].type).toBe("stale_node_ref");
+      expect(failures[0].node_id).toBe("99");
+      expect(failures[0].reason).toBe("from-node not present on canvas");
+    });
+
+    it("from-node parse failure surfaces malformed", () => {
+      applyTouchedSet(a, wfLink(), [
+        {
+          node_id: "9",
+          input_name: "samples",
+          kind: "link",
+          old_value: null,
+          new_value: ["my-node", 0],
+        },
+      ]);
+      const failures = getDeltaFailures();
+      expect(failures[0].type).toBe("malformed");
+      expect(failures[0].reason).toBe("non-numeric from-node id");
+    });
+
+    it("disconnectInput returning false surfaces link_rejected", () => {
+      const n9bad = makeFakeNode(9, { disconnectInputReturns: false });
+      g._nodesById[9] = n9bad;
+      applyTouchedSet(a, wfLink(), [
+        {
+          node_id: "9",
+          input_name: "samples",
+          kind: "link",
+          old_value: ["7", 0],
+          new_value: null,
+        },
+      ]);
+      const failures = getDeltaFailures();
+      expect(failures[0].type).toBe("link_rejected");
+      expect(failures[0].reason).toBe("disconnectInput returned falsy");
+    });
+
+    it("fromNode.connect returning false surfaces link_rejected", () => {
+      const n7bad = makeFakeNode(7, { connectReturns: false });
+      g._nodesById[7] = n7bad;
+      applyTouchedSet(a, wfLink(), [
+        {
+          node_id: "9",
+          input_name: "samples",
+          kind: "link",
+          old_value: null,
+          new_value: ["7", 0],
+        },
+      ]);
+      const failures = getDeltaFailures();
+      expect(failures[0].type).toBe("link_rejected");
+      expect(failures[0].reason).toBe("from-node connect returned falsy");
+    });
+
+    it("multiple link entries applied independently", () => {
+      applyTouchedSet(a, wfLink(), [
+        {
+          node_id: "9",
+          input_name: "samples",
+          kind: "link",
+          old_value: null,
+          new_value: ["7", 0],
+        },
+        {
+          node_id: "5",
+          input_name: "model",
+          kind: "link",
+          old_value: null,
+          new_value: ["8", 0],
+        },
+      ]);
+      expect(n7._calls.connect).toHaveLength(1);
+      expect(n8._calls.connect).toHaveLength(1);
+      expect(getDeltaFailures()).toEqual([]);
+    });
+
+    it("F-1 with link: untouched widget on neighbour node survives", () => {
+      n5.widgets = [{ name: "cfg", value: 8.0 }];
+      applyTouchedSet(a, wfLink(), [
+        {
+          node_id: "9",
+          input_name: "samples",
+          kind: "link",
+          old_value: null,
+          new_value: ["7", 0],
+        },
+      ]);
+      expect(n5.widgets[0].value).toBe(8.0); // director's edit preserved
+      expect(n7._calls.connect).toHaveLength(1); // agent's link applied
+    });
+
+    it("malformed link shape in new_value (length 1) treated as no-op (needsConnect=false)", () => {
+      // entry.kind would normally be "unknown" from the server when the
+      // shape is wrong (per L-1 _classify). If a non-conforming link
+      // slips through with kind="link", the connect-side guard catches:
+      // _isLink([0]) is false → no connect attempted.
+      applyTouchedSet(a, wfLink(), [
+        {
+          node_id: "9",
+          input_name: "samples",
+          kind: "link",
+          old_value: null,
+          new_value: ["7"], // length 1, _isLink returns false
+        },
+      ]);
+      expect(n7._calls.connect).toEqual([]);
+      // No connect, no disconnect (old is null too) → no-op. No failure
+      // either, because the touched-set itself didn't request a change.
+      expect(getDeltaFailures()).toEqual([]);
+    });
+  });
+
+  /* ───── F-1 scenarios (P2 preservation) ──────────────────────────── */
+
+  describe("F-1 director-edit survival", () => {
+    it("director-edited untouched neighbour survives (link touch)", () => {
+      node5.widgets[0].value = 8.0; // director's edit on canvas
+      applyTouchedSet(app, wfBase(), [
+        {
+          node_id: "9",
+          input_name: "samples",
+          kind: "link",
+          new_value: ["7", 0],
+        },
+      ]);
+      expect(node5.widgets[0].value).toBe(8.0);
+      expect(node5.widgets[1].value).toBe(20);
+    });
+
+    it("director-edited sibling widget survives (widget touch)", () => {
+      node5.widgets[1].value = 30; // director edited steps
+      applyTouchedSet(app, wfBase(), [
+        { node_id: "5", input_name: "cfg", kind: "widget", new_value: 8.0 },
+      ]);
+      expect(node5.widgets[0].value).toBe(8.0);
+      expect(node5.widgets[1].value).toBe(30);
+    });
+  });
+
+  /* ───── safety / null-input ──────────────────────────────────────── */
+
+  describe("safety", () => {
+    it("handles null app/graph gracefully", () => {
+      expect(() => applyTouchedSet(null, wfBase(), [])).not.toThrow();
+      expect(() => applyTouchedSet({ graph: null }, wfBase(), [])).not.toThrow();
+      expect(() => applyTouchedSet({}, wfBase(), [])).not.toThrow();
+    });
+
+    it("handles non-array touched gracefully", () => {
+      expect(() => applyTouchedSet(app, wfBase(), null)).not.toThrow();
+      expect(() => applyTouchedSet(app, wfBase(), undefined)).not.toThrow();
+      expect(() => applyTouchedSet(app, wfBase(), "not-array")).not.toThrow();
+      expect(() => applyTouchedSet(app, wfBase(), {})).not.toThrow();
+      expect(node5.widgets[0].value).toBe(7.0);
+    });
+
+    it("handles entries that are not plain objects", () => {
+      expect(() =>
+        applyTouchedSet(app, wfBase(), [null, undefined, "string", 42])
+      ).not.toThrow();
+      expect(node5.widgets[0].value).toBe(7.0);
+    });
+
+    it("null workflow skips Tier-3 detect cleanly", () => {
+      // When workflow is null/undefined, Tier-3 detect returns empty
+      // and the main loop still runs (touched only).
+      applyTouchedSet(app, null, [
+        { node_id: "5", input_name: "cfg", kind: "widget", new_value: 8.0 },
+      ]);
+      expect(node5.widgets[0].value).toBe(8.0);
+    });
+  });
+});
