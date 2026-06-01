@@ -267,6 +267,9 @@ class AutonomousPipeline:
         self._arbiter = arbiter or SimulationArbiter()
         self._cf_gen = counterfactual_gen or CounterfactualGenerator()
         self._run_lock = threading.Lock()  # Serialise concurrent run() calls
+        # §0b: LIVRPS engine, seeded per-run at COMPOSE so retries layer
+        # non-destructively instead of mutating the workflow dict in place.
+        self._engine: CognitiveGraphEngine | None = None
 
     def run(self, config: PipelineConfig) -> PipelineResult:
         """Execute the full autonomous pipeline.
@@ -297,6 +300,7 @@ class AutonomousPipeline:
     def _run_locked(self, config: PipelineConfig) -> PipelineResult:
         """Internal run body — called under self._run_lock."""
         result = PipelineResult(intent=config.intent)
+        self._engine = None  # reset per run; seeded at COMPOSE (§0b)
 
         # Stage 1: INTENT
         result.stage = PipelineStage.INTENT
@@ -343,6 +347,19 @@ class AutonomousPipeline:
             result.workflow_data = copy.deepcopy(_FALLBACK_WORKFLOW_SD15)
             result.warnings.append(
                 f"No template found for family '{config.model_family}'; fell back to SD1.5 default"
+            )
+
+        # §0b: seed the LIVRPS engine from the finalized base workflow so retries
+        # compose non-destructively and the resolved stack can be captured at LEARN.
+        # Graceful degradation: if the base can't be parsed, retries fall back to
+        # the legacy in-place path (self._engine stays None).
+        try:
+            self._engine = CognitiveGraphEngine(result.workflow_data)
+        except Exception as exc:  # noqa: BLE001 — engine setup must never break a run
+            self._engine = None
+            log.warning(
+                "CognitiveGraphEngine init failed (%s); retries use legacy in-place path",
+                exc,
             )
 
         # Provision check: warn about missing models (F3)
@@ -504,19 +521,27 @@ class AutonomousPipeline:
                 )
 
                 # Adjust parameters for retry: increase steps, nudge CFG
-                self._adjust_params_for_retry(result.workflow_data)
+                result.workflow_data = self._adjust_params_for_retry(result.workflow_data)
                 continue  # loop back to EXECUTE
 
             break  # quality OK or retries exhausted
 
         # Stage 7: LEARN
         result.stage = PipelineStage.LEARN
+        # §0b: capture the resolved-LIVRPS-stack produced on the autonomous path
+        # (empty when no engine was seeded — preserves legacy behavior).
+        _layers = (
+            [d.to_dict() for d in self._engine.delta_stack]
+            if self._engine is not None else []
+        )
         chunk = ExperienceChunk(
             model_family=model_family,
             prompt=config.intent,
             parameters=params,
             quality=result.quality,
             output_filenames=[],
+            delta_count=len(_layers),
+            layers=_layers,
         )
         if result.execution_result is not None:
             chunk.output_filenames = getattr(
@@ -652,30 +677,59 @@ class AutonomousPipeline:
 
         return _evaluate
 
-    @staticmethod
-    def _adjust_params_for_retry(workflow_data: dict[str, Any]) -> None:
+    def _adjust_params_for_retry(self, workflow_data: dict[str, Any]) -> dict[str, Any]:
         """Adjust workflow parameters between retry attempts.
 
-        Increases steps by 10 and nudges CFG toward 7.0 (the general
-        sweet spot across model families).
+        Increases steps by 10 and nudges CFG toward 7.0 (the general sweet spot
+        across model families).
+
+        §0b: when a CognitiveGraphEngine is present (seeded at COMPOSE), the
+        adjustment is pushed as an L-tier DeltaLayer and the resolved API JSON is
+        returned — non-destructive composition, so the base and any S-tier Safety
+        layer still win on collision (graph.py stable ascending sort, S writes
+        last). When no engine is present (e.g. a direct call outside run()), it
+        falls back to legacy in-place mutation and returns the same dict.
         """
-        for _node_id, node_data in workflow_data.items():
+        mutations = self._retry_mutations(workflow_data)
+        if self._engine is not None and mutations:
+            self._engine.mutate_workflow(
+                mutations, opinion="L", description="autonomous retry adjustment",
+            )
+            return self._engine.to_api_json()
+        # Legacy fallback (no engine): apply the same targets in place.
+        for node_id, node_mut in mutations.items():
+            inputs = workflow_data[node_id].setdefault("inputs", {})
+            inputs.update(node_mut)
+        return workflow_data
+
+    @staticmethod
+    def _retry_mutations(workflow_data: dict[str, Any]) -> dict[str, dict[str, Any]]:
+        """Compute retry targets (steps +10, CFG nudged toward 7.0) as a LIVRPS
+        mutation dict {node_id: {param: value}}, reading the current (already
+        resolved) workflow state. Pure: never mutates workflow_data.
+        """
+        mutations: dict[str, dict[str, Any]] = {}
+        for node_id, node_data in workflow_data.items():
             if not isinstance(node_data, dict):
                 continue
             inputs = node_data.get("inputs", {})
             if not isinstance(inputs, dict):
                 continue
+            node_mut: dict[str, Any] = {}
             if "steps" in inputs:
                 try:
-                    inputs["steps"] = int(inputs["steps"]) + 10
+                    node_mut["steps"] = int(inputs["steps"]) + 10
                 except (ValueError, TypeError):
                     pass
             if "cfg" in inputs:
                 try:
                     cfg_val = float(inputs["cfg"])
                     if cfg_val < 7.0:
-                        inputs["cfg"] = round(cfg_val + 0.5, 1)
+                        node_mut["cfg"] = round(cfg_val + 0.5, 1)
                     elif cfg_val > 7.0:
-                        inputs["cfg"] = round(cfg_val - 0.5, 1)
+                        node_mut["cfg"] = round(cfg_val - 0.5, 1)
                 except (ValueError, TypeError):
                     pass
+            if node_mut:
+                mutations[node_id] = node_mut
+        return mutations
