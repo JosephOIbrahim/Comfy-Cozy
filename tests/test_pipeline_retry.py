@@ -276,3 +276,83 @@ class TestNoRetryAboveThreshold:
     def test_default_max_retries_is_two(self):
         cfg = PipelineConfig()
         assert cfg.max_retries == 2
+
+
+# ---------------------------------------------------------------------------
+# §0b — Blueprint capture: retries become L-tier deltas, captured at LEARN
+# ---------------------------------------------------------------------------
+
+class TestBlueprintCapture:
+    """The autonomous path now produces and persists a resolved-LIVRPS-stack."""
+
+    def test_retry_deltas_captured_in_chunk(self):
+        pipeline = AutonomousPipeline()
+        result = pipeline.run(PipelineConfig(
+            intent="capture test",
+            executor=lambda wf: _make_exec_result(filenames=["o.png"]),
+            evaluator=lambda _: QualityScore(overall=0.1, source="test"),
+            quality_threshold=0.9,
+            max_retries=2,
+        ))
+        chunk = result.experience_chunk
+        assert chunk is not None
+        # 2 retries -> 2 L-tier deltas captured as the resolved-LIVRPS-stack
+        assert chunk.delta_count == 2
+        assert len(chunk.layers) == 2
+        assert chunk.delta_count == len(chunk.layers)
+
+    def test_captured_layers_are_all_local_tier(self):
+        """Autonomous self-mutation is L-tier only — structurally subordinate to
+        S=6 Safety, which the loop can never push or override (§0d/§8)."""
+        pipeline = AutonomousPipeline()
+        result = pipeline.run(PipelineConfig(
+            intent="safety tier test",
+            executor=lambda wf: _make_exec_result(),
+            evaluator=lambda _: QualityScore(overall=0.1),
+            quality_threshold=0.9,
+            max_retries=3,
+        ))
+        layers = result.experience_chunk.layers
+        assert layers, "expected captured retry layers"
+        assert all(layer["opinion"] == "L" for layer in layers)
+
+    def test_no_retry_means_no_layers(self):
+        pipeline = AutonomousPipeline()
+        result = pipeline.run(PipelineConfig(
+            intent="clean run",
+            executor=lambda wf: _make_exec_result(),
+            evaluator=lambda _: QualityScore(overall=0.95),
+            quality_threshold=0.6,
+            max_retries=2,
+        ))
+        assert result.retry_count == 0
+        assert result.experience_chunk.layers == []
+        assert result.experience_chunk.delta_count == 0
+
+    def test_captured_layer_round_trips_through_deltalayer(self):
+        """The persisted layer dicts are valid DeltaLayer.to_dict() payloads."""
+        from cognitive.core.delta import DeltaLayer
+        pipeline = AutonomousPipeline()
+        result = pipeline.run(PipelineConfig(
+            intent="round trip",
+            executor=lambda wf: _make_exec_result(),
+            evaluator=lambda _: QualityScore(overall=0.1),
+            quality_threshold=0.9,
+            max_retries=1,
+        ))
+        layers = result.experience_chunk.layers
+        assert len(layers) == 1
+        restored = DeltaLayer.from_dict(layers[0])
+        assert restored.opinion == "L"
+        assert restored.is_intact is True
+
+    def test_engine_absent_direct_call_mutates_in_place_and_returns_dict(self):
+        """Backward-compat contract: with no engine (a direct call outside run),
+        _adjust_params_for_retry mutates in place AND returns the same dict."""
+        pipeline = AutonomousPipeline()
+        assert pipeline._engine is None
+        wf = {"2": {"class_type": "KSampler", "inputs": {"steps": 20, "cfg": 12.0}}}
+        out = pipeline._adjust_params_for_retry(wf)
+        assert out is wf  # same object — legacy in-place path
+        assert wf["2"]["inputs"]["steps"] == 30
+        assert wf["2"]["inputs"]["cfg"] == 11.5

@@ -72,6 +72,11 @@ class ExperienceChunk:
     # Workflow identity
     workflow_hash: str = ""  # SHA-256 of the resolved workflow
     delta_count: int = 0  # Number of delta layers at time of execution
+    layers: list[dict[str, Any]] = field(default_factory=list)
+    # layers: serialized resolved-LIVRPS-stack (DeltaLayer.to_dict() each). Empty
+    # for legacy chunks and for the interactive path; populated only when the
+    # autonomous pipeline composes via CognitiveGraphEngine. delta_count stays as
+    # the cheap summary and should equal len(layers) when layers is populated.
 
     # Outcome
     output_filenames: list[str] = field(default_factory=list)
@@ -144,6 +149,7 @@ class ExperienceChunk:
             "parameters": self.parameters,
             "workflow_hash": self.workflow_hash,
             "delta_count": self.delta_count,
+            "layers": self.layers,
             "output_filenames": self.output_filenames,
             "quality": self.quality.to_dict(),
             "execution_time_ms": self.execution_time_ms,
@@ -167,6 +173,7 @@ class ExperienceChunk:
             parameters=d.get("parameters", {}),
             workflow_hash=d.get("workflow_hash", ""),
             delta_count=d.get("delta_count", 0),
+            layers=d.get("layers", []),
             output_filenames=d.get("output_filenames", []),
             quality=quality,
             execution_time_ms=d.get("execution_time_ms", 0.0),

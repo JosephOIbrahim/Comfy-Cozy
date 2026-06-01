@@ -101,3 +101,36 @@ class DeltaLayer:
             description=description,
             mutations=mutations,
         )
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize to a JSON-compatible dict for persistence.
+
+        Preserves creation_hash verbatim so integrity (is_intact) survives a
+        round trip — the hash is NOT recomputed on load. This lets a layer that
+        was tampered with on disk be detected after from_dict().
+        """
+        return {
+            "layer_id": self.layer_id,
+            "opinion": self.opinion,
+            "timestamp": self.timestamp,
+            "description": self.description,
+            "mutations": self.mutations,
+            "creation_hash": self.creation_hash,
+        }
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> DeltaLayer:
+        """Deserialize from a dict produced by to_dict().
+
+        creation_hash is restored as-stored (not recomputed), so is_intact
+        compares the persisted hash against the current mutations and a
+        disk-tampered layer reports is_intact == False.
+        """
+        return cls(
+            layer_id=d["layer_id"],
+            opinion=d["opinion"],
+            timestamp=d["timestamp"],
+            description=d.get("description", ""),
+            mutations=d.get("mutations", {}),
+            creation_hash=d.get("creation_hash", ""),
+        )

@@ -63,6 +63,36 @@ class TestExperienceChunk:
         assert good_chunk.timestamp > 0
         assert good_chunk.succeeded is True
 
+    # --- §0b / B3: layers persistence ---
+
+    def test_layers_default_empty(self):
+        chunk = ExperienceChunk()
+        assert chunk.layers == []
+
+    def test_legacy_dict_without_layers_loads(self):
+        """A pre-B3 chunk dict (no 'layers' key) deserializes with layers == []."""
+        legacy = {
+            "chunk_id": "legacy01", "model_family": "SD1.5",
+            "parameters": {"4": {"cfg": 7.0}}, "delta_count": 0,
+        }
+        chunk = ExperienceChunk.from_dict(legacy)
+        assert chunk.layers == []
+        assert chunk.delta_count == 0
+
+    def test_layers_round_trip(self):
+        layers = [
+            {"layer_id": "a1", "opinion": "L", "timestamp": 1.0,
+             "description": "retry 1", "mutations": {"4": {"steps": 30}},
+             "creation_hash": "h1"},
+            {"layer_id": "a2", "opinion": "L", "timestamp": 2.0,
+             "description": "retry 2", "mutations": {"4": {"steps": 40}},
+             "creation_hash": "h2"},
+        ]
+        chunk = ExperienceChunk(model_family="SD1.5", delta_count=2, layers=layers)
+        restored = ExperienceChunk.from_dict(chunk.to_dict())
+        assert restored.layers == layers
+        assert restored.delta_count == len(restored.layers) == 2
+
     def test_failed_chunk(self):
         chunk = ExperienceChunk(error="CUDA OOM")
         assert chunk.succeeded is False

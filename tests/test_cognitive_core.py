@@ -177,6 +177,61 @@ class TestLIVRPSPriority:
 
 
 # ---------------------------------------------------------------------------
+# 2b. DeltaLayer Serialization (§0b / B2)
+# ---------------------------------------------------------------------------
+
+class TestDeltaSerialization:
+    """to_dict / from_dict round-trip with integrity preservation."""
+
+    def test_round_trip_preserves_all_fields(self):
+        delta = DeltaLayer.create(
+            {"4": {"cfg": 5.0, "steps": 30}}, opinion="L",
+            description="retry adjustment",
+        )
+        restored = DeltaLayer.from_dict(delta.to_dict())
+        assert restored.layer_id == delta.layer_id
+        assert restored.opinion == delta.opinion
+        assert restored.timestamp == delta.timestamp
+        assert restored.description == delta.description
+        assert restored.mutations == delta.mutations
+        assert restored.creation_hash == delta.creation_hash
+
+    def test_round_trip_is_json_safe(self):
+        delta = DeltaLayer.create({"4": {"cfg": 5.0}}, opinion="S")
+        d = delta.to_dict()
+        # Survives a real JSON encode/decode (persistence path).
+        restored = DeltaLayer.from_dict(json.loads(json.dumps(d, sort_keys=True)))
+        assert restored.mutations == {"4": {"cfg": 5.0}}
+        assert restored.opinion == "S"
+
+    def test_integrity_survives_round_trip(self):
+        delta = DeltaLayer.create({"4": {"cfg": 5.0}}, opinion="L")
+        restored = DeltaLayer.from_dict(delta.to_dict())
+        assert restored.is_intact is True
+
+    def test_disk_tampering_is_detected_after_load(self):
+        """A layer tampered with on disk reports is_intact == False on load —
+        creation_hash is NOT recomputed by from_dict()."""
+        delta = DeltaLayer.create({"4": {"cfg": 5.0}}, opinion="L")
+        d = delta.to_dict()
+        d["mutations"] = {"4": {"cfg": 99.0}}  # tamper after hashing
+        restored = DeltaLayer.from_dict(d)
+        assert restored.is_intact is False
+
+    def test_from_dict_tolerates_missing_optional_fields(self):
+        minimal = {
+            "layer_id": "abc123",
+            "opinion": "L",
+            "timestamp": 1234.5,
+            "mutations": {"4": {"cfg": 5.0}},
+        }
+        restored = DeltaLayer.from_dict(minimal)
+        assert restored.description == ""
+        # creation_hash absent -> __post_init__ recomputes it -> intact.
+        assert restored.is_intact is True
+
+
+# ---------------------------------------------------------------------------
 # 3. SHA-256 Tamper Detection
 # ---------------------------------------------------------------------------
 
