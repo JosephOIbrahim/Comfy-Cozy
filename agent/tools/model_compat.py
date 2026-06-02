@@ -122,6 +122,23 @@ MODEL_FAMILIES = {
         ],
         "modality": "video",
     },
+    "ltx2": {
+        "label": "LTX-2 / LTX Video",
+        "resolution": "1280x720",
+        "checkpoint_patterns": [
+            r"(?i)ltx-?2", r"(?i)ltx-2", r"(?i)ltxv",
+            r"(?i)ltx[-_]?video",
+        ],
+        "vae_patterns": [
+            r"(?i)ltxv.*vae", r"(?i)ltx-?2.*vae",
+        ],
+        "controlnet_patterns": [],
+        "lora_compatible": True,
+        "incompatible_families": [
+            "sd15", "sdxl", "flux", "sd3", "hunyuan3d", "wan", "audio",
+        ],
+        "modality": "video",
+    },
     "audio": {
         "label": "Audio/TTS",
         "resolution": "n/a (audio)",

@@ -86,6 +86,26 @@ class TestIdentifyFamily:
         }))
         assert result["family"] == "audio"
 
+    def test_ltx2_checkpoint(self):
+        result = json.loads(model_compat.handle("identify_model_family", {
+            "model_name": "ltx-2.3-22b-dev-fp8.safetensors",
+        }))
+        assert result["family"] == "ltx2"
+        assert result["label"] == "LTX-2 / LTX Video"
+
+    def test_ltxv_upscaler(self):
+        result = json.loads(model_compat.handle("identify_model_family", {
+            "model_name": "ltxv-spatial-upscaler-0.9.8.safetensors",
+        }))
+        assert result["family"] == "ltx2"
+
+    def test_sdxl_vae_fix_no_ltx_regression(self):
+        # Hostile: ensure the new ltx2 patterns do not steal an SDXL filename.
+        result = json.loads(model_compat.handle("identify_model_family", {
+            "model_name": "sdxl_v10VAEFix.safetensors",
+        }))
+        assert result["family"] == "sdxl"
+
     def test_unknown_model(self):
         result = json.loads(model_compat.handle("identify_model_family", {
             "model_name": "my_custom_model_v3.safetensors",
@@ -233,7 +253,7 @@ class TestHelpers:
             assert "incompatible_families" in fam, f"{fid} missing incompatible"
 
     def test_family_count(self):
-        assert len(model_compat.MODEL_FAMILIES) == 7
+        assert len(model_compat.MODEL_FAMILIES) == 8
 
 
 class TestRegistration:

@@ -134,6 +134,17 @@ TOOLS: list[dict] = [
                     "enum": ["summary", "names_only"],
                     "description": "Output format. 'names_only' for compact listing.",
                 },
+                "limit": {
+                    "type": "integer",
+                    "description": (
+                        "Optional max number of templates to return. "
+                        "Omit for the full list."
+                    ),
+                },
+                "offset": {
+                    "type": "integer",
+                    "description": "Number of templates to skip before applying limit. Default 0.",
+                },
             },
             "required": [],
         },
@@ -215,7 +226,29 @@ def _handle_list_templates(tool_input: dict) -> str:
                 entry["path"] = bp["path"]
             templates.append(entry)
 
-    return to_json({
+    total = len(templates)
+
+    # Optional backward-compatible paging. With neither limit nor offset
+    # passed, the output stays byte-identical to the pre-paging shape.
+    limit = tool_input.get("limit")
+    offset = tool_input.get("offset", 0)
+    paging = limit is not None or offset
+    if paging:
+        try:
+            offset = max(0, int(offset))
+        except (TypeError, ValueError):
+            offset = 0
+        if limit is not None:
+            try:
+                limit = max(0, int(limit))
+            except (TypeError, ValueError):
+                limit = None
+        templates = (
+            templates[offset:offset + limit] if limit is not None
+            else templates[offset:]
+        )
+
+    result = {
         "templates": templates,
         "count": len(templates),
         "sources": {
@@ -223,7 +256,10 @@ def _handle_list_templates(tool_input: dict) -> str:
             "workflows": str(WORKFLOWS_DIR),
             "blueprints": str(COMFYUI_BLUEPRINTS_DIR),
         },
-    })
+    }
+    if paging:
+        result["total"] = total
+    return to_json(result)
 
 
 def _resolve_template_path(template_name: str) -> Path | None:

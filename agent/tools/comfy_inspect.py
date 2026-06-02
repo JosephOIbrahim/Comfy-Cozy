@@ -32,6 +32,17 @@ TOOLS: list[dict] = [
                     "type": "string",
                     "description": "Optional substring filter on pack name (case-insensitive).",
                 },
+                "limit": {
+                    "type": "integer",
+                    "description": (
+                        "Optional max number of packs to return. "
+                        "Omit for the full list."
+                    ),
+                },
+                "offset": {
+                    "type": "integer",
+                    "description": "Number of packs to skip before applying limit. Default 0.",
+                },
             },
             "required": [],
         },
@@ -174,11 +185,36 @@ def _handle_list_custom_nodes(tool_input: dict) -> str:
 
         packs.append(info)
 
-    return to_json({
+    total = len(packs)
+
+    # Optional backward-compatible paging. With neither limit nor offset
+    # passed, the output stays byte-identical to the pre-paging shape.
+    limit = tool_input.get("limit")
+    offset = tool_input.get("offset", 0)
+    paging = limit is not None or offset
+    if paging:
+        try:
+            offset = max(0, int(offset))
+        except (TypeError, ValueError):
+            offset = 0
+        if limit is not None:
+            try:
+                limit = max(0, int(limit))
+            except (TypeError, ValueError):
+                limit = None
+        packs = (
+            packs[offset:offset + limit] if limit is not None
+            else packs[offset:]
+        )
+
+    result = {
         "directory": str(CUSTOM_NODES_DIR),
         "count": len(packs),
         "packs": packs,
-    })
+    }
+    if paging:
+        result["total"] = total
+    return to_json(result)
 
 
 def _handle_list_models(tool_input: dict) -> str:
