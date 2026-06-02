@@ -1381,3 +1381,166 @@ class TestDiscoverMaxResultsGuardCycle72:
                 "max_results": 5,
             }))
         assert "error" not in result or "max_results" not in result.get("error", "")
+
+
+# ---------------------------------------------------------------------------
+# refresh_model_registry — gated in-agent fetcher for model-list.json
+# ---------------------------------------------------------------------------
+
+class TestRefreshModelRegistry:
+    """The model-registry fetcher: gated, atomic, network-mocked.
+
+    refresh_model_registry mirrors download_model / install_node_pack: without
+    confirm=true it previews and touches NOTHING; with confirm=true it fetches,
+    validates JSON, and atomically replaces model-list.json. Network errors
+    leave the existing file intact.
+    """
+
+    def test_registered(self):
+        """Tool is discoverable in the central registry (auto-collected from TOOLS)."""
+        from agent.tools import ALL_TOOLS
+        names = {t["name"] for t in ALL_TOOLS}
+        assert "refresh_model_registry" in names
+
+    def test_no_confirm_returns_needs_confirmation_and_no_write(self, mock_registries):
+        """(a) No confirm -> needs_confirmation; NO network call, file untouched."""
+        target = mock_registries / "model-list.json"
+        original = target.read_text(encoding="utf-8")
+
+        with patch("agent.tools.comfy_discover.httpx.get") as mock_get:
+            result = json.loads(comfy_discover.handle("refresh_model_registry", {}))
+
+        # The gate must not touch the network.
+        mock_get.assert_not_called()
+
+        assert result["status"] == "needs_confirmation"
+        assert result["action"] == "refresh_model_registry"
+        assert result["url"] == comfy_discover.MODEL_LIST_SOURCE_URL
+        # Target path resolved the SAME way the freshness check resolves it.
+        assert result["target_path"] == str(target)
+        assert result["current_age_days"] is not None
+        assert result["file_exists"] is True
+
+        # File on disk is byte-for-byte unchanged.
+        assert target.read_text(encoding="utf-8") == original
+
+    def test_no_confirm_url_override_echoed(self, mock_registries):
+        """Override URL is echoed back in the preview, still no network."""
+        with patch("agent.tools.comfy_discover.httpx.get") as mock_get:
+            result = json.loads(comfy_discover.handle("refresh_model_registry", {
+                "url": "https://example.com/mirror/model-list.json",
+            }))
+        mock_get.assert_not_called()
+        assert result["status"] == "needs_confirmation"
+        assert result["url"] == "https://example.com/mirror/model-list.json"
+
+    def test_confirm_writes_file_and_resets_age(self, mock_registries):
+        """(b) confirm=true + mocked 200 JSON body -> file written, age resets to 0d."""
+        import os
+
+        target = mock_registries / "model-list.json"
+        # Age the existing file so we can prove the refresh resets it.
+        old_time = time.time() - (139 * 86400)
+        os.utime(str(target), (old_time, old_time))
+        old_size = target.stat().st_size
+
+        new_body = json.dumps({"models": SAMPLE_MODEL_LIST + [
+            {"name": "Brand New Model", "type": "checkpoint", "base": "Flux",
+             "save_path": "checkpoints", "filename": "new.safetensors",
+             "url": "https://example.com/new.safetensors"},
+        ]}).encode("utf-8")
+
+        mock_resp = MagicMock()
+        mock_resp.content = new_body
+        mock_resp.raise_for_status = MagicMock()
+
+        with patch("agent.tools.comfy_discover.httpx.get", return_value=mock_resp) as mock_get:
+            result = json.loads(comfy_discover.handle("refresh_model_registry", {
+                "confirm": True,
+            }))
+
+        mock_get.assert_called_once()
+        # 30s timeout per spec.
+        assert mock_get.call_args.kwargs.get("timeout") == 30.0
+
+        assert result["status"] == "refreshed"
+        assert result["bytes_written"] == len(new_body)
+        assert result["new_age_days"] == 0.0
+        assert result["previous_age_days"] is not None and result["previous_age_days"] > 100
+
+        # Real file now holds the new bytes (atomic replace succeeded).
+        on_disk = target.read_bytes()
+        assert on_disk == new_body
+        assert target.stat().st_size != old_size
+        # No leftover temp file.
+        assert not (mock_registries / "model-list.json.tmp").exists()
+
+        # Freshly written -> age check agrees it's brand new.
+        fresh = json.loads(comfy_discover.handle("check_registry_freshness", {}))
+        assert fresh["registries"]["model_list"]["status"] == "fresh"
+
+    def test_confirm_network_error_leaves_file_intact(self, mock_registries):
+        """(c) httpx raises -> clean error string, NO partial write, original untouched."""
+        import httpx as _httpx
+
+        target = mock_registries / "model-list.json"
+        original = target.read_bytes()
+
+        with patch("agent.tools.comfy_discover.httpx.get",
+                   side_effect=_httpx.ConnectError("no internet")):
+            result = json.loads(comfy_discover.handle("refresh_model_registry", {
+                "confirm": True,
+            }))
+
+        assert result["status"] == "error"
+        assert "error" in result
+        # Human-readable, no traceback noise.
+        assert "Traceback" not in result["error"]
+        assert "untouched" in result["error"].lower()
+
+        # Original file is byte-for-byte intact; no temp file left behind.
+        assert target.read_bytes() == original
+        assert not (mock_registries / "model-list.json.tmp").exists()
+
+    def test_confirm_bad_json_leaves_file_intact(self, mock_registries):
+        """Body that isn't JSON -> error, original file untouched (validated before write)."""
+        target = mock_registries / "model-list.json"
+        original = target.read_bytes()
+
+        mock_resp = MagicMock()
+        mock_resp.content = b"<html>not json</html>"
+        mock_resp.raise_for_status = MagicMock()
+
+        with patch("agent.tools.comfy_discover.httpx.get", return_value=mock_resp):
+            result = json.loads(comfy_discover.handle("refresh_model_registry", {
+                "confirm": True,
+            }))
+
+        assert result["status"] == "error"
+        assert "json" in result["error"].lower()
+        assert target.read_bytes() == original
+        assert not (mock_registries / "model-list.json.tmp").exists()
+
+    def test_confirm_http_error_leaves_file_intact(self, mock_registries):
+        """HTTP 4xx/5xx via raise_for_status -> error, original untouched."""
+        import httpx as _httpx
+
+        target = mock_registries / "model-list.json"
+        original = target.read_bytes()
+
+        mock_resp = MagicMock()
+        mock_resp.content = b'{"models": []}'
+        request = _httpx.Request("GET", comfy_discover.MODEL_LIST_SOURCE_URL)
+        response = _httpx.Response(404, request=request)
+        mock_resp.raise_for_status = MagicMock(
+            side_effect=_httpx.HTTPStatusError("404", request=request, response=response)
+        )
+
+        with patch("agent.tools.comfy_discover.httpx.get", return_value=mock_resp):
+            result = json.loads(comfy_discover.handle("refresh_model_registry", {
+                "confirm": True,
+            }))
+
+        assert result["status"] == "error"
+        assert "404" in result["error"]
+        assert target.read_bytes() == original
