@@ -11,6 +11,7 @@ Includes freshness tracking to detect stale registry data and suggest updates.
 
 import json
 import logging
+import os
 import re
 import threading
 import time
@@ -264,6 +265,38 @@ TOOLS: list[dict] = [
             "required": [],
         },
     },
+    {
+        "name": "refresh_model_registry",
+        "description": (
+            "Fetch a fresh copy of the model-list.json discovery registry from "
+            "upstream and atomically overwrite the local file. This is a NETWORK "
+            "fetch (code-adjacent), so it is GATED: call WITHOUT confirm to preview "
+            "the target URL, target file path, and current age; re-call with "
+            "\"confirm\": true to actually download and write. On any network/HTTP/"
+            "JSON error the existing file is left untouched."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "confirm": {
+                    "type": "boolean",
+                    "description": (
+                        "If true, perform the network fetch and atomic write. "
+                        "If false/omitted, return a needs_confirmation preview "
+                        "and touch nothing. Default: false."
+                    ),
+                },
+                "url": {
+                    "type": "string",
+                    "description": (
+                        "Optional override for the upstream model-list.json URL. "
+                        "Defaults to the ComfyUI-Manager upstream model-list.json."
+                    ),
+                },
+            },
+            "required": [],
+        },
+    },
 ]
 
 # ---------------------------------------------------------------------------
@@ -289,6 +322,12 @@ _freshness: dict = {
 # Staleness thresholds (seconds)
 _STALE_THRESHOLD = 7 * 24 * 3600   # 7 days — registry files update infrequently
 _WARN_THRESHOLD = 30 * 24 * 3600   # 30 days — strongly suggest update
+
+# Upstream source for the model-list.json registry. Overridable per-call via the
+# refresh_model_registry "url" param, or here for a permanent mirror/fork.
+MODEL_LIST_SOURCE_URL = (
+    "https://raw.githubusercontent.com/ltdrdata/ComfyUI-Manager/main/model-list.json"
+)
 
 # Single lock protecting all _cache and _freshness writes. Read-heavy workload
 # (each key written once per session), so a plain Lock is sufficient.
@@ -1583,6 +1622,134 @@ def _handle_check_freshness(tool_input: dict) -> str:
     })
 
 
+def _model_list_path() -> Path:
+    """Resolve the local model-list.json path the SAME way the freshness check
+    does (see _handle_check_freshness, ~1536). Single source of truth."""
+    return _MANAGER_DIR / "model-list.json"
+
+
+def _age_days(path: Path) -> float | None:
+    """Current age of a file in days, or None if it does not exist."""
+    if not path.exists():
+        return None
+    return (time.time() - path.stat().st_mtime) / 86400
+
+
+def _handle_refresh_model_registry(tool_input: dict) -> str:
+    """Fetch model-list.json from upstream and atomically overwrite the local copy.
+
+    GATED on confirm (mirrors download_model / install_node_pack /
+    repair_workflow): without confirm=true this previews and touches NOTHING.
+    """
+    target_path = _model_list_path()
+    url = tool_input.get("url") or MODEL_LIST_SOURCE_URL
+
+    _raw_confirm = tool_input.get("confirm", False)
+    confirmed = (
+        _raw_confirm if isinstance(_raw_confirm, bool)
+        else str(_raw_confirm).lower() in ("true", "1", "yes")
+    )
+
+    age_before = _age_days(target_path)
+
+    # --- Preview / gate path: no network, no writes ------------------------
+    if not confirmed:
+        return to_json({
+            "status": "needs_confirmation",
+            "action": "refresh_model_registry",
+            "url": url,
+            "target_path": str(target_path),
+            "current_age_days": round(age_before, 1) if age_before is not None else None,
+            "file_exists": age_before is not None,
+            "message": (
+                f"Would download model-list.json from {url} (network fetch) and "
+                f"atomically overwrite {target_path}. Re-call refresh_model_registry "
+                f"with \"confirm\": true to proceed."
+            ),
+        })
+
+    # --- Confirmed path: fetch, validate, atomic write ---------------------
+    try:
+        resp = httpx.get(url, timeout=30.0, follow_redirects=True)
+        resp.raise_for_status()
+        body = resp.content
+        # Assert the body parses as JSON before we touch the real file.
+        json.loads(body.decode("utf-8"))
+    except httpx.HTTPStatusError as e:
+        return to_json({
+            "status": "error",
+            "action": "refresh_model_registry",
+            "url": url,
+            "error": (
+                f"Upstream returned HTTP {e.response.status_code} fetching "
+                f"model-list.json. Local file left untouched."
+            ),
+        })
+    except (httpx.HTTPError, OSError) as e:
+        return to_json({
+            "status": "error",
+            "action": "refresh_model_registry",
+            "url": url,
+            "error": (
+                f"Network error fetching model-list.json: {e}. "
+                f"Local file left untouched."
+            ),
+        })
+    except (ValueError, UnicodeDecodeError) as e:
+        return to_json({
+            "status": "error",
+            "action": "refresh_model_registry",
+            "url": url,
+            "error": (
+                f"Downloaded data is not valid JSON ({e}). "
+                f"Local file left untouched."
+            ),
+        })
+
+    # Atomic write: write to a sibling .tmp then os.replace onto the target.
+    # If the directory is missing (Manager not installed), create it.
+    tmp_path = target_path.with_suffix(target_path.suffix + ".tmp")
+    try:
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(tmp_path, "wb") as fh:
+            fh.write(body)
+        os.replace(tmp_path, target_path)
+    except OSError as e:
+        # Clean up the partial temp file; never leave the real file half-written.
+        try:
+            if tmp_path.exists():
+                tmp_path.unlink()
+        except OSError:
+            pass
+        return to_json({
+            "status": "error",
+            "action": "refresh_model_registry",
+            "url": url,
+            "error": (
+                f"Failed to write model-list.json to disk: {e}. "
+                f"Local file left untouched."
+            ),
+        })
+
+    # Refreshed on disk — drop the stale in-memory cache so next search reloads.
+    _clear_cache()
+
+    age_after = _age_days(target_path)
+    return to_json({
+        "status": "refreshed",
+        "action": "refresh_model_registry",
+        "url": url,
+        "target_path": str(target_path),
+        "bytes_written": len(body),
+        "previous_age_days": round(age_before, 1) if age_before is not None else None,
+        "new_age_days": round(age_after, 1) if age_after is not None else 0.0,
+        "message": (
+            f"Wrote {len(body)} bytes to {target_path}. Registry is now 0d old; "
+            f"in-memory cache cleared."
+        ),
+    })
+
+
 # ---------------------------------------------------------------------------
 # Dispatch
 # ---------------------------------------------------------------------------
@@ -1598,6 +1765,8 @@ def handle(name: str, tool_input: dict) -> str:
             return _handle_get_install_instructions(tool_input)
         elif name == "check_registry_freshness":
             return _handle_check_freshness(tool_input)
+        elif name == "refresh_model_registry":
+            return _handle_refresh_model_registry(tool_input)
         else:
             return to_json({"error": f"Unknown tool: {name}"})
     except Exception as e:

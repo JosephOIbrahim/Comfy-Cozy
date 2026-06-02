@@ -128,6 +128,7 @@ class TestToolRegistry:
             "hash_compare_images",
             # Freshness tracking
             "check_registry_freshness",
+            "refresh_model_registry",
             # Implicit feedback
             "detect_implicit_feedback",
             # Verify loop
@@ -209,7 +210,7 @@ class TestToolRegistry:
         )
 
     def test_total_tool_count(self):
-        assert len(ALL_TOOLS) == 125, f"Expected 125 tools, got {len(ALL_TOOLS)}"
+        assert len(ALL_TOOLS) == 126, f"Expected 126 tools, got {len(ALL_TOOLS)}"
 
     def test_brain_tool_error_returns_json(self):
         """Brain tool exceptions should be caught and returned as JSON errors."""
