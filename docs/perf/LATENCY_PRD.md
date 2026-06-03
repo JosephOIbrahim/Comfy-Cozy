@@ -388,5 +388,5 @@ This PRD is approved for execution when:
 - [x] Hardware decision (§13.1) — **Threadripper PRO 7965WX, sole canonical**
 - [x] Skill registration path (§13.2) — **`.claude/commands/`**
 - [x] PR sequencing (§13.3) — **One batched Tier-1 PR after P0**
-- [ ] P0 PR opened (measurement infra + Profiler specialist + Constitution + slash command)
-- [ ] Baseline measurement run on canonical operation set (§5.3); numbers replace TBDs in §2.1
+- [x] **P0 PR opened** — measurement infra (`agent/perf/`), 4 MCP tools (`benchmark_tool`, `profile_tool`, `compare_baselines`, `latency_baseline`), `agent perf` CLI subcommand group, 32 perf tests, smoke baseline run (sandbox-tagged per Article VIII)
+- [ ] **Canonical baseline run on Threadripper** — pending Joe; replaces TBDs in §2.1

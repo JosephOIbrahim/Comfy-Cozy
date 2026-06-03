@@ -1006,5 +1006,131 @@ def mcp():
     mcp_main()
 
 
+# ---------------------------------------------------------------------------
+# `agent perf` — latency measurement subcommand group
+# ---------------------------------------------------------------------------
+
+perf_app = typer.Typer(help="Latency measurement (benchmark / profile / baseline / compare).")
+app.add_typer(perf_app, name="perf")
+
+
+@perf_app.command("benchmark")
+def perf_benchmark(
+    name: str = typer.Argument(..., help="Tool name to benchmark, e.g. 'get_node_info'."),
+    input_file: str = typer.Option(
+        None, "--input-file", "-i",
+        help="JSON file with tool arguments. Defaults to empty {}.",
+    ),
+    n: int = typer.Option(30, "--n", help="Sample count."),
+    warmup: int = typer.Option(3, "--warmup", help="Warmup iterations."),
+    tag: str = typer.Option("baseline", "--tag", help="Baseline tag."),
+    no_record: bool = typer.Option(
+        False, "--no-record", help="Skip appending to baselines/."
+    ),
+):
+    """Benchmark one MCP tool. Article I — measurement precedes mutation."""
+    from .tools import handle as tool_handle
+
+    from pathlib import Path
+    tool_input: dict = {}
+    if input_file:
+        tool_input = json.loads(Path(input_file).read_text(encoding="utf-8"))
+
+    result = tool_handle("benchmark_tool", {
+        "name": name, "input": tool_input, "n": n, "warmup": warmup,
+        "tag": tag, "record": not no_record,
+    })
+    print(result)
+
+
+@perf_app.command("profile")
+def perf_profile(
+    name: str = typer.Argument(..., help="Tool name to profile."),
+    input_file: str = typer.Option(
+        None, "--input-file", "-i", help="JSON file with tool arguments."
+    ),
+    profiler: str = typer.Option(
+        "cprofile", "--profiler", help="cprofile | py-spy"
+    ),
+    top_n: int = typer.Option(20, "--top-n", help="Hottest N functions to print."),
+):
+    """Profile one MCP tool call. Article V — profile or it didn't happen."""
+    from .tools import handle as tool_handle
+
+    from pathlib import Path
+    tool_input: dict = {}
+    if input_file:
+        tool_input = json.loads(Path(input_file).read_text(encoding="utf-8"))
+
+    result = tool_handle("profile_tool", {
+        "name": name, "input": tool_input,
+        "profiler": profiler, "top_n": top_n,
+    })
+    print(result)
+
+
+@perf_app.command("baseline")
+def perf_baseline_cmd(
+    profile: str = typer.Option("quick", "--profile", help="quick | full"),
+    tag: str = typer.Option("baseline", "--tag", help="Tag for every record."),
+    n: int = typer.Option(30, "--n", help="Samples per operation."),
+    warmup: int = typer.Option(3, "--warmup", help="Warmup iters per operation."),
+):
+    """Run the canonical operation set and append baselines (PRD §5.3)."""
+    from .tools import handle as tool_handle
+
+    result = tool_handle("latency_baseline", {
+        "profile": profile, "tag": tag, "n": n, "warmup": warmup,
+    })
+    print(result)
+
+
+@perf_app.command("compare")
+def perf_compare(
+    before_path: str = typer.Argument(..., help="Path to baseline JSONL (before)."),
+    after_path: str = typer.Argument(..., help="Path to baseline JSONL (after)."),
+    before_tag: str = typer.Option("baseline", "--before-tag"),
+    after_tag: str = typer.Option("after", "--after-tag"),
+):
+    """Compare two baseline records. Article II / Article VIII enforced."""
+    from .tools import handle as tool_handle
+
+    result = tool_handle("compare_baselines", {
+        "before_path": before_path, "after_path": after_path,
+        "before_tag": before_tag, "after_tag": after_tag,
+    })
+    print(result)
+
+
+@perf_app.command("contention")
+def perf_contention(
+    name: str = typer.Argument(..., help="Tool name to test under contention."),
+    input_file: str = typer.Option(
+        None, "--input-file", "-i", help="JSON file with tool arguments."
+    ),
+    threads: int = typer.Option(4, "--threads", help="Worker thread count."),
+    calls_per_thread: int = typer.Option(
+        1000, "--calls", help="Calls per worker (default 1000 per Article IV)."
+    ),
+):
+    """4×1000 contention bench (Article IV). Reports degradation factor."""
+    from .perf.contention import run_contention
+    from .tools import handle as tool_handle
+
+    from pathlib import Path
+    tool_input: dict = {}
+    if input_file:
+        tool_input = json.loads(Path(input_file).read_text(encoding="utf-8"))
+
+    def fn():
+        return tool_handle(name, dict(tool_input))
+
+    result = run_contention(
+        fn, operation=f"tool.{name}", threads=threads,
+        calls_per_thread=calls_per_thread,
+    )
+    print(json.dumps(result.to_dict(), sort_keys=True, indent=2))
+
+
 if __name__ == "__main__":
     app()

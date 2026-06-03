@@ -426,4 +426,12 @@ def build_default_capabilities() -> list[ToolCapability]:
     caps.append(_cap("classify_intent", risk_level=0))
     caps.append(_cap("get_output_path", risk_level=0))
 
+    # ------------------------------------------------------------------
+    # Latency measurement (perf_tools) — read-only, observational
+    # ------------------------------------------------------------------
+    for name in ("benchmark_tool", "profile_tool", "compare_baselines", "latency_baseline"):
+        caps.append(_cap(
+            name, requires_comfyui=False, phase="understand", risk_level=0,
+        ))
+
     return caps

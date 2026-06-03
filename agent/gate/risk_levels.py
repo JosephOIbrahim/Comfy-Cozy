@@ -124,6 +124,12 @@ TOOL_RISK_LEVELS: dict[str, RiskLevel] = {
     "surface_relevant_memory": RiskLevel.READ_ONLY, # #10 memory recall
     "watch_outputs_begin": RiskLevel.READ_ONLY,     # #8 snapshot (no mutation)
     "watch_outputs_diff": RiskLevel.READ_ONLY,      # #8 diff (no mutation)
+    # Latency measurement (read-only; baseline appends are observational
+    # telemetry, not workflow state). Governed by .claude/LATENCY_CONSTITUTION.md.
+    "benchmark_tool": RiskLevel.READ_ONLY,
+    "profile_tool": RiskLevel.READ_ONLY,
+    "compare_baselines": RiskLevel.READ_ONLY,
+    "latency_baseline": RiskLevel.READ_ONLY,
     # ------------------------------------------------------------------
     # REVERSIBLE (1) — workflow mutations, undoable
     # ------------------------------------------------------------------
