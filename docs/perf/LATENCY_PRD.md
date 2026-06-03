@@ -297,7 +297,19 @@ python -m pytest tests/integration/test_cozy_soak.py -v
 agent run -v   # measure: TTFAct, TTFI, TTNI manually
 ```
 
-### 9.3 Phase exit criteria
+### 9.3 Batched-PR protocol (per §13.3)
+
+When Tier-1 (O1–O5) ships as a single batched PR:
+
+1. Each optimization is implemented as a **separate commit** on the batch branch, in priority order O1 → O5.
+2. Each commit's body contains its own before/after JSONL receipt + worst-case measurement (Article VI).
+3. The Crucible specialist runs the full test suite **after each commit**, not just at the end. A test regression on commit N halts the batch at commit N−1 and the offending commit is dropped (`git reset --hard HEAD~1` on the local branch — permitted under the Cozy Git Authority Map's per-call-approval tier; coordinated through the slash command).
+4. Vision judges each commit independently against the constitution. Any individual `reject` verdict drops that commit; the batch continues with the remainder.
+5. The final PR description tabulates the kept vs. dropped optimizations with reasons.
+
+This preserves the speed of one-PR review while keeping the constitutional gate per-optimization.
+
+### 9.4 Phase exit criteria
 
 A phase exits when:
 - All in-tier optimizations either landed or rejected by the constitution.
@@ -311,8 +323,8 @@ A phase exits when:
 | Phase | Scope | Duration estimate | Exit metric |
 |---|---|---|---|
 | **P0** | Measurement infra (§5) + Cozy Profiler + Latency Constitution + slash command | 1 PR | `/latency-cycle` runs end-to-end on a single target |
-| **P1** | Tier-1 optimizations O1–O5 (highest ROI, lowest risk) | 1 PR per opt = 5 PRs | L1 ≤ 5 ms, L4 ≤ 100 ms |
-| **P2** | Tier-2 optimizations O6–O10 | 5 PRs | L5 ≤ 10 ms/iter, L3 −40% |
+| **P1** | Tier-1 optimizations O1–O5 (highest ROI, lowest risk) | **1 batched PR** — per §13.3 | L1 ≤ 5 ms, L4 ≤ 100 ms |
+| **P2** | Tier-2 optimizations O6–O10 | 1 batched PR (or split if any single item exceeds 400 LOC) | L5 ≤ 10 ms/iter, L3 −40% |
 | **P3** | Tier-3 conditional ships if any clears the constitution bar | 0–4 PRs | n/a (opportunistic) |
 | **P4** | Stage Flatten() compaction (multi-day, deferred from prior reviews — see Tier 4 of COZY_CONSTITUTION work) | 1 PR | Stage flush p50 stays flat across 10k-iter run |
 
@@ -339,13 +351,13 @@ A phase exits when:
 
 ---
 
-## 13. Open decisions (for the owner to resolve)
+## 13. Decisions (resolved 2026-06-03)
 
-1. **Baseline hardware**: target is Threadripper PRO 7965WX. Should we also baseline a "minimum spec" box (e.g., M2 MacBook Air, RTX 3060 desktop) so the artist-friendly claim survives lower-end installs?
+1. **Baseline hardware**: **Threadripper PRO 7965WX is the sole canonical baseline.** All `[HARDEN:WS-N]` commits report numbers from this box. Lower-spec validation is deferred to a future PRD if a user reports a regression.
 
-2. **`/latency-cycle` skill registration**: does the skill go in `.claude/commands/` (current default) or `.claude/skills/` (newer convention)?
+2. **`/latency-cycle` registration path**: **`.claude/commands/`** — matches the existing `/cozy-cycle` pattern, is auto-promoted into the Skill tool registry (verified in this session's `<system-reminder>` skill list), and avoids splitting the slash-command surface across two directories. Best practice for this codebase: one command home, follow the established convention.
 
-3. **Tier-1 PR sequencing**: ship the 5 optimizations as 5 PRs (cleanest, slowest) or as 1 batched PR (fastest, harder to review)? Recommended: 5 PRs, sequenced, each gated by the constitution.
+3. **Tier-1 PR sequencing**: **One batched PR (O1–O5)** after the P0 measurement PR lands. Constitution gates the batch — each optimization carries its own before/after JSONL receipt in the commit body, and any single failing item is dropped from the batch rather than blocking the others.
 
 ---
 
@@ -373,8 +385,8 @@ Every specialist has access to the same 4 new MCP tools (`benchmark_tool`, `prof
 
 This PRD is approved for execution when:
 
-- [ ] Hardware decision (§13.1) made
-- [ ] Skill registration path (§13.2) chosen
-- [ ] PR sequencing (§13.3) confirmed
+- [x] Hardware decision (§13.1) — **Threadripper PRO 7965WX, sole canonical**
+- [x] Skill registration path (§13.2) — **`.claude/commands/`**
+- [x] PR sequencing (§13.3) — **One batched Tier-1 PR after P0**
 - [ ] P0 PR opened (measurement infra + Profiler specialist + Constitution + slash command)
 - [ ] Baseline measurement run on canonical operation set (§5.3); numbers replace TBDs in §2.1
