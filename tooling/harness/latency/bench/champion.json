@@ -1,0 +1,20 @@
+{
+  "goal": "Comfy-Cozy LTX 2.3 / RTX 4090 whole-pipeline latency",
+  "as_of": "2026-06-03",
+  "champion": {
+    "config_id": "fp16-dev-offload",
+    "model": "ltx-2.3-22b-dev.safetensors (44GB fp16, all-in-one)",
+    "workflow": "G:/COMFY/ComfyUI/user/default/workflows/video_ltx2_3_t2v_STABLE.json",
+    "hardware": "RTX 4090 24GB / 128GB RAM, ComfyUI 0.23.0, torch 2.9.1+cu130",
+    "T_execute_cold_s": 1047.887,
+    "T_dispatch_s": 1.6,
+    "T_total_cold_s": 1049.5,
+    "dominant_term": "T_execute (DiT base pass 267:215 = 97.7%) — VRAM offload, NOT software-bound",
+    "overhead_ratio_R": 0.0015,
+    "noise_band": "N=1 cold (AP2 gap); warm path pathological (model can't reside in 24GB)",
+    "source": "ComfyUI /history exec_success-exec_start, prompt 506179ff (keys verified live)"
+  },
+  "target": "Reduce T_execute by making the 22B model RESIDENT in 24GB (eliminate offload). Lead: GGUF Q4 ~16GB.",
+  "gate": "promote only on benchmarked cold T_execute beating 1047.9s outside noise AND quality-pass vs fp16 champion (Joe's eye).",
+  "out_of_software_scope": "T_execute is model/VRAM-bound, not Comfy-Cozy code. Agent dispatch already <0.2%."
+}

@@ -1,0 +1,881 @@
+{
+  "c269d3b2-cd48-4d44-915a-132b24be8f8f": {
+    "prompt": [
+      0,
+      "c269d3b2-cd48-4d44-915a-132b24be8f8f",
+      {
+        "267:201": {
+          "_meta": {
+            "title": "Switch to Text to Video?"
+          },
+          "class_type": "PrimitiveBoolean",
+          "inputs": {
+            "value": true
+          }
+        },
+        "267:209": {
+          "_meta": {
+            "title": "KSamplerSelect"
+          },
+          "class_type": "KSamplerSelect",
+          "inputs": {
+            "sampler_name": "euler_ancestral_cfg_pp"
+          }
+        },
+        "267:211": {
+          "_meta": {
+            "title": "ManualSigmas"
+          },
+          "class_type": "ManualSigmas",
+          "inputs": {
+            "sigmas": "0.85, 0.7250, 0.4219, 0.0"
+          }
+        },
+        "267:212": {
+          "_meta": {
+            "title": "LTXVCropGuides"
+          },
+          "class_type": "LTXVCropGuides",
+          "inputs": {
+            "latent": [
+              "267:217",
+              0
+            ],
+            "negative": [
+              "267:239",
+              1
+            ],
+            "positive": [
+              "267:239",
+              0
+            ]
+          }
+        },
+        "267:213": {
+          "_meta": {
+            "title": "CFGGuider"
+          },
+          "class_type": "CFGGuider",
+          "inputs": {
+            "cfg": 1.0,
+            "model": [
+              "267:232",
+              0
+            ],
+            "negative": [
+              "267:212",
+              1
+            ],
+            "positive": [
+              "267:212",
+              0
+            ]
+          }
+        },
+        "267:214": {
+          "_meta": {
+            "title": "LTXV Empty Latent Audio"
+          },
+          "class_type": "LTXVEmptyLatentAudio",
+          "inputs": {
+            "audio_vae": [
+              "267:221",
+              0
+            ],
+            "batch_size": 1,
+            "frame_rate": [
+              "267:261",
+              1
+            ],
+            "frames_number": [
+              "267:225",
+              0
+            ]
+          }
+        },
+        "267:215": {
+          "_meta": {
+            "title": "SamplerCustomAdvanced"
+          },
+          "class_type": "SamplerCustomAdvanced",
+          "inputs": {
+            "guider": [
+              "267:231",
+              0
+            ],
+            "latent_image": [
+              "267:222",
+              0
+            ],
+            "noise": [
+              "267:237",
+              0
+            ],
+            "sampler": [
+              "267:209",
+              0
+            ],
+            "sigmas": [
+              "267:252",
+              0
+            ]
+          }
+        },
+        "267:216": {
+          "_meta": {
+            "title": "RandomNoise"
+          },
+          "class_type": "RandomNoise",
+          "inputs": {
+            "noise_seed": 42
+          }
+        },
+        "267:217": {
+          "_meta": {
+            "title": "LTXVSeparateAVLatent"
+          },
+          "class_type": "LTXVSeparateAVLatent",
+          "inputs": {
+            "av_latent": [
+              "267:215",
+              0
+            ]
+          }
+        },
+        "267:218": {
+          "_meta": {
+            "title": "LTXVSeparateAVLatent"
+          },
+          "class_type": "LTXVSeparateAVLatent",
+          "inputs": {
+            "av_latent": [
+              "267:219",
+              0
+            ]
+          }
+        },
+        "267:219": {
+          "_meta": {
+            "title": "SamplerCustomAdvanced"
+          },
+          "class_type": "SamplerCustomAdvanced",
+          "inputs": {
+            "guider": [
+              "267:213",
+              0
+            ],
+            "latent_image": [
+              "267:229",
+              0
+            ],
+            "noise": [
+              "267:216",
+              0
+            ],
+            "sampler": [
+              "267:246",
+              0
+            ],
+            "sigmas": [
+              "267:211",
+              0
+            ]
+          }
+        },
+        "267:220": {
+          "_meta": {
+            "title": "LTXV Audio VAE Decode"
+          },
+          "class_type": "LTXVAudioVAEDecode",
+          "inputs": {
+            "audio_vae": [
+              "267:221",
+              0
+            ],
+            "samples": [
+              "267:218",
+              1
+            ]
+          }
+        },
+        "267:221": {
+          "_meta": {
+            "title": "LTXV Audio VAE Loader"
+          },
+          "class_type": "LTXVAudioVAELoader",
+          "inputs": {
+            "ckpt_name": "ltx-2.3-22b-dev-fp8.safetensors"
+          }
+        },
+        "267:222": {
+          "_meta": {
+            "title": "LTXVConcatAVLatent"
+          },
+          "class_type": "LTXVConcatAVLatent",
+          "inputs": {
+            "audio_latent": [
+              "267:214",
+              0
+            ],
+            "video_latent": [
+              "267:249",
+              0
+            ]
+          }
+        },
+        "267:225": {
+          "_meta": {
+            "title": "Length"
+          },
+          "class_type": "PrimitiveInt",
+          "inputs": {
+            "value": 33
+          }
+        },
+        "267:228": {
+          "_meta": {
+            "title": "EmptyLTXVLatentVideo"
+          },
+          "class_type": "EmptyLTXVLatentVideo",
+          "inputs": {
+            "batch_size": 1,
+            "height": [
+              "267:259",
+              1
+            ],
+            "length": [
+              "267:225",
+              0
+            ],
+            "width": [
+              "267:256",
+              1
+            ]
+          }
+        },
+        "267:229": {
+          "_meta": {
+            "title": "LTXVConcatAVLatent"
+          },
+          "class_type": "LTXVConcatAVLatent",
+          "inputs": {
+            "audio_latent": [
+              "267:217",
+              1
+            ],
+            "video_latent": [
+              "267:230",
+              0
+            ]
+          }
+        },
+        "267:230": {
+          "_meta": {
+            "title": "LTXVImgToVideoInplace"
+          },
+          "class_type": "LTXVImgToVideoInplace",
+          "inputs": {
+            "bypass": [
+              "267:201",
+              0
+            ],
+            "image": [
+              "267:248",
+              0
+            ],
+            "latent": [
+              "267:253",
+              0
+            ],
+            "strength": 1.0,
+            "vae": [
+              "267:236",
+              2
+            ]
+          }
+        },
+        "267:231": {
+          "_meta": {
+            "title": "CFGGuider"
+          },
+          "class_type": "CFGGuider",
+          "inputs": {
+            "cfg": 1.0,
+            "model": [
+              "267:232",
+              0
+            ],
+            "negative": [
+              "267:239",
+              1
+            ],
+            "positive": [
+              "267:239",
+              0
+            ]
+          }
+        },
+        "267:232": {
+          "_meta": {
+            "title": "Load LoRA"
+          },
+          "class_type": "LoraLoaderModelOnly",
+          "inputs": {
+            "lora_name": "ltx-2.3-22b-distilled-lora-384.safetensors",
+            "model": [
+              "267:236",
+              0
+            ],
+            "strength_model": 0.5
+          }
+        },
+        "267:233": {
+          "_meta": {
+            "title": "Load Latent Upscale Model"
+          },
+          "class_type": "LatentUpscaleModelLoader",
+          "inputs": {
+            "model_name": "ltx-2-spatial-upscaler-x2-1.0.safetensors"
+          }
+        },
+        "267:235": {
+          "_meta": {
+            "title": "Resize Images by Longer Edge"
+          },
+          "class_type": "ResizeImagesByLongerEdge",
+          "inputs": {
+            "images": [
+              "267:238",
+              0
+            ],
+            "longer_edge": 1536
+          }
+        },
+        "267:236": {
+          "_meta": {
+            "title": "Load Checkpoint"
+          },
+          "class_type": "CheckpointLoaderSimple",
+          "inputs": {
+            "ckpt_name": "ltx-2.3-22b-dev-fp8.safetensors"
+          }
+        },
+        "267:237": {
+          "_meta": {
+            "title": "RandomNoise"
+          },
+          "class_type": "RandomNoise",
+          "inputs": {
+            "noise_seed": 23
+          }
+        },
+        "267:238": {
+          "_meta": {
+            "title": "Resize Image/Mask"
+          },
+          "class_type": "ResizeImageMaskNode",
+          "inputs": {
+            "input": [
+              "269",
+              0
+            ],
+            "resize_type": "scale dimensions",
+            "resize_type.crop": "center",
+            "resize_type.height": [
+              "267:258",
+              0
+            ],
+            "resize_type.width": [
+              "267:257",
+              0
+            ],
+            "scale_method": "lanczos"
+          }
+        },
+        "267:239": {
+          "_meta": {
+            "title": "LTXVConditioning"
+          },
+          "class_type": "LTXVConditioning",
+          "inputs": {
+            "frame_rate": [
+              "267:261",
+              0
+            ],
+            "negative": [
+              "267:247",
+              0
+            ],
+            "positive": [
+              "267:240",
+              0
+            ]
+          }
+        },
+        "267:240": {
+          "_meta": {
+            "title": "CLIP Text Encode (Prompt)"
+          },
+          "class_type": "CLIPTextEncode",
+          "inputs": {
+            "clip": [
+              "267:243",
+              0
+            ],
+            "text": [
+              "267:266",
+              0
+            ]
+          }
+        },
+        "267:242": {
+          "_meta": {
+            "title": "Create Video"
+          },
+          "class_type": "CreateVideo",
+          "inputs": {
+            "audio": [
+              "267:220",
+              0
+            ],
+            "fps": [
+              "267:261",
+              0
+            ],
+            "images": [
+              "267:251",
+              0
+            ]
+          }
+        },
+        "267:243": {
+          "_meta": {
+            "title": "LTXV Audio Text Encoder Loader"
+          },
+          "class_type": "LTXAVTextEncoderLoader",
+          "inputs": {
+            "ckpt_name": "ltx-2.3-22b-dev-fp8.safetensors",
+            "device": "default",
+            "text_encoder": "gemma_3_12B_it_fp4_mixed.safetensors"
+          }
+        },
+        "267:246": {
+          "_meta": {
+            "title": "KSamplerSelect"
+          },
+          "class_type": "KSamplerSelect",
+          "inputs": {
+            "sampler_name": "euler_cfg_pp"
+          }
+        },
+        "267:247": {
+          "_meta": {
+            "title": "CLIP Text Encode (Prompt)"
+          },
+          "class_type": "CLIPTextEncode",
+          "inputs": {
+            "clip": [
+              "267:243",
+              0
+            ],
+            "text": "video game, cartoon, anime, illustration, cgi render, plastic, low quality, blurry, distorted, deformed, static, frozen, watermark, text, oversaturated"
+          }
+        },
+        "267:248": {
+          "_meta": {
+            "title": "LTXVPreprocess"
+          },
+          "class_type": "LTXVPreprocess",
+          "inputs": {
+            "image": [
+              "267:235",
+              0
+            ],
+            "img_compression": 18
+          }
+        },
+        "267:249": {
+          "_meta": {
+            "title": "LTXVImgToVideoInplace"
+          },
+          "class_type": "LTXVImgToVideoInplace",
+          "inputs": {
+            "bypass": [
+              "267:201",
+              0
+            ],
+            "image": [
+              "267:248",
+              0
+            ],
+            "latent": [
+              "267:228",
+              0
+            ],
+            "strength": 0.7,
+            "vae": [
+              "267:236",
+              2
+            ]
+          }
+        },
+        "267:251": {
+          "_meta": {
+            "title": "VAE Decode (Tiled)"
+          },
+          "class_type": "VAEDecodeTiled",
+          "inputs": {
+            "overlap": 64,
+            "samples": [
+              "267:218",
+              0
+            ],
+            "temporal_overlap": 4,
+            "temporal_size": 4096,
+            "tile_size": 768,
+            "vae": [
+              "267:236",
+              2
+            ]
+          }
+        },
+        "267:252": {
+          "_meta": {
+            "title": "ManualSigmas"
+          },
+          "class_type": "ManualSigmas",
+          "inputs": {
+            "sigmas": "1.0, 0.99375, 0.9875, 0.98125, 0.975, 0.909375, 0.725, 0.421875, 0.0"
+          }
+        },
+        "267:253": {
+          "_meta": {
+            "title": "LTXVLatentUpsampler"
+          },
+          "class_type": "LTXVLatentUpsampler",
+          "inputs": {
+            "samples": [
+              "267:217",
+              0
+            ],
+            "upscale_model": [
+              "267:233",
+              0
+            ],
+            "vae": [
+              "267:236",
+              2
+            ]
+          }
+        },
+        "267:256": {
+          "_meta": {
+            "title": "Math Expression"
+          },
+          "class_type": "ComfyMathExpression",
+          "inputs": {
+            "expression": "a/2",
+            "values.a": [
+              "267:257",
+              0
+            ]
+          }
+        },
+        "267:257": {
+          "_meta": {
+            "title": "Width"
+          },
+          "class_type": "PrimitiveInt",
+          "inputs": {
+            "value": 1280
+          }
+        },
+        "267:258": {
+          "_meta": {
+            "title": "Height"
+          },
+          "class_type": "PrimitiveInt",
+          "inputs": {
+            "value": 720
+          }
+        },
+        "267:259": {
+          "_meta": {
+            "title": "Math Expression"
+          },
+          "class_type": "ComfyMathExpression",
+          "inputs": {
+            "expression": "a/2",
+            "values.a": [
+              "267:258",
+              0
+            ]
+          }
+        },
+        "267:260": {
+          "_meta": {
+            "title": "Frame Rate"
+          },
+          "class_type": "PrimitiveInt",
+          "inputs": {
+            "value": 24
+          }
+        },
+        "267:261": {
+          "_meta": {
+            "title": "Math Expression"
+          },
+          "class_type": "ComfyMathExpression",
+          "inputs": {
+            "expression": "a",
+            "values.a": [
+              "267:260",
+              0
+            ]
+          }
+        },
+        "267:266": {
+          "_meta": {
+            "title": "Prompt"
+          },
+          "class_type": "PrimitiveStringMultiline",
+          "inputs": {
+            "value": "Cinematic shot of wildflowers blooming and swaying in a gentle breeze, petals trembling, leaves rustling, deep in a lush northeastern New England forest. Soft natural light filtering through an overcast sky, diffused and moody. Shot on Phantom camera with a Cooke 32mm anamorphic lens, f/2.8, shallow depth of field, subtle anamorphic flares, organic film grain, photorealistic, high detail."
+          }
+        },
+        "269": {
+          "_meta": {
+            "title": "Load Image"
+          },
+          "class_type": "LoadImage",
+          "inputs": {
+            "image": "lumberjack_in_the_city_httpss.mj.runvaMj_VPbSus_ALEXA35_A001._17017b7f-58c3-4681-a5b9-3d3d968d0a24_1.png"
+          }
+        },
+        "75": {
+          "_meta": {
+            "title": "Save Video"
+          },
+          "class_type": "SaveVideo",
+          "inputs": {
+            "codec": "h264",
+            "filename_prefix": "video/LTX_2.3_t2v",
+            "format": "mp4",
+            "video": [
+              "267:242",
+              0
+            ]
+          }
+        }
+      },
+      {
+        "client_id": "f6b34240-149e-48ca-850d-4b2a280cb4af",
+        "create_time": 1780507020241
+      },
+      [
+        "75"
+      ]
+    ],
+    "outputs": {},
+    "status": {
+      "status_str": "error",
+      "completed": false,
+      "messages": [
+        [
+          "execution_start",
+          {
+            "prompt_id": "c269d3b2-cd48-4d44-915a-132b24be8f8f",
+            "timestamp": 1780507020243
+          }
+        ],
+        [
+          "execution_cached",
+          {
+            "nodes": [],
+            "prompt_id": "c269d3b2-cd48-4d44-915a-132b24be8f8f",
+            "timestamp": 1780507020434
+          }
+        ],
+        [
+          "execution_error",
+          {
+            "prompt_id": "c269d3b2-cd48-4d44-915a-132b24be8f8f",
+            "node_id": "267:215",
+            "node_type": "SamplerCustomAdvanced",
+            "executed": [
+              "267:209",
+              "267:240",
+              "267:258",
+              "267:247",
+              "267:222",
+              "267:233",
+              "267:214",
+              "267:225",
+              "267:246",
+              "267:252",
+              "267:236",
+              "267:221",
+              "267:266",
+              "269",
+              "267:211",
+              "267:260",
+              "267:248",
+              "267:228",
+              "267:201",
+              "267:259",
+              "267:235",
+              "267:239",
+              "267:216",
+              "267:261",
+              "267:237",
+              "267:256",
+              "267:231",
+              "267:257",
+              "267:243",
+              "267:232",
+              "267:238",
+              "267:249"
+            ],
+            "exception_message": "Allocation on device \nThis error means you ran out of memory on your GPU.\n\nTIPS: If the workflow worked before you might have accidentally set the batch_size to a large number.",
+            "exception_type": "torch.OutOfMemoryError",
+            "traceback": [
+              "  File \"G:\\COMFY\\ComfyUI\\execution.py\", line 536, in execute\n    output_data, output_ui, has_subgraph, has_pending_tasks = await get_output_data(prompt_id, unique_id, obj, input_data_all, execution_block_cb=execution_block_cb, pre_execute_cb=pre_execute_cb, v3_data=v3_data)\n                                                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n",
+              "  File \"G:\\COMFY\\ComfyUI\\execution.py\", line 336, in get_output_data\n    return_values = await _async_map_node_over_list(prompt_id, unique_id, obj, input_data_all, obj.FUNCTION, allow_interrupt=True, execution_block_cb=execution_block_cb, pre_execute_cb=pre_execute_cb, v3_data=v3_data)\n                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n",
+              "  File \"G:\\COMFY\\ComfyUI\\custom_nodes\\comfyui-lora-manager\\py\\metadata_collector\\metadata_hook.py\", line 171, in async_map_node_over_list_with_metadata\n    results = await original_map_node_over_list(\n              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n    ...<2 lines>...\n    )\n    ^\n",
+              "  File \"G:\\COMFY\\ComfyUI\\execution.py\", line 310, in _async_map_node_over_list\n    await process_inputs(input_dict, i)\n",
+              "  File \"G:\\COMFY\\ComfyUI\\execution.py\", line 298, in process_inputs\n    result = f(**inputs)\n",
+              "  File \"G:\\COMFY\\ComfyUI\\comfy_api\\internal\\__init__.py\", line 149, in wrapped_func\n    return method(locked_class, **inputs)\n",
+              "  File \"G:\\COMFY\\ComfyUI\\comfy_api\\latest\\_io.py\", line 1880, in EXECUTE_NORMALIZED\n    to_return = cls.execute(*args, **kwargs)\n",
+              "  File \"G:\\COMFY\\ComfyUI\\comfy_extras\\nodes_custom_sampler.py\", line 967, in execute\n    samples = guider.sample(noise.generate_noise(latent), latent_image, sampler, sigmas, denoise_mask=noise_mask, callback=callback, disable_pbar=disable_pbar, seed=noise.seed)\n",
+              "  File \"G:\\COMFY\\ComfyUI\\comfy\\samplers.py\", line 1316, in sample\n    output = executor.execute(noise, latent_image, sampler, sigmas, denoise_mask, callback, disable_pbar, seed, latent_shapes=latent_shapes)\n",
+              "  File \"G:\\COMFY\\ComfyUI\\comfy\\patcher_extension.py\", line 113, in execute\n    return self.original(*args, **kwargs)\n           ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^\n",
+              "  File \"G:\\COMFY\\ComfyUI\\comfy\\samplers.py\", line 1254, in outer_sample\n    output = self.inner_sample(noise, latent_image, device, sampler, sigmas, denoise_mask, callback, disable_pbar, seed, latent_shapes=latent_shapes)\n",
+              "  File \"G:\\COMFY\\ComfyUI\\comfy\\samplers.py\", line 1229, in inner_sample\n    samples = executor.execute(self, sigmas, extra_args, callback, noise, latent_image, denoise_mask, disable_pbar)\n",
+              "  File \"G:\\COMFY\\ComfyUI\\comfy\\patcher_extension.py\", line 113, in execute\n    return self.original(*args, **kwargs)\n           ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^\n",
+              "  File \"G:\\COMFY\\ComfyUI\\custom_nodes\\ComfyUI-vectorscope-cc\\callback_manager.py\", line 55, in sample\n    return original_sample(\n        self,\n    ...<7 lines>...\n        disable_pbar,\n    )\n",
+              "  File \"G:\\COMFY\\ComfyUI\\comfy\\samplers.py\", line 999, in sample\n    samples = self.sampler_function(model_k, noise, sigmas, extra_args=extra_args, callback=k_callback, disable=disable_pbar, **self.extra_options)\n",
+              "  File \"C:\\Users\\User\\AppData\\Roaming\\Python\\Python314\\site-packages\\torch\\utils\\_contextlib.py\", line 120, in decorate_context\n    return func(*args, **kwargs)\n",
+              "  File \"G:\\COMFY\\ComfyUI\\comfy\\k_diffusion\\sampling.py\", line 1288, in sample_euler_ancestral_cfg_pp\n    denoised = model(x, sigmas[i] * s_in, **extra_args)\n",
+              "  File \"G:\\COMFY\\ComfyUI\\comfy\\samplers.py\", line 639, in __call__\n    out = self.inner_model(x, sigma, model_options=model_options, seed=seed)\n",
+              "  File \"G:\\COMFY\\ComfyUI\\comfy\\samplers.py\", line 1202, in __call__\n    return self.outer_predict_noise(*args, **kwargs)\n           ~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^\n",
+              "  File \"G:\\COMFY\\ComfyUI\\comfy\\samplers.py\", line 1209, in outer_predict_noise\n    ).execute(x, timestep, model_options, seed)\n      ~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n",
+              "  File \"G:\\COMFY\\ComfyUI\\comfy\\patcher_extension.py\", line 113, in execute\n    return self.original(*args, **kwargs)\n           ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^\n",
+              "  File \"G:\\COMFY\\ComfyUI\\comfy\\samplers.py\", line 1212, in predict_noise\n    return sampling_function(self.inner_model, x, timestep, self.conds.get(\"negative\", None), self.conds.get(\"positive\", None), self.cfg, model_options=model_options, seed=seed)\n",
+              "  File \"G:\\COMFY\\ComfyUI\\comfy\\samplers.py\", line 619, in sampling_function\n    out = calc_cond_batch(model, conds, x, timestep, model_options)\n",
+              "  File \"G:\\COMFY\\ComfyUI\\comfy\\samplers.py\", line 210, in calc_cond_batch\n    return _calc_cond_batch_outer(model, conds, x_in, timestep, model_options)\n",
+              "  File \"G:\\COMFY\\ComfyUI\\comfy\\samplers.py\", line 218, in _calc_cond_batch_outer\n    return executor.execute(model, conds, x_in, timestep, model_options)\n           ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n",
+              "  File \"G:\\COMFY\\ComfyUI\\comfy\\patcher_extension.py\", line 113, in execute\n    return self.original(*args, **kwargs)\n           ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^\n",
+              "  File \"G:\\COMFY\\ComfyUI\\comfy\\samplers.py\", line 334, in _calc_cond_batch\n    output = model.apply_model(input_x, timestep_, **c).chunk(batch_chunks)\n             ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^\n",
+              "  File \"G:\\COMFY\\ComfyUI\\comfy\\model_base.py\", line 186, in apply_model\n    return comfy.patcher_extension.WrapperExecutor.new_class_executor(\n           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n    ...<2 lines>...\n        comfy.patcher_extension.get_all_wrappers(comfy.patcher_extension.WrappersMP.APPLY_MODEL, transformer_options)\n        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n    ).execute(x, t, c_concat, c_crossattn, control, transformer_options, **kwargs)\n    ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n",
+              "  File \"G:\\COMFY\\ComfyUI\\comfy\\patcher_extension.py\", line 113, in execute\n    return self.original(*args, **kwargs)\n           ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^\n",
+              "  File \"G:\\COMFY\\ComfyUI\\comfy\\model_base.py\", line 230, in _apply_model\n    model_output = self.diffusion_model(xc, t, context=context, control=control, transformer_options=transformer_options, **extra_conds)\n",
+              "  File \"C:\\Users\\User\\AppData\\Roaming\\Python\\Python314\\site-packages\\torch\\nn\\modules\\module.py\", line 1775, in _wrapped_call_impl\n    return self._call_impl(*args, **kwargs)\n           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^\n",
+              "  File \"C:\\Users\\User\\AppData\\Roaming\\Python\\Python314\\site-packages\\torch\\nn\\modules\\module.py\", line 1786, in _call_impl\n    return forward_call(*args, **kwargs)\n",
+              "  File \"G:\\COMFY\\ComfyUI\\comfy\\ldm\\lightricks\\av_model.py\", line 1069, in forward\n    return super().forward(\n           ~~~~~~~~~~~~~~~^\n        x,\n        ^^\n    ...<6 lines>...\n        **kwargs,\n        ^^^^^^^^^\n    )\n    ^\n",
+              "  File \"G:\\COMFY\\ComfyUI\\comfy\\ldm\\lightricks\\model.py\", line 936, in forward\n    return comfy.patcher_extension.WrapperExecutor.new_class_executor(\n           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n    ...<4 lines>...\n        ),\n        ~~\n    ).execute(x, timestep, context, attention_mask, frame_rate, transformer_options, keyframe_idxs, denoise_mask=denoise_mask, **kwargs)\n    ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n",
+              "  File \"G:\\COMFY\\ComfyUI\\comfy\\patcher_extension.py\", line 113, in execute\n    return self.original(*args, **kwargs)\n           ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^\n",
+              "  File \"G:\\COMFY\\ComfyUI\\comfy\\ldm\\lightricks\\model.py\", line 989, in _forward\n    x = self._process_transformer_blocks(\n        x, context, attention_mask, timestep, pe,\n    ...<2 lines>...\n        **merged_args,\n    )\n",
+              "  File \"G:\\COMFY\\ComfyUI\\comfy\\ldm\\lightricks\\av_model.py\", line 969, in _process_transformer_blocks\n    vx, ax = block(\n             ~~~~~^\n        (vx, ax),\n        ^^^^^^^^^\n    ...<16 lines>...\n        a_prompt_timestep=a_prompt_timestep,\n        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n    )\n    ^\n",
+              "  File \"C:\\Users\\User\\AppData\\Roaming\\Python\\Python314\\site-packages\\torch\\nn\\modules\\module.py\", line 1775, in _wrapped_call_impl\n    return self._call_impl(*args, **kwargs)\n           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^\n",
+              "  File \"C:\\Users\\User\\AppData\\Roaming\\Python\\Python314\\site-packages\\torch\\nn\\modules\\module.py\", line 1786, in _call_impl\n    return forward_call(*args, **kwargs)\n",
+              "  File \"G:\\COMFY\\ComfyUI\\comfy\\ldm\\lightricks\\av_model.py\", line 355, in forward\n    ff_out = self.ff(vx_scaled)\n",
+              "  File \"C:\\Users\\User\\AppData\\Roaming\\Python\\Python314\\site-packages\\torch\\nn\\modules\\module.py\", line 1775, in _wrapped_call_impl\n    return self._call_impl(*args, **kwargs)\n           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^\n",
+              "  File \"C:\\Users\\User\\AppData\\Roaming\\Python\\Python314\\site-packages\\torch\\nn\\modules\\module.py\", line 1786, in _call_impl\n    return forward_call(*args, **kwargs)\n",
+              "  File \"G:\\COMFY\\ComfyUI\\comfy\\ldm\\lightricks\\model.py\", line 322, in forward\n    return self.net(x)\n           ~~~~~~~~^^^\n",
+              "  File \"C:\\Users\\User\\AppData\\Roaming\\Python\\Python314\\site-packages\\torch\\nn\\modules\\module.py\", line 1775, in _wrapped_call_impl\n    return self._call_impl(*args, **kwargs)\n           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^\n",
+              "  File \"C:\\Users\\User\\AppData\\Roaming\\Python\\Python314\\site-packages\\torch\\nn\\modules\\module.py\", line 1786, in _call_impl\n    return forward_call(*args, **kwargs)\n",
+              "  File \"C:\\Users\\User\\AppData\\Roaming\\Python\\Python314\\site-packages\\torch\\nn\\modules\\container.py\", line 250, in forward\n    input = module(input)\n",
+              "  File \"C:\\Users\\User\\AppData\\Roaming\\Python\\Python314\\site-packages\\torch\\nn\\modules\\module.py\", line 1775, in _wrapped_call_impl\n    return self._call_impl(*args, **kwargs)\n           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^\n",
+              "  File \"C:\\Users\\User\\AppData\\Roaming\\Python\\Python314\\site-packages\\torch\\nn\\modules\\module.py\", line 1786, in _call_impl\n    return forward_call(*args, **kwargs)\n",
+              "  File \"G:\\COMFY\\ComfyUI\\comfy\\ldm\\lightricks\\model.py\", line 308, in forward\n    return torch.nn.functional.gelu(self.proj(x), approximate=\"tanh\")\n                                    ~~~~~~~~~^^^\n",
+              "  File \"C:\\Users\\User\\AppData\\Roaming\\Python\\Python314\\site-packages\\torch\\nn\\modules\\module.py\", line 1775, in _wrapped_call_impl\n    return self._call_impl(*args, **kwargs)\n           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^\n",
+              "  File \"C:\\Users\\User\\AppData\\Roaming\\Python\\Python314\\site-packages\\torch\\nn\\modules\\module.py\", line 1786, in _call_impl\n    return forward_call(*args, **kwargs)\n",
+              "  File \"G:\\COMFY\\ComfyUI\\comfy\\ops.py\", line 1244, in forward\n    output = self.forward_comfy_cast_weights(input, compute_dtype, want_requant=isinstance(input, QuantizedTensor))\n",
+              "  File \"G:\\COMFY\\ComfyUI\\comfy\\ops.py\", line 1187, in forward_comfy_cast_weights\n    weight, bias, offload_stream = cast_bias_weight(self, input, offloadable=True, compute_dtype=compute_dtype, want_requant=want_requant)\n                                   ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n",
+              "  File \"G:\\COMFY\\ComfyUI\\comfy\\ops.py\", line 324, in cast_bias_weight\n    weight, bias = resolve_cast_module_with_vbar(s, dtype, device, bias_dtype, compute_dtype, want_requant)\n                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n",
+              "  File \"G:\\COMFY\\ComfyUI\\comfy\\ops.py\", line 271, in resolve_cast_module_with_vbar\n    weight = post_cast(s, \"weight\", weight, dtype, prefetch[\"resident\"], update_weight)\n",
+              "  File \"G:\\COMFY\\ComfyUI\\comfy\\ops.py\", line 254, in post_cast\n    x = to_dequant(x, dtype if compute_dtype is None else compute_dtype)\n",
+              "  File \"G:\\COMFY\\ComfyUI\\comfy\\ops.py\", line 248, in to_dequant\n    tensor = tensor.dequantize()\n",
+              "  File \"C:\\Users\\User\\AppData\\Roaming\\Python\\Python314\\site-packages\\comfy_kitchen\\tensor\\base.py\", line 286, in dequantize\n    full = self.layout_cls.dequantize(qdata, self._params)\n",
+              "  File \"C:\\Users\\User\\AppData\\Roaming\\Python\\Python314\\site-packages\\comfy_kitchen\\tensor\\fp8.py\", line 69, in dequantize\n    return ck.dequantize_per_tensor_fp8(qdata, params.scale, params.orig_dtype)\n           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n",
+              "  File \"C:\\Users\\User\\AppData\\Roaming\\Python\\Python314\\site-packages\\comfy_kitchen\\__init__.py\", line 100, in dequantize_per_tensor_fp8\n    return torch.ops.comfy_kitchen.dequantize_fp8(x, scale, dtype_code)\n           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^\n",
+              "  File \"C:\\Users\\User\\AppData\\Roaming\\Python\\Python314\\site-packages\\torch\\_ops.py\", line 1255, in __call__\n    return self._op(*args, **kwargs)\n           ~~~~~~~~^^^^^^^^^^^^^^^^^\n",
+              "  File \"C:\\Users\\User\\AppData\\Roaming\\Python\\Python314\\site-packages\\torch\\_library\\custom_ops.py\", line 343, in backend_impl\n    result = self._backend_fns[device_type](*args, **kwargs)\n",
+              "  File \"C:\\Users\\User\\AppData\\Roaming\\Python\\Python314\\site-packages\\torch\\_compile.py\", line 53, in inner\n    return disable_fn(*args, **kwargs)\n",
+              "  File \"C:\\Users\\User\\AppData\\Roaming\\Python\\Python314\\site-packages\\torch\\_dynamo\\eval_frame.py\", line 1044, in _fn\n    return fn(*args, **kwargs)\n",
+              "  File \"C:\\Users\\User\\AppData\\Roaming\\Python\\Python314\\site-packages\\torch\\_library\\custom_ops.py\", line 376, in wrapped_fn\n    return fn(*args, **kwargs)\n",
+              "  File \"C:\\Users\\User\\AppData\\Roaming\\Python\\Python314\\site-packages\\comfy_kitchen\\backends\\eager\\quantization.py\", line 462, in _op_dequantize_fp8\n    return impl(**kwargs)\n",
+              "  File \"C:\\Users\\User\\AppData\\Roaming\\Python\\Python314\\site-packages\\comfy_kitchen\\backends\\cuda\\__init__.py\", line 184, in dequantize_per_tensor_fp8\n    result = torch.empty(x.shape, dtype=output_type, device=x.device)\n"
+            ],
+            "current_inputs": {
+              "guider": [
+                "<comfy.samplers.CFGGuider object at 0x000001D30AFDCAD0>"
+              ],
+              "latent_image": [
+                "{'samples': <comfy.nested_tensor.NestedTensor object at 0x000001D1CCB08D70>, 'downscale_ratio_spacial': 32, 'type': 'audio'}"
+              ],
+              "noise": [
+                "<G:\\COMFY\\ComfyUI\\comfy_extras\\nodes_custom_sampler.Noise_RandomNoise object at 0x000001D1CBF58B90>"
+              ],
+              "sampler": [
+                "<comfy.samplers.KSAMPLER object at 0x000001D1CBF58550>"
+              ],
+              "sigmas": [
+                "tensor([1.0000, 0.9937, 0.9875, 0.9812, 0.9750, 0.9094, 0.7250, 0.4219, 0.0000])"
+              ]
+            },
+            "current_outputs": [
+              "267:209",
+              "267:240",
+              "267:213",
+              "267:258",
+              "267:247",
+              "267:222",
+              "267:229",
+              "267:214",
+              "267:233",
+              "267:217",
+              "267:253",
+              "267:225",
+              "267:246",
+              "267:212",
+              "267:252",
+              "267:236",
+              "267:221",
+              "267:266",
+              "269",
+              "267:211",
+              "267:260",
+              "267:248",
+              "267:228",
+              "267:251",
+              "267:201",
+              "267:259",
+              "267:235",
+              "267:218",
+              "267:239",
+              "267:242",
+              "267:216",
+              "267:261",
+              "267:237",
+              "267:256",
+              "267:231",
+              "267:215",
+              "267:257",
+              "267:243",
+              "267:232",
+              "267:230",
+              "75",
+              "267:238",
+              "267:219",
+              "267:249",
+              "267:220"
+            ],
+            "timestamp": 1780508225721
+          }
+        ]
+      ]
+    },
+    "meta": {}
+  }
+}

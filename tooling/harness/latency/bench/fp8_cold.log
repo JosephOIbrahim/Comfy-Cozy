@@ -1,0 +1,6 @@
+Poll attempt 1 failed for c269d3b2-cd48-4d44-915a-132b24be8f8f: timed out
+Poll attempt 2 failed for c269d3b2-cd48-4d44-915a-132b24be8f8f: timed out
+Circuit breaker 'comfyui': CLOSED -> OPEN (3 consecutive failures)
+Poll attempt 3 failed for c269d3b2-cd48-4d44-915a-132b24be8f8f: timed out
+Circuit breaker open during polling for c269d3b2-cd48-4d44-915a-132b24be8f8f
+RESULT_JSON {"handler_wall_s": 494.402, "prompt_id": null, "status": null, "n_outputs": 0, "outputs": null, "error": "ComfyUI became unreachable during generation. Check if it's still running.", "outputs_warning": null}
