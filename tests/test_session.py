@@ -498,9 +498,9 @@ class TestAtomicWriteCleanupLogging:
         target = tmp_path / "test_write.json"
         content = '{"ok": true}'
 
-        # Patch shutil.move to fail (triggers the except path),
+        # Patch os.replace to fail (triggers the except path),
         # then patch Path.unlink to also fail (triggers the log warning).
-        with patch("agent.memory.session.shutil.move", side_effect=OSError("disk full")), \
+        with patch("agent.memory.session.os.replace", side_effect=OSError("disk full")), \
              patch("agent.memory.session.Path.unlink", side_effect=OSError("unlink failed")), \
              caplog.at_level(logging.WARNING, logger="agent.memory.session"):
             try:
