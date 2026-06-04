@@ -301,9 +301,6 @@ class TestRoundTrip:
             / "templates"
             / "txt2img_sd15.json"
         )
-        if not template_path.exists():
-            pytest.skip("Template file not found")
-
         with open(template_path) as f:
             workflow = json.load(f)
 
