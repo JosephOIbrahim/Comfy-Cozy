@@ -1093,7 +1093,7 @@ def _build_environment() -> dict:
 # Actions that execute tools directly (no Claude needed)
 _DIRECT_ACTIONS = {
     "install_node_pack", "download_model", "uninstall_node_pack",
-    "repair_workflow", "reconfigure_workflow",
+    "repair_workflow", "reconfigure_workflow", "validate_before_execute",
     "validate", "repair", "reconfigure",
 }
 
@@ -1455,8 +1455,65 @@ async def _forward_event(ws, event, accumulated_text):
 # REST endpoints
 # ---------------------------------------------------------------------------
 
+def _origin_guard(request):
+    """Same-origin / bearer guard for the REST endpoints. Returns a 403 web.Response
+    or None. Mirrors websocket_handler's auth — browsers can't send a bearer header,
+    so same-origin validation IS the auth layer; non-browser (no-Origin) clients must
+    present the bearer when MCP_AUTH_TOKEN is configured.
+    """
+    from agent._session_helpers import allowed_origins
+    origin = request.headers.get("Origin", "")
+    if origin and origin not in allowed_origins():
+        log.warning("Request rejected -- cross-origin: %s", origin)
+        return web.Response(status=403, text="Forbidden: invalid Origin")
+    if not origin:
+        from agent.config import MCP_AUTH_TOKEN
+        if MCP_AUTH_TOKEN:
+            import hmac
+            auth = request.headers.get("Authorization", "")
+            if not auth.startswith("Bearer ") or not hmac.compare_digest(
+                auth[7:], MCP_AUTH_TOKEN
+            ):
+                log.warning("Request rejected -- non-browser without bearer auth")
+                return web.Response(status=403, text="Forbidden: auth required")
+    return None
+
+
+_MAX_CHAT_BYTES = 1 * 1024 * 1024  # 1 MB -- chat content is small text
+
+
+def _size_guard(request, max_bytes=_MAX_CHAT_BYTES):
+    """Reject oversized or unbounded (chunked, no length) bodies. Response or None."""
+    cl = request.content_length
+    if cl is not None and cl > max_bytes:
+        return web.json_response({"error": "Payload too large"}, status=413)
+    if (cl is None and request.method == "POST"
+            and request.headers.get("Transfer-Encoding", "").lower() == "chunked"):
+        return web.json_response(
+            {"error": "Content-Length required; chunked transfer not accepted"},
+            status=411,
+        )
+    return None
+
+
+def _rate_guard(category):
+    """Token-bucket rate limit, reusing the shared middleware. Response or None.
+    Optional -- Origin+size are the load-bearing guards if the limiter is absent."""
+    try:
+        from panel.server.middleware import check_rate_limit
+        return check_rate_limit(category)
+    except Exception:
+        return None
+
+
 async def handle_chat(request):
     """POST /superduper/chat -- simple request/response chat."""
+    # SECURITY (route-auth audit 4.3): this open agent-trigger had no Origin/size/
+    # rate guard. Apply the same same-origin validation as the WS handler, cap the
+    # body, and rate-limit, so a cross-origin page can't drive the agent loop.
+    rejected = _origin_guard(request) or _size_guard(request) or _rate_guard("chat")
+    if rejected:
+        return rejected
     if not _ensure_brain():
         return web.json_response(
             {"error": "Agent brain not available"}, status=503
@@ -1496,6 +1553,11 @@ async def handle_chat(request):
 
 async def handle_status(request):
     """GET /superduper/status -- agent and connection state."""
+    # SECURITY (route-auth audit 2.1): guard the info-disclosure endpoint with the
+    # same same-origin check as the chat/WS handlers.
+    rejected = _origin_guard(request)
+    if rejected:
+        return rejected
     brain_ok = _ensure_brain()
     return web.json_response({
         "brain": "ready" if brain_ok else "unavailable",

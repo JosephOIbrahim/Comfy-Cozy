@@ -82,3 +82,48 @@ async def test_repair_action_routes_through_gate_not_direct():
     assert gated.called
     assert gated.call_args.args[0] == "repair_workflow"
     direct.assert_not_called()
+
+
+async def test_validate_action_now_reachable_and_gated():
+    """Regression: 'validate' was unreachable ('validate_before_execute' was missing
+    from _DIRECT_ACTIONS, so it was rejected as 'Unknown action'). It now maps and
+    dispatches through the gated handler (READ_ONLY fast-path)."""
+    with patch(
+        "agent.tools.handle", return_value=json.dumps({"valid": True})
+    ) as gated, patch("agent.tools.comfy_execute.handle") as direct:
+        ws = await _run_action("validate", {})
+
+    assert gated.called, "validate must now reach the dispatcher"
+    assert gated.call_args.args[0] == "validate_before_execute"
+    direct.assert_not_called()
+    assert not any("unknown action" in str(m).lower() for m in ws.sent)
+
+
+# --- fix #2: handle_chat / handle_status origin guard (audit 4.3 / 2.1) ---
+
+
+class _FakeRequest:
+    def __init__(self, headers=None, content_length=0, method="POST"):
+        self.headers = headers or {}
+        self.content_length = content_length
+        self.method = method
+
+
+async def test_handle_chat_rejects_cross_origin():
+    """POST /superduper/chat must 403 a cross-origin caller before any agent work."""
+    from ui.server import routes as uiroutes
+
+    resp = await uiroutes.handle_chat(
+        _FakeRequest(headers={"Origin": "http://evil.example"}, content_length=10)
+    )
+    assert resp.status == 403
+
+
+async def test_handle_status_rejects_cross_origin():
+    """GET /superduper/status must 403 a cross-origin caller (info-disclosure guard)."""
+    from ui.server import routes as uiroutes
+
+    resp = await uiroutes.handle_status(
+        _FakeRequest(headers={"Origin": "http://evil.example"}, method="GET")
+    )
+    assert resp.status == 403
