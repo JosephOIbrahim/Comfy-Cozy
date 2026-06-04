@@ -13,18 +13,70 @@ returns bytes; we normalize to MB.
 from __future__ import annotations
 
 import gc
-import resource
 import statistics
 import sys
 import time
 from dataclasses import dataclass, field
 from typing import Callable
 
+try:
+    import resource  # POSIX-only; absent on Windows
+except ImportError:
+    resource = None
+
 
 def _ru_maxrss_to_mb(ru_maxrss: int) -> float:
     if sys.platform == "darwin":
         return ru_maxrss / (1024 * 1024)
     return ru_maxrss / 1024
+
+
+def _peak_rss_mb() -> float:
+    """Peak resident-set size in MB, cross-platform.
+
+    POSIX: resource.getrusage(ru_maxrss). Windows (no resource module): the
+    psapi GetProcessMemoryInfo PeakWorkingSetSize, via ctypes — still pure stdlib.
+    """
+    if resource is not None:
+        return _ru_maxrss_to_mb(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        class _PROCESS_MEMORY_COUNTERS(ctypes.Structure):
+            _fields_ = [
+                ("cb", wintypes.DWORD),
+                ("PageFaultCount", wintypes.DWORD),
+                ("PeakWorkingSetSize", ctypes.c_size_t),
+                ("WorkingSetSize", ctypes.c_size_t),
+                ("QuotaPeakPagedPoolUsage", ctypes.c_size_t),
+                ("QuotaPagedPoolUsage", ctypes.c_size_t),
+                ("QuotaPeakNonPagedPoolUsage", ctypes.c_size_t),
+                ("QuotaNonPagedPoolUsage", ctypes.c_size_t),
+                ("PagefileUsage", ctypes.c_size_t),
+                ("PeakPagefileUsage", ctypes.c_size_t),
+            ]
+
+        kernel32 = ctypes.windll.kernel32
+        psapi = ctypes.windll.psapi
+        # Declare signatures — without these the 64-bit HANDLE is truncated to int.
+        kernel32.GetCurrentProcess.restype = wintypes.HANDLE
+        psapi.GetProcessMemoryInfo.argtypes = [
+            wintypes.HANDLE,
+            ctypes.POINTER(_PROCESS_MEMORY_COUNTERS),
+            wintypes.DWORD,
+        ]
+        psapi.GetProcessMemoryInfo.restype = wintypes.BOOL
+
+        counters = _PROCESS_MEMORY_COUNTERS()
+        counters.cb = ctypes.sizeof(_PROCESS_MEMORY_COUNTERS)
+        if psapi.GetProcessMemoryInfo(
+            kernel32.GetCurrentProcess(), ctypes.byref(counters), counters.cb
+        ):
+            return counters.PeakWorkingSetSize / (1024 * 1024)
+    except Exception:
+        pass
+    return 0.0
 
 
 def _pct(sorted_samples: list[float], pct: float) -> float:
@@ -110,7 +162,7 @@ def run_benchmark(
         fn()
 
     samples_ns: list[int] = []
-    rss_before = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    mem_before_mb = _peak_rss_mb()
 
     was_enabled = gc.isenabled()
     if gc_disable:
@@ -125,8 +177,8 @@ def run_benchmark(
         if gc_disable and was_enabled:
             gc.enable()
 
-    rss_after = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-    mem_peak_mb = _ru_maxrss_to_mb(max(rss_before, rss_after))
+    mem_after_mb = _peak_rss_mb()
+    mem_peak_mb = max(mem_before_mb, mem_after_mb)
 
     stats = compute_stats(samples_ns)
     return BenchmarkResult(
