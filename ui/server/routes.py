@@ -121,6 +121,7 @@ class ConversationState:
 
 # Active conversations keyed by connection ID
 _conversations: dict[str, ConversationState] = {}
+_MAX_WS_CONNECTIONS = 20  # cap concurrent sidebar WS connections (DoS guard; mirrors panel)
 
 
 # ---------------------------------------------------------------------------
@@ -1252,8 +1253,24 @@ async def websocket_handler(request):
         # If MCP_AUTH_TOKEN is not configured, allow non-browser clients
         # (this matches the panel's existing behavior pre-cycle 5).
 
+    # SECURITY (route-auth audit 4.4/3.3): cap concurrent connections BEFORE the
+    # handshake so the conversation table can't grow unbounded (memory/thread DoS).
+    if len(_conversations) >= _MAX_WS_CONNECTIONS:
+        return web.Response(
+            status=503,
+            text='{"error": "Too many active connections"}',
+            content_type="application/json",
+        )
+
     ws = web.WebSocketResponse()
     await ws.prepare(request)
+
+    # TOCTOU re-check: another coroutine may have connected between the pre-handshake
+    # check and ws.prepare() (asyncio yields at the await). Mirror panel/server/chat.py.
+    if len(_conversations) >= _MAX_WS_CONNECTIONS:
+        await ws.send_json({"type": "error", "message": "Too many active connections"})
+        await ws.close()
+        return ws
 
     if not _ensure_brain():
         await ws.send_json({

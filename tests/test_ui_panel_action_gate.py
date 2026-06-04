@@ -127,3 +127,23 @@ async def test_handle_status_rejects_cross_origin():
         _FakeRequest(headers={"Origin": "http://evil.example"}, method="GET")
     )
     assert resp.status == 403
+
+
+async def test_ws_handler_rejects_over_cap():
+    """The ui WS handler 503s a new connection once the conversation table is full (DoS guard)."""
+    from ui.server import routes as uiroutes
+    from agent._session_helpers import allowed_origins
+
+    saved = dict(uiroutes._conversations)
+    try:
+        uiroutes._conversations.clear()
+        for i in range(uiroutes._MAX_WS_CONNECTIONS):
+            uiroutes._conversations[f"c{i}"] = object()
+        origin = next(iter(allowed_origins()))
+        resp = await uiroutes.websocket_handler(
+            _FakeRequest(headers={"Origin": origin}, method="GET")
+        )
+        assert resp.status == 503
+    finally:
+        uiroutes._conversations.clear()
+        uiroutes._conversations.update(saved)
