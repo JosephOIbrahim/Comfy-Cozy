@@ -1684,6 +1684,37 @@ async def handle_status(request):
 # Route setup (called from ui/__init__.py at import time)
 # ---------------------------------------------------------------------------
 
+def _warn_on_unauthenticated_bind():
+    """Route-auth audit 3.2/2.3: loud warning when the agent surface is unauthenticated
+    (MCP_AUTH_TOKEN unset) AND ComfyUI is bound to a non-loopback address -- the only
+    config where a non-browser client reaches the tool surface with no auth at all."""
+    try:
+        from agent.config import MCP_AUTH_TOKEN
+        if MCP_AUTH_TOKEN:
+            return
+        listen = None
+        try:
+            from comfy.cli_args import args
+            listen = getattr(args, "listen", None)
+        except Exception:
+            pass
+        if listen and listen not in ("127.0.0.1", "localhost", "::1", ""):
+            log.warning(
+                "SECURITY: MCP_AUTH_TOKEN is not set and ComfyUI is bound to a "
+                "non-loopback address (%s). The Comfy-Cozy agent surface is reachable "
+                "by non-browser clients with NO authentication. Set MCP_AUTH_TOKEN to "
+                "require a bearer token, or bind ComfyUI to 127.0.0.1.", listen,
+            )
+        else:
+            log.info(
+                "Comfy-Cozy: MCP_AUTH_TOKEN not set -- agent surface uses same-origin "
+                "validation only (safe for a loopback bind; set the token before "
+                "binding ComfyUI to a non-loopback address)."
+            )
+    except Exception:
+        pass  # never let a startup advisory break route mounting
+
+
 def setup_routes():
     """Mount all COMFY COZY routes on ComfyUI's PromptServer."""
     try:
@@ -1692,6 +1723,7 @@ def setup_routes():
         routes.post("/superduper/chat")(handle_chat)
         routes.get("/superduper/status")(handle_status)
         routes.get("/superduper/ws")(websocket_handler)
+        _warn_on_unauthenticated_bind()
         log.info("COMFY COZY routes mounted: /superduper/chat, /superduper/status, /superduper/ws")
     except Exception as e:
         log.error("Failed to mount COMFY COZY routes: %s", e)
