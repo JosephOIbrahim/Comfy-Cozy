@@ -336,7 +336,9 @@ async def websocket_handler(request):
             content_type="application/json",
         )
 
-    ws = web.WebSocketResponse()
+    # audit 1.7: explicit per-message cap on injected workflow frames (matches
+    # aiohttp's 4MB default; make it explicit rather than relying on the default).
+    ws = web.WebSocketResponse(max_msg_size=4 * 1024 * 1024)
     await ws.prepare(request)
 
     # P1-D (TOCTOU guard): re-check after the await — other coroutines may have
@@ -372,6 +374,12 @@ async def websocket_handler(request):
     try:
         async for raw_msg in ws:
             if raw_msg.type == web.WSMsgType.TEXT:
+                # audit 1.7: per-message rate limit (the 'chat' bucket) so a client
+                # can't flood the agent loop / Claude API over one open connection.
+                from .middleware import check_rate_limit
+                if check_rate_limit("chat") is not None:
+                    await ws.send_json({"type": "error", "message": "Rate limited -- slow down."})
+                    continue
                 try:
                     data = json.loads(raw_msg.data)
                 except json.JSONDecodeError:

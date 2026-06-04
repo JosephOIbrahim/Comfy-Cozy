@@ -236,6 +236,7 @@ class TestDownloadModelSsrfRedirectBlocked:
                     "url": "https://huggingface.co/models/test/model.safetensors",
                     "model_type": "checkpoints",
                     "filename": "model.safetensors",
+                    "confirm": True,
                 },
             )
 
@@ -275,6 +276,7 @@ class TestDownloadModelSsrfRedirectBlocked:
                     "url": "https://huggingface.co/models/test/model.safetensors",
                     "model_type": "checkpoints",
                     "filename": "model.safetensors",
+                    "confirm": True,
                 },
             )
 
@@ -604,6 +606,7 @@ class TestZeroByteDownloadGuard:
                 "url": "https://huggingface.co/models/test/model.safetensors",
                 "model_type": "checkpoints",
                 "filename": "model.safetensors",
+                "confirm": True,
             })
 
         parsed = json.loads(result)
@@ -636,6 +639,7 @@ class TestZeroByteDownloadGuard:
                 "url": "https://huggingface.co/models/test/model.safetensors",
                 "model_type": "checkpoints",
                 "filename": "model.safetensors",
+                "confirm": True,
             })
 
         remaining = list(tmp_path.rglob("*"))

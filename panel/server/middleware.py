@@ -58,8 +58,9 @@ def check_auth(request: web.Request) -> web.Response | None:
     """Check Bearer token if MCP_AUTH_TOKEN is configured. Returns 401 response or None."""
     if not MCP_AUTH_TOKEN:
         return None  # Auth not configured — passthrough
-    # Skip auth for health check
-    if request.path.endswith("/health"):
+    # Skip auth for the health check -- EXACT path only (audit 2.2: endswith() was a
+    # latent bypass primitive; any future "*/health" route would inherit the exemption).
+    if request.path == "/comfy-cozy/health":
         return None
     auth = request.headers.get("Authorization", "")
     if not auth.startswith("Bearer "):

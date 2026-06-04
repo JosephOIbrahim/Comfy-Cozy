@@ -784,13 +784,28 @@ function buildSidebar(el) {
       session.messages.push({ kind: "user", text: btn.dataset.message });
       payload.message = btn.dataset.message;
     } else if (action === "install_node_pack") {
-      const installMsg = `Installing ${btn.dataset.name || "node pack"}...`;
+      // Code-executing install (git clone + pip install). The agent's pre-dispatch
+      // gate blocks this unless confirmed; the user's click here IS the human
+      // approval the gate requires, so confirm explicitly and send confirm:true.
+      const pkg = btn.dataset.name || "node pack";
+      if (!window.confirm(
+        `Install "${pkg}"?\n\nThis downloads and runs third-party code ` +
+        `(git clone + pip install) on your machine.`
+      )) return;
+      payload.confirm = true;
+      const installMsg = `Installing ${pkg}...`;
       messagesEl.appendChild(createMessageEl("user", installMsg));
       session.messages.push({ kind: "user", text: installMsg });
       if (btn.dataset.url) payload.url = btn.dataset.url;
       if (btn.dataset.name) payload.name = btn.dataset.name;
     } else if (action === "download_model") {
-      const downloadMsg = `Downloading ${btn.dataset.filename || "model"}...`;
+      const file = btn.dataset.filename || "model";
+      if (!window.confirm(
+        `Download "${file}"?\n\nThis fetches a file from the network into ` +
+        `your models directory.`
+      )) return;
+      payload.confirm = true;
+      const downloadMsg = `Downloading ${file}...`;
       messagesEl.appendChild(createMessageEl("user", downloadMsg));
       session.messages.push({ kind: "user", text: downloadMsg });
       if (btn.dataset.url) payload.url = btn.dataset.url;

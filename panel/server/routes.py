@@ -398,7 +398,9 @@ def setup_routes():
     async def validate(request):
         """Pre-execution validation."""
         try:
-            rejected = _guard(request, "execute")
+            # audit 1.4: validate_before_execute is READ_ONLY -- use the read bucket
+            # (50/s), not the execute bucket (1/s), so it can't throttle a validate->fix loop.
+            rejected = _guard(request, "read")
             if rejected:
                 return rejected
             result = _tool_call("validate_before_execute", {})

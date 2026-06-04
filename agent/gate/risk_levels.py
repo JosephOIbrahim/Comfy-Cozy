@@ -73,7 +73,12 @@ TOOL_RISK_LEVELS: dict[str, RiskLevel] = {
     "get_workflow_template": RiskLevel.READ_ONLY,
     # Session reads
     "list_sessions": RiskLevel.READ_ONLY,
-    "load_session": RiskLevel.READ_ONLY,
+    # load_session REPLACES the loaded workflow + resets undo history -- it MUTATES,
+    # so it is REVERSIBLE, not a READ_ONLY free-pass (route-auth audit 3.4). It is
+    # self-baselining (restores a saved base_workflow; the on-disk session is
+    # recoverable), so the gate is told it has undo capability -- see
+    # agent/tools/__init__.py -- which keeps a fresh load from being denied.
+    "load_session": RiskLevel.REVERSIBLE,
     # Planner reads
     "get_plan": RiskLevel.READ_ONLY,
     # Memory reads

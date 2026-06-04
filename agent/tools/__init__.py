@@ -300,6 +300,14 @@ def handle(
                 _session_active = True
                 _has_undo = True
 
+            # load_session is self-baselining (audit 3.4): it restores a saved
+            # base_workflow (reset_workflow can restore it) and the on-disk session is
+            # recoverable, so it is reversible even on a fresh load. Without this, the
+            # REVERSIBLE reclassification would DENY a fresh load (no prior undo state).
+            if name == "load_session":
+                _session_active = True
+                _has_undo = True
+
             # Stage-state fallback for stage_* tools.  The workflow-state
             # fallback above misses the case where a CognitiveWorkflowStage
             # exists but no workflow is loaded — stage tools operate on USD

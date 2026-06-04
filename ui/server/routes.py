@@ -121,6 +121,7 @@ class ConversationState:
 
 # Active conversations keyed by connection ID
 _conversations: dict[str, ConversationState] = {}
+_MAX_WS_CONNECTIONS = 20  # cap concurrent sidebar WS connections (DoS guard; mirrors panel)
 
 
 # ---------------------------------------------------------------------------
@@ -598,6 +599,71 @@ def _panel_install_result(result: dict) -> dict | None:
     return None
 
 
+def _panel_validation_result(result: dict) -> dict | None:
+    """Panel for validate_before_execute -- the validate -> fix -> re-validate loop.
+
+    Shows status + errors/warnings/analysis, and offers WORKFLOW-LEVEL fix actions
+    (repair / reconfigure / re-validate when invalid; run when valid). Each fix routes
+    through the gate; install/download require confirm.
+    """
+    if not isinstance(result, dict) or "valid" not in result:
+        return None
+    valid = bool(result.get("valid"))
+    errors = result.get("errors") or []
+    warnings = result.get("warnings") or []
+    intel = result.get("intelligence") or {}
+
+    sections = []
+    if errors:
+        sections.append({
+            "title": "Errors", "dotColor": "#FF6E6E", "count": len(errors),
+            "defaultOpen": True, "type": "detail_rows",
+            "data": {"rows": [{"label": f"#{i + 1}", "value": str(e)} for i, e in enumerate(errors)]},
+        })
+    if warnings:
+        sections.append({
+            "title": "Warnings", "dotColor": "#C99A52", "count": len(warnings),
+            "defaultOpen": not errors, "type": "detail_rows",
+            "data": {"rows": [{"label": f"#{i + 1}", "value": str(w)} for i, w in enumerate(warnings)]},
+        })
+    if intel:
+        sections.append({
+            "title": "Analysis", "dotColor": "#6F968B", "count": len(intel),
+            "defaultOpen": False, "type": "detail_rows",
+            "data": {"rows": [{"label": str(k), "value": str(v)} for k, v in intel.items()]},
+        })
+
+    if valid:
+        actions = [{"label": "Run", "variant": "primary", "action": "agent_message",
+                    "message": "Run the current workflow"}]
+        status = "valid"
+    else:
+        actions = [
+            {"label": "Repair", "variant": "primary", "action": "repair"},
+            {"label": "Reconfigure", "variant": "secondary", "action": "reconfigure"},
+            {"label": "Re-validate", "variant": "secondary", "action": "validate"},
+        ]
+        status = "invalid"
+
+    n_err = len(errors)
+    return {
+        "type": "validation",
+        "header": {
+            "label": "workflow · validate",
+            "badge": "VALID" if valid else (f"{n_err} ERROR" + ("" if n_err == 1 else "S")),
+            "title": "Validation — ready to run" if valid else "Validation — fix needed",
+            "summary": result.get("message", ""),
+            "stats": [
+                {"value": str(result.get("node_count", "?")), "label": "nodes"},
+                {"value": str(n_err), "label": "errors"},
+                {"value": str(len(warnings)), "label": "warnings"},
+            ],
+        },
+        "sections": sections,
+        "footer": {"status": status, "actions": actions},
+    }
+
+
 # Tools that produce panelable results
 _PANEL_TOOLS = {
     "load_workflow", "validate_workflow",
@@ -605,6 +671,7 @@ _PANEL_TOOLS = {
     "find_missing_nodes",
     "install_node_pack", "download_model",
     "repair_workflow", "reconfigure_workflow",
+    "validate_before_execute",
 }
 
 
@@ -636,6 +703,8 @@ def _build_panel_for_tool(name: str, tool_input: dict, result_json: str) -> dict
         return _panel_repair_report(result)
     elif name == "reconfigure_workflow":
         return _panel_reconfigure_report(result)
+    elif name == "validate_before_execute":
+        return _panel_validation_result(result)
 
     return None
 
@@ -1093,9 +1162,17 @@ def _build_environment() -> dict:
 # Actions that execute tools directly (no Claude needed)
 _DIRECT_ACTIONS = {
     "install_node_pack", "download_model", "uninstall_node_pack",
-    "repair_workflow", "reconfigure_workflow",
+    "repair_workflow", "reconfigure_workflow", "validate_before_execute",
     "validate", "repair", "reconfigure",
 }
+
+# validate -> fix -> re-validate loop: fix actions that trigger an auto re-validate,
+# and the per-conversation cap (reset each chat turn) that keeps it from spinning.
+_FIX_ACTIONS = {
+    "repair_workflow", "reconfigure_workflow", "install_node_pack",
+    "download_model", "migrate_deprecated_nodes",
+}
+_MAX_AUTO_REVALIDATE = 3
 
 
 async def _handle_panel_action(ws, conv, loop, action, data):
@@ -1156,13 +1233,15 @@ async def _handle_panel_action(ws, conv, loop, action, data):
         tool_input = {}
     elif action == "install_node_pack":
         tool_name = "install_node_pack"
-        tool_input = {"url": data.get("url", ""), "name": data.get("name", "")}
+        tool_input = {"url": data.get("url", ""), "name": data.get("name", ""),
+                      "confirm": data.get("confirm", False)}
     elif action == "download_model":
         tool_name = "download_model"
         tool_input = {
             "url": data.get("url", ""),
             "model_type": data.get("model_type", "checkpoints"),
             "filename": data.get("filename", ""),
+            "confirm": data.get("confirm", False),
         }
 
     if tool_name not in _DIRECT_ACTIONS:
@@ -1180,19 +1259,20 @@ async def _handle_panel_action(ws, conv, loop, action, data):
     })
 
     try:
-        from agent.tools.comfy_provision import handle as provision_handle
-        from agent.tools.comfy_execute import handle as execute_handle
+        # SECURITY (route-auth audit 5.1): dispatch through the CENTRAL handler so the
+        # pre-dispatch safety gate runs. install_node_pack / download_model are
+        # PROVISION -> ESCALATE (blocked unless "confirm": true); uninstall_node_pack
+        # is DESTRUCTIVE -> LOCKED. Calling comfy_provision/comfy_execute.handle()
+        # directly here bypassed the gate entirely.
+        from agent.tools import handle as tools_handle
 
-        if tool_name == "validate_before_execute":
-            result_json = await _run_in_executor_with_session(
-                loop, execute_handle, tool_name, tool_input,
-                session_id=conv.id,
-            )
-        else:
-            result_json = await _run_in_executor_with_session(
-                loop, provision_handle, tool_name, tool_input,
-                session_id=conv.id,
-            )
+        def _gated(_name, _inp):
+            return tools_handle(_name, _inp, session_id=conv.id)
+
+        result_json = await _run_in_executor_with_session(
+            loop, _gated, tool_name, tool_input,
+            session_id=conv.id,
+        )
 
         # Build and send panel
         panel = _build_panel_for_tool(tool_name, tool_input, result_json)
@@ -1206,6 +1286,23 @@ async def _handle_panel_action(ws, conv, loop, action, data):
             "type": "message", "role": "agent",
             "content": msg,
         })
+
+        # validate -> fix -> re-validate loop: after a FIX that actually ran, auto
+        # re-validate and emit a fresh validation panel. Bounded (_MAX_AUTO_REVALIDATE,
+        # reset each chat turn) so it can never spin; skipped on needs_confirmation.
+        if (tool_name in _FIX_ACTIONS
+                and result.get("status") != "needs_confirmation"
+                and not result.get("error")
+                and getattr(conv, "_auto_revalidate_count", 0) < _MAX_AUTO_REVALIDATE):
+            conv._auto_revalidate_count = getattr(conv, "_auto_revalidate_count", 0) + 1
+            try:
+                v_json = await _run_in_executor_with_session(
+                    loop, _gated, "validate_before_execute", {}, session_id=conv.id)
+                v_panel = _build_panel_for_tool("validate_before_execute", {}, v_json)
+                if v_panel:
+                    await ws.send_json({"type": "panel", "panel": v_panel})
+            except Exception as _ve:
+                log.debug("auto re-validate failed: %s", _ve)
 
     except Exception as e:
         log.error("Direct action failed: %s", e, exc_info=True)
@@ -1249,8 +1346,24 @@ async def websocket_handler(request):
         # If MCP_AUTH_TOKEN is not configured, allow non-browser clients
         # (this matches the panel's existing behavior pre-cycle 5).
 
+    # SECURITY (route-auth audit 4.4/3.3): cap concurrent connections BEFORE the
+    # handshake so the conversation table can't grow unbounded (memory/thread DoS).
+    if len(_conversations) >= _MAX_WS_CONNECTIONS:
+        return web.Response(
+            status=503,
+            text='{"error": "Too many active connections"}',
+            content_type="application/json",
+        )
+
     ws = web.WebSocketResponse()
     await ws.prepare(request)
+
+    # TOCTOU re-check: another coroutine may have connected between the pre-handshake
+    # check and ws.prepare() (asyncio yields at the await). Mirror panel/server/chat.py.
+    if len(_conversations) >= _MAX_WS_CONNECTIONS:
+        await ws.send_json({"type": "error", "message": "Too many active connections"})
+        await ws.close()
+        return ws
 
     if not _ensure_brain():
         await ws.send_json({
@@ -1291,6 +1404,7 @@ async def websocket_handler(request):
                     content = data.get("content", "").strip()
                     if not content:
                         continue
+                    conv._auto_revalidate_count = 0  # new chat turn -> reset loop guard
 
                     if conv.busy:
                         await ws.send_json({
@@ -1452,8 +1566,65 @@ async def _forward_event(ws, event, accumulated_text):
 # REST endpoints
 # ---------------------------------------------------------------------------
 
+def _origin_guard(request):
+    """Same-origin / bearer guard for the REST endpoints. Returns a 403 web.Response
+    or None. Mirrors websocket_handler's auth — browsers can't send a bearer header,
+    so same-origin validation IS the auth layer; non-browser (no-Origin) clients must
+    present the bearer when MCP_AUTH_TOKEN is configured.
+    """
+    from agent._session_helpers import allowed_origins
+    origin = request.headers.get("Origin", "")
+    if origin and origin not in allowed_origins():
+        log.warning("Request rejected -- cross-origin: %s", origin)
+        return web.Response(status=403, text="Forbidden: invalid Origin")
+    if not origin:
+        from agent.config import MCP_AUTH_TOKEN
+        if MCP_AUTH_TOKEN:
+            import hmac
+            auth = request.headers.get("Authorization", "")
+            if not auth.startswith("Bearer ") or not hmac.compare_digest(
+                auth[7:], MCP_AUTH_TOKEN
+            ):
+                log.warning("Request rejected -- non-browser without bearer auth")
+                return web.Response(status=403, text="Forbidden: auth required")
+    return None
+
+
+_MAX_CHAT_BYTES = 1 * 1024 * 1024  # 1 MB -- chat content is small text
+
+
+def _size_guard(request, max_bytes=_MAX_CHAT_BYTES):
+    """Reject oversized or unbounded (chunked, no length) bodies. Response or None."""
+    cl = request.content_length
+    if cl is not None and cl > max_bytes:
+        return web.json_response({"error": "Payload too large"}, status=413)
+    if (cl is None and request.method == "POST"
+            and request.headers.get("Transfer-Encoding", "").lower() == "chunked"):
+        return web.json_response(
+            {"error": "Content-Length required; chunked transfer not accepted"},
+            status=411,
+        )
+    return None
+
+
+def _rate_guard(category):
+    """Token-bucket rate limit, reusing the shared middleware. Response or None.
+    Optional -- Origin+size are the load-bearing guards if the limiter is absent."""
+    try:
+        from panel.server.middleware import check_rate_limit
+        return check_rate_limit(category)
+    except Exception:
+        return None
+
+
 async def handle_chat(request):
     """POST /superduper/chat -- simple request/response chat."""
+    # SECURITY (route-auth audit 4.3): this open agent-trigger had no Origin/size/
+    # rate guard. Apply the same same-origin validation as the WS handler, cap the
+    # body, and rate-limit, so a cross-origin page can't drive the agent loop.
+    rejected = _origin_guard(request) or _size_guard(request) or _rate_guard("chat")
+    if rejected:
+        return rejected
     if not _ensure_brain():
         return web.json_response(
             {"error": "Agent brain not available"}, status=503
@@ -1493,6 +1664,11 @@ async def handle_chat(request):
 
 async def handle_status(request):
     """GET /superduper/status -- agent and connection state."""
+    # SECURITY (route-auth audit 2.1): guard the info-disclosure endpoint with the
+    # same same-origin check as the chat/WS handlers.
+    rejected = _origin_guard(request)
+    if rejected:
+        return rejected
     brain_ok = _ensure_brain()
     return web.json_response({
         "brain": "ready" if brain_ok else "unavailable",
@@ -1508,6 +1684,37 @@ async def handle_status(request):
 # Route setup (called from ui/__init__.py at import time)
 # ---------------------------------------------------------------------------
 
+def _warn_on_unauthenticated_bind():
+    """Route-auth audit 3.2/2.3: loud warning when the agent surface is unauthenticated
+    (MCP_AUTH_TOKEN unset) AND ComfyUI is bound to a non-loopback address -- the only
+    config where a non-browser client reaches the tool surface with no auth at all."""
+    try:
+        from agent.config import MCP_AUTH_TOKEN
+        if MCP_AUTH_TOKEN:
+            return
+        listen = None
+        try:
+            from comfy.cli_args import args
+            listen = getattr(args, "listen", None)
+        except Exception:
+            pass
+        if listen and listen not in ("127.0.0.1", "localhost", "::1", ""):
+            log.warning(
+                "SECURITY: MCP_AUTH_TOKEN is not set and ComfyUI is bound to a "
+                "non-loopback address (%s). The Comfy-Cozy agent surface is reachable "
+                "by non-browser clients with NO authentication. Set MCP_AUTH_TOKEN to "
+                "require a bearer token, or bind ComfyUI to 127.0.0.1.", listen,
+            )
+        else:
+            log.info(
+                "Comfy-Cozy: MCP_AUTH_TOKEN not set -- agent surface uses same-origin "
+                "validation only (safe for a loopback bind; set the token before "
+                "binding ComfyUI to a non-loopback address)."
+            )
+    except Exception:
+        pass  # never let a startup advisory break route mounting
+
+
 def setup_routes():
     """Mount all COMFY COZY routes on ComfyUI's PromptServer."""
     try:
@@ -1516,6 +1723,7 @@ def setup_routes():
         routes.post("/superduper/chat")(handle_chat)
         routes.get("/superduper/status")(handle_status)
         routes.get("/superduper/ws")(websocket_handler)
+        _warn_on_unauthenticated_bind()
         log.info("COMFY COZY routes mounted: /superduper/chat, /superduper/status, /superduper/ws")
     except Exception as e:
         log.error("Failed to mount COMFY COZY routes: %s", e)
