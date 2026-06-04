@@ -87,7 +87,8 @@ def _collapse(items: list[dict]) -> tuple[list[dict], int]:
     removed = 0
     for it in items:
         try:
-            h = _compute_average_hash(Image.open(it["path"]))
+            with Image.open(it["path"]) as _img:
+                h = _compute_average_hash(_img)
         except Exception:
             kept.append(it)
             continue

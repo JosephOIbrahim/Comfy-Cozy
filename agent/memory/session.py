@@ -12,7 +12,6 @@ for deterministic serialization (He2025 alignment).
 import json
 import logging
 import os
-import shutil
 import tempfile
 import threading
 import time
@@ -288,7 +287,7 @@ def _atomic_write(path: Path, content: str) -> None:
         fd.flush()
         os.fsync(fd.fileno())
         fd.close()
-        shutil.move(fd.name, str(path))
+        os.replace(fd.name, str(path))
     except Exception:
         # Clean up temp file on failure — log if cleanup itself fails
         try:
