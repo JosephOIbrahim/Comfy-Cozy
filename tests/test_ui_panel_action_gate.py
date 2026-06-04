@@ -51,7 +51,7 @@ async def test_install_action_routes_through_gate_not_direct():
 
     # Routed through the central gated dispatcher...
     assert gated.called, "install action must dispatch via agent.tools.handle()"
-    assert gated.call_args.args[0] == "install_node_pack"
+    assert gated.call_args_list[0].args[0] == "install_node_pack"
     # ...and the direct module handler (the old bypass) is NOT invoked.
     direct.assert_not_called()
     # The gate's needs-confirmation surfaced to the user.
@@ -69,7 +69,7 @@ async def test_install_action_forwards_confirm_token():
         )
 
     assert gated.called
-    assert gated.call_args.args[1].get("confirm") is True
+    assert gated.call_args_list[0].args[1].get("confirm") is True
 
 
 async def test_repair_action_routes_through_gate_not_direct():
@@ -80,7 +80,7 @@ async def test_repair_action_routes_through_gate_not_direct():
         await _run_action("repair", {})
 
     assert gated.called
-    assert gated.call_args.args[0] == "repair_workflow"
+    assert gated.call_args_list[0].args[0] == "repair_workflow"
     direct.assert_not_called()
 
 
@@ -147,3 +147,65 @@ async def test_ws_handler_rejects_over_cap():
     finally:
         uiroutes._conversations.clear()
         uiroutes._conversations.update(saved)
+
+
+# --- validate -> fix -> re-validate loop ---
+
+
+def test_panel_validation_result_invalid():
+    """Invalid validation -> panel with Repair/Reconfigure/Re-validate fix actions."""
+    from ui.server import routes as uiroutes
+
+    p = uiroutes._panel_validation_result(
+        {"valid": False, "errors": ["e1", "e2"], "warnings": [], "node_count": 5, "message": "fix"}
+    )
+    assert p["type"] == "validation"
+    assert p["footer"]["status"] == "invalid"
+    assert {"repair", "reconfigure", "validate"} <= {a["action"] for a in p["footer"]["actions"]}
+    assert "2 ERRORS" in p["header"]["badge"]
+
+
+def test_panel_validation_result_valid():
+    """Valid validation -> panel offers Run, VALID badge."""
+    from ui.server import routes as uiroutes
+
+    p = uiroutes._panel_validation_result(
+        {"valid": True, "errors": [], "warnings": [], "node_count": 5, "message": "ready"}
+    )
+    assert p["footer"]["status"] == "valid"
+    assert any(a["action"] == "agent_message" for a in p["footer"]["actions"])
+    assert p["header"]["badge"] == "VALID"
+
+
+def _fix_then_validate_handle(name, inp, session_id=None):
+    if name == "validate_before_execute":
+        return json.dumps({"valid": False, "errors": ["bad node"], "warnings": [],
+                           "node_count": 3, "message": "Fix errors before executing."})
+    return json.dumps({"status": "repaired", "message": "repaired"})
+
+
+async def test_fix_action_triggers_auto_revalidate():
+    """A fix action (repair) auto-emits a fresh validation panel (the loop)."""
+    from ui.server import routes as uiroutes
+
+    ws, conv = _FakeWS(), _FakeConv()
+    loop = asyncio.get_running_loop()
+    with patch("agent.tools.handle", side_effect=_fix_then_validate_handle):
+        await uiroutes._handle_panel_action(ws, conv, loop, "repair", {})
+
+    panels = [m["panel"] for m in ws.sent if m.get("type") == "panel"]
+    assert any(p.get("type") == "validation" for p in panels), "expected an auto re-validate panel"
+
+
+async def test_auto_revalidate_respects_loop_guard():
+    """Once the per-conversation cap is hit, no further auto re-validation fires."""
+    from ui.server import routes as uiroutes
+
+    ws, conv = _FakeWS(), _FakeConv()
+    conv._auto_revalidate_count = uiroutes._MAX_AUTO_REVALIDATE  # already at cap
+    loop = asyncio.get_running_loop()
+    with patch("agent.tools.handle", side_effect=_fix_then_validate_handle):
+        await uiroutes._handle_panel_action(ws, conv, loop, "repair", {})
+
+    panels = [m["panel"] for m in ws.sent if m.get("type") == "panel"]
+    assert not any(p.get("type") == "validation" for p in panels)

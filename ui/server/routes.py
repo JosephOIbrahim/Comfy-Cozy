@@ -599,6 +599,71 @@ def _panel_install_result(result: dict) -> dict | None:
     return None
 
 
+def _panel_validation_result(result: dict) -> dict | None:
+    """Panel for validate_before_execute -- the validate -> fix -> re-validate loop.
+
+    Shows status + errors/warnings/analysis, and offers WORKFLOW-LEVEL fix actions
+    (repair / reconfigure / re-validate when invalid; run when valid). Each fix routes
+    through the gate; install/download require confirm.
+    """
+    if not isinstance(result, dict) or "valid" not in result:
+        return None
+    valid = bool(result.get("valid"))
+    errors = result.get("errors") or []
+    warnings = result.get("warnings") or []
+    intel = result.get("intelligence") or {}
+
+    sections = []
+    if errors:
+        sections.append({
+            "title": "Errors", "dotColor": "#FF6E6E", "count": len(errors),
+            "defaultOpen": True, "type": "detail_rows",
+            "data": {"rows": [{"label": f"#{i + 1}", "value": str(e)} for i, e in enumerate(errors)]},
+        })
+    if warnings:
+        sections.append({
+            "title": "Warnings", "dotColor": "#C99A52", "count": len(warnings),
+            "defaultOpen": not errors, "type": "detail_rows",
+            "data": {"rows": [{"label": f"#{i + 1}", "value": str(w)} for i, w in enumerate(warnings)]},
+        })
+    if intel:
+        sections.append({
+            "title": "Analysis", "dotColor": "#6F968B", "count": len(intel),
+            "defaultOpen": False, "type": "detail_rows",
+            "data": {"rows": [{"label": str(k), "value": str(v)} for k, v in intel.items()]},
+        })
+
+    if valid:
+        actions = [{"label": "Run", "variant": "primary", "action": "agent_message",
+                    "message": "Run the current workflow"}]
+        status = "valid"
+    else:
+        actions = [
+            {"label": "Repair", "variant": "primary", "action": "repair"},
+            {"label": "Reconfigure", "variant": "secondary", "action": "reconfigure"},
+            {"label": "Re-validate", "variant": "secondary", "action": "validate"},
+        ]
+        status = "invalid"
+
+    n_err = len(errors)
+    return {
+        "type": "validation",
+        "header": {
+            "label": "workflow · validate",
+            "badge": "VALID" if valid else (f"{n_err} ERROR" + ("" if n_err == 1 else "S")),
+            "title": "Validation — ready to run" if valid else "Validation — fix needed",
+            "summary": result.get("message", ""),
+            "stats": [
+                {"value": str(result.get("node_count", "?")), "label": "nodes"},
+                {"value": str(n_err), "label": "errors"},
+                {"value": str(len(warnings)), "label": "warnings"},
+            ],
+        },
+        "sections": sections,
+        "footer": {"status": status, "actions": actions},
+    }
+
+
 # Tools that produce panelable results
 _PANEL_TOOLS = {
     "load_workflow", "validate_workflow",
@@ -606,6 +671,7 @@ _PANEL_TOOLS = {
     "find_missing_nodes",
     "install_node_pack", "download_model",
     "repair_workflow", "reconfigure_workflow",
+    "validate_before_execute",
 }
 
 
@@ -637,6 +703,8 @@ def _build_panel_for_tool(name: str, tool_input: dict, result_json: str) -> dict
         return _panel_repair_report(result)
     elif name == "reconfigure_workflow":
         return _panel_reconfigure_report(result)
+    elif name == "validate_before_execute":
+        return _panel_validation_result(result)
 
     return None
 
@@ -1098,6 +1166,14 @@ _DIRECT_ACTIONS = {
     "validate", "repair", "reconfigure",
 }
 
+# validate -> fix -> re-validate loop: fix actions that trigger an auto re-validate,
+# and the per-conversation cap (reset each chat turn) that keeps it from spinning.
+_FIX_ACTIONS = {
+    "repair_workflow", "reconfigure_workflow", "install_node_pack",
+    "download_model", "migrate_deprecated_nodes",
+}
+_MAX_AUTO_REVALIDATE = 3
+
 
 async def _handle_panel_action(ws, conv, loop, action, data):
     """Handle panel action buttons by executing tools directly."""
@@ -1211,6 +1287,23 @@ async def _handle_panel_action(ws, conv, loop, action, data):
             "content": msg,
         })
 
+        # validate -> fix -> re-validate loop: after a FIX that actually ran, auto
+        # re-validate and emit a fresh validation panel. Bounded (_MAX_AUTO_REVALIDATE,
+        # reset each chat turn) so it can never spin; skipped on needs_confirmation.
+        if (tool_name in _FIX_ACTIONS
+                and result.get("status") != "needs_confirmation"
+                and not result.get("error")
+                and getattr(conv, "_auto_revalidate_count", 0) < _MAX_AUTO_REVALIDATE):
+            conv._auto_revalidate_count = getattr(conv, "_auto_revalidate_count", 0) + 1
+            try:
+                v_json = await _run_in_executor_with_session(
+                    loop, _gated, "validate_before_execute", {}, session_id=conv.id)
+                v_panel = _build_panel_for_tool("validate_before_execute", {}, v_json)
+                if v_panel:
+                    await ws.send_json({"type": "panel", "panel": v_panel})
+            except Exception as _ve:
+                log.debug("auto re-validate failed: %s", _ve)
+
     except Exception as e:
         log.error("Direct action failed: %s", e, exc_info=True)
         await ws.send_json({
@@ -1311,6 +1404,7 @@ async def websocket_handler(request):
                     content = data.get("content", "").strip()
                     if not content:
                         continue
+                    conv._auto_revalidate_count = 0  # new chat turn -> reset loop guard
 
                     if conv.busy:
                         await ws.send_json({
