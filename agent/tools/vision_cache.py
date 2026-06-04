@@ -74,7 +74,8 @@ def _handle_analyze_image_cached(tool_input: dict) -> str:
     try:
         from PIL import Image
         from ..brain.vision import _compute_average_hash
-        img_hash = _compute_average_hash(Image.open(image_path))
+        with Image.open(image_path) as _img:
+            img_hash = _compute_average_hash(_img)
     except FileNotFoundError:
         return to_json({"error": f"Image not found: {image_path}"})
     except Exception:
