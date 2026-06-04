@@ -60,3 +60,23 @@ def test_unauth_bind_silent_when_token_set(monkeypatch):
         uiroutes._warn_on_unauthenticated_bind()
 
     assert not warn.called and not info.called
+
+
+# --- 2.2: /health auth exemption is exact-path (not a suffix bypass) ---
+
+
+def test_health_auth_skip_is_exact_path(monkeypatch):
+    from panel.server import middleware
+
+    monkeypatch.setattr(middleware, "MCP_AUTH_TOKEN", "a-token")
+
+    class _Req:
+        def __init__(self, path):
+            self.path = path
+            self.headers = {}
+
+    # the real health route is exempt...
+    assert middleware.check_auth(_Req("/comfy-cozy/health")) is None
+    # ...but a look-alike "*/health" path is NOT (closes the suffix bypass) -> 401
+    resp = middleware.check_auth(_Req("/anything/health"))
+    assert resp is not None and resp.status == 401
