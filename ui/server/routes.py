@@ -1156,13 +1156,15 @@ async def _handle_panel_action(ws, conv, loop, action, data):
         tool_input = {}
     elif action == "install_node_pack":
         tool_name = "install_node_pack"
-        tool_input = {"url": data.get("url", ""), "name": data.get("name", "")}
+        tool_input = {"url": data.get("url", ""), "name": data.get("name", ""),
+                      "confirm": data.get("confirm", False)}
     elif action == "download_model":
         tool_name = "download_model"
         tool_input = {
             "url": data.get("url", ""),
             "model_type": data.get("model_type", "checkpoints"),
             "filename": data.get("filename", ""),
+            "confirm": data.get("confirm", False),
         }
 
     if tool_name not in _DIRECT_ACTIONS:
@@ -1180,19 +1182,20 @@ async def _handle_panel_action(ws, conv, loop, action, data):
     })
 
     try:
-        from agent.tools.comfy_provision import handle as provision_handle
-        from agent.tools.comfy_execute import handle as execute_handle
+        # SECURITY (route-auth audit 5.1): dispatch through the CENTRAL handler so the
+        # pre-dispatch safety gate runs. install_node_pack / download_model are
+        # PROVISION -> ESCALATE (blocked unless "confirm": true); uninstall_node_pack
+        # is DESTRUCTIVE -> LOCKED. Calling comfy_provision/comfy_execute.handle()
+        # directly here bypassed the gate entirely.
+        from agent.tools import handle as tools_handle
 
-        if tool_name == "validate_before_execute":
-            result_json = await _run_in_executor_with_session(
-                loop, execute_handle, tool_name, tool_input,
-                session_id=conv.id,
-            )
-        else:
-            result_json = await _run_in_executor_with_session(
-                loop, provision_handle, tool_name, tool_input,
-                session_id=conv.id,
-            )
+        def _gated(_name, _inp):
+            return tools_handle(_name, _inp, session_id=conv.id)
+
+        result_json = await _run_in_executor_with_session(
+            loop, _gated, tool_name, tool_input,
+            session_id=conv.id,
+        )
 
         # Build and send panel
         panel = _build_panel_for_tool(tool_name, tool_input, result_json)
