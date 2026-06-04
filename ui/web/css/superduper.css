@@ -815,6 +815,24 @@
 }
 
 
+/* ── Validation panel: pass/fail status (validate -> fix -> re-validate loop) ── */
+.sd-panel--valid   { border-left: 2px solid #81C784; }
+.sd-panel--invalid { border-left: 2px solid #f56c6c; }
+
+.sd-panel--valid .sd-panel__badge {
+  color: #d4ecd4;
+  background: color-mix(in srgb, #81C784 30%, transparent);
+}
+.sd-panel--invalid .sd-panel__badge {
+  color: #ffe0e0;
+  background: color-mix(in srgb, #f56c6c 38%, transparent);
+}
+/* a passing validation reads as success */
+.sd-panel--valid .sd-btn--primary { background: #81C784; }
+.sd-panel--valid .sd-panel__footer-status   { color: #81C784; }
+.sd-panel--invalid .sd-panel__footer-status { color: #f56c6c; }
+
+
 /* ── Node Pills ─────────────────────────────────────────────────── */
 
 .sd-node-pill {

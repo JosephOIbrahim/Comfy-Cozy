@@ -412,6 +412,12 @@ export function createPanel(panelData) {
 
   const panel = document.createElement("div");
   panel.className = "sd-panel";
+  // Type + validation-status modifiers so the validate -> fix -> re-validate panel
+  // reads pass/fail at a glance (valid = green, invalid = red); harmless for others.
+  if (panelData.type) panel.classList.add("sd-panel--" + panelData.type);
+  if (panelData.type === "validation" && panelData.footer && panelData.footer.status) {
+    panel.classList.add("sd-panel--" + panelData.footer.status);
+  }
 
   // Header
   if (panelData.header) {
