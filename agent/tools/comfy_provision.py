@@ -472,6 +472,25 @@ def _handle_install_node_pack(tool_input: dict) -> str:
     except (OSError, ValueError):
         return to_json({"error": f"Invalid node pack name: {raw_name}"})
 
+    # SECURITY (route-auth audit 4.6): defense-in-depth confirm gate. The keystone
+    # gate already ESCALATEs install_node_pack (PROVISION) and blocks it without
+    # confirm, but enforce it HERE too -- after validation, before the side effect --
+    # so a caller that bypasses the central gate still cannot run git clone +
+    # pip install (third-party code execution) unattended.
+    _raw_confirm = tool_input.get("confirm", False)
+    _confirmed = (_raw_confirm if isinstance(_raw_confirm, bool)
+                  else str(_raw_confirm).lower() in ("true", "1", "yes"))
+    if not _confirmed:
+        return to_json({
+            "status": "needs_confirmation",
+            "url": url,
+            "name": name,
+            "message": (
+                f"Installing '{name}' runs git clone + pip install (third-party code "
+                "execution). Re-call install_node_pack with \"confirm\": true to proceed."
+            ),
+        })
+
     # Acquire per-target lock to prevent concurrent installs into the same directory.
     install_lock = _get_install_lock(str(resolved_target))
     if not install_lock.acquire(timeout=_LOCK_ACQUIRE_TIMEOUT):
@@ -643,6 +662,24 @@ def _handle_download_model(tool_input: dict) -> str:
             })
     except (OSError, ValueError):
         return to_json({"error": "Invalid model path."})
+
+    # SECURITY (route-auth audit 4.6): defense-in-depth confirm gate before the
+    # network fetch (mirrors install). The keystone gate ESCALATEs download_model
+    # (PROVISION); enforce it here too so a gate-bypassing caller can't fetch
+    # unattended.
+    _raw_confirm = tool_input.get("confirm", False)
+    _confirmed = (_raw_confirm if isinstance(_raw_confirm, bool)
+                  else str(_raw_confirm).lower() in ("true", "1", "yes"))
+    if not _confirmed:
+        return to_json({
+            "status": "needs_confirmation",
+            "url": url,
+            "filename": filename,
+            "message": (
+                f"Downloading '{filename}' fetches a file from the network. Re-call "
+                "download_model with \"confirm\": true to proceed."
+            ),
+        })
 
     # Create directory if needed
     type_dir.mkdir(parents=True, exist_ok=True)
@@ -1027,7 +1064,10 @@ def _handle_repair_workflow(tool_input: dict) -> str:
     install_results = []
     if auto_install and packs_to_install:
         for url, pack_info in packs_to_install.items():
-            install_json = _handle_install_node_pack({"url": url, "name": pack_info["name"]})
+            # repair already gated on confirm above; pass it through so the 4.6
+            # handler-level gate doesn't re-block a confirmed repair.
+            install_json = _handle_install_node_pack(
+                {"url": url, "name": pack_info["name"], "confirm": True})
             try:
                 install_result = json.loads(install_json)
             except (ValueError, TypeError):

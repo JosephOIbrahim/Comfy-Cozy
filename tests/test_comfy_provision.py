@@ -455,6 +455,7 @@ class TestDownloadModelSymlinkBypass:
                     "model_type": "checkpoints",
                     "subfolder": "subdir",
                     "filename": "legit.safetensors",
+                    "confirm": True,  # 4.6: handler now gates the download on confirm
                 })
 
         result_data = _json.loads(result)
