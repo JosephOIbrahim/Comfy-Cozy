@@ -202,6 +202,10 @@ class TestToolRegistry:
             "provision_model",
             "provision_pipeline_status",
             "provision_pipeline_verify",
+            # NIM lifecycle
+            "nim_preflight",
+            "nim_run",
+            "nim_state",
         }
         assert expected == names, (
             f"Tool mismatch!\n"
@@ -210,7 +214,7 @@ class TestToolRegistry:
         )
 
     def test_total_tool_count(self):
-        assert len(ALL_TOOLS) == 126, f"Expected 126 tools, got {len(ALL_TOOLS)}"
+        assert len(ALL_TOOLS) == 129, f"Expected 129 tools, got {len(ALL_TOOLS)}"
 
     def test_brain_tool_error_returns_json(self):
         """Brain tool exceptions should be caught and returned as JSON errors."""
