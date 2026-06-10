@@ -18,7 +18,7 @@ from typing import Any
 
 _save_lock = threading.Lock()
 
-from .chunk import ExperienceChunk, QualityScore
+from .chunk import ExperienceChunk
 from .signature import GenerationContextSignature
 
 
@@ -153,12 +153,23 @@ class ExperienceAccumulator:
 
         return result
 
-    def get_successful_chunks(self, min_quality: float = 0.5) -> list[ExperienceChunk]:
-        """Get all chunks above a quality threshold."""
+    def get_successful_chunks(
+        self,
+        min_quality: float = 0.5,
+        exclude_rule_era: bool = False,
+    ) -> list[ExperienceChunk]:
+        """Get all chunks above a quality threshold.
+
+        ``exclude_rule_era=True`` drops chunks whose score predates the
+        vision evaluator (source missing/empty/"rule" — see
+        ``QualityScore.is_rule_era``), so a future vision evaluator can
+        learn without rule-era placeholder scores (C-R5/C-R8 prep).
+        """
         with self._chunks_lock:
             return [
                 c for c in self._chunks
                 if c.quality.overall >= min_quality and c.succeeded
+                and not (exclude_rule_era and c.quality.is_rule_era)
             ]
 
     def get_stats(self) -> dict[str, Any]:

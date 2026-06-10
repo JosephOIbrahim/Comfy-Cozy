@@ -154,6 +154,18 @@ class TestQualityScore:
         assert q.overall == pytest.approx(0.75)
         assert q.technical == pytest.approx(0.6)
 
+    def test_is_rule_era_semantics(self):
+        """C-R5/C-R8 evaluator-swap prep: rule-era = source missing, empty,
+        or "rule" — these must be distinguishable from vision-based scores
+        when a vision evaluator arrives."""
+        assert QualityScore(overall=0.7, source="").is_rule_era is True
+        assert QualityScore(overall=0.7, source="rule").is_rule_era is True
+        q_none = QualityScore(overall=0.7)
+        q_none.source = None  # deserialized legacy data may carry null
+        assert q_none.is_rule_era is True
+        assert QualityScore(overall=0.7, source="vision").is_rule_era is False
+        assert QualityScore(overall=0.7, source="human").is_rule_era is False
+
 
 # ---------------------------------------------------------------------------
 # GenerationContextSignature
@@ -302,6 +314,31 @@ class TestAccumulator:
         good = accumulator.get_successful_chunks(min_quality=0.5)
         assert len(good) == 1
         assert good[0].quality.overall == 0.8
+
+    def test_get_successful_chunks_excludes_rule_era(self, accumulator):
+        """C-R5/C-R8 evaluator-swap prep: the migration filter must drop
+        rule-era chunks (source missing/empty/"rule") and keep vision ones."""
+        accumulator.record(ExperienceChunk(
+            output_filenames=["rule.png"],
+            quality=QualityScore(overall=0.7, source="rule"),
+        ))
+        accumulator.record(ExperienceChunk(
+            output_filenames=["legacy.png"],
+            quality=QualityScore(overall=0.8, source=""),
+        ))
+        accumulator.record(ExperienceChunk(
+            output_filenames=["vision.png"],
+            quality=QualityScore(overall=0.9, source="vision"),
+        ))
+
+        # Default keeps everything (behavior unchanged for current callers)
+        assert len(accumulator.get_successful_chunks(min_quality=0.5)) == 3
+
+        filtered = accumulator.get_successful_chunks(
+            min_quality=0.5, exclude_rule_era=True,
+        )
+        assert len(filtered) == 1
+        assert filtered[0].quality.source == "vision"
 
     def test_get_stats(self, accumulator, good_chunk):
         accumulator.record(good_chunk)

@@ -223,6 +223,83 @@ class TestAnthropicProvider:
             assert isinstance(resp, LLMResponse)
             assert resp.content[0].text == "created response"
 
+    def test_create_with_timeout_uses_with_options_not_new_client(self):
+        """C-R5: create(timeout=...) must derive the per-call client via
+        with_options(...) (~40 us) on the cached client, with max_retries=0
+        (caller owns retry policy) — NOT construct a fresh anthropic.Anthropic
+        per call (~0.25-0.29 s + a leaked file descriptor each time)."""
+        with patch("agent.llm._anthropic.anthropic") as mock_sdk:
+            provider = _make_anthropic_provider(mock_sdk)
+            assert mock_sdk.Anthropic.call_count == 1  # constructed once
+
+            text_block = MagicMock()
+            text_block.type = "text"
+            text_block.text = "ok"
+            mock_response = MagicMock()
+            mock_response.content = [text_block]
+            mock_response.stop_reason = "end_turn"
+            mock_response.model = "claude-test"
+            mock_response.usage = MagicMock(input_tokens=5, output_tokens=3)
+            derived = provider._client.with_options.return_value
+            derived.messages.create.return_value = mock_response
+
+            for _ in range(2):
+                provider.create(
+                    model="claude-test",
+                    max_tokens=100,
+                    system="test",
+                    messages=[{"role": "user", "content": "hi"}],
+                    timeout=90,
+                )
+
+            # No new SDK client constructed for the timeout path
+            assert mock_sdk.Anthropic.call_count == 1
+            provider._client.with_options.assert_called_with(
+                timeout=90, max_retries=0,
+            )
+            assert derived.messages.create.call_count == 2
+
+    def test_create_timeout_shares_real_httpx_transport(self, monkeypatch):
+        """C-R5 (real SDK, edge-mocked): with_options copies share the cached
+        client's underlying httpx transport — no per-call client/FD churn —
+        and carry max_retries=0 on the vision path. No network involved."""
+        import anthropic as real_anthropic
+        from anthropic.resources.messages import Messages
+
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key-not-real")
+        from agent.llm._anthropic import AnthropicProvider
+
+        provider = AnthropicProvider()
+        captured = []
+
+        def fake_create(self, **kwargs):
+            captured.append(self._client)
+            msg = MagicMock()
+            msg.content = []
+            msg.stop_reason = "end_turn"
+            msg.model = kwargs.get("model")
+            msg.usage = MagicMock(input_tokens=1, output_tokens=1)
+            return msg
+
+        with patch.object(Messages, "create", fake_create):
+            for _ in range(2):
+                provider.create(
+                    model="claude-test",
+                    max_tokens=16,
+                    system="s",
+                    messages=[{"role": "user", "content": "hi"}],
+                    timeout=90,
+                )
+
+        assert len(captured) == 2
+        assert all(isinstance(c, real_anthropic.Anthropic) for c in captured)
+        # The derived clients share the base client's httpx transport
+        assert captured[0]._client is provider._client._client
+        assert captured[1]._client is provider._client._client
+        # Vision path owns retry policy: SDK retries disabled
+        assert captured[0].max_retries == 0
+        assert captured[1].max_retries == 0
+
     def test_rate_limit_error(self):
         """RateLimitError from SDK becomes LLMRateLimitError."""
         import anthropic as real_anthropic
