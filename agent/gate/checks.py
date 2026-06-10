@@ -90,15 +90,27 @@ def check_system_health(
 # Check 2: Consent
 # ---------------------------------------------------------------------------
 
+# EXECUTION tools that run the SESSION workflow — only these are bound to the
+# session's validated_since_mutation flag. Other EXECUTION tools (analyze_image,
+# push_workflow_to_canvas, nim_run, ...) do not execute the session workflow.
+_SESSION_EXECUTION_TOOLS = frozenset({"execute_workflow", "execute_with_progress"})
+
 
 def check_consent(
     tool_name: str,
     risk: RiskLevel,
     session_active: bool,
     validated: bool,
+    *,
+    has_workflow_override: bool = False,
 ) -> tuple[bool, str]:
     """Level 0-1 pass with active session.
-    Level 2 requires prior validation.
+    Level 2 (EXECUTION): tools that execute the SESSION workflow
+    (execute_workflow / execute_with_progress) require prior validation —
+    validated=True, i.e. validate_before_execute passed since the last
+    mutation — unless has_workflow_override=True (the call carries an
+    explicit "path" input, so the session flag says nothing about it).
+    All other EXECUTION tools pass with an active session.
     Level 3 escalates (returned as fail with escalation hint).
     Level 4 always locked.
     """
@@ -123,6 +135,18 @@ def check_consent(
         return (
             False,
             f"No active session. Tool '{tool_name}' requires an active session.",
+        )
+
+    if (
+        risk == RiskLevel.EXECUTION
+        and tool_name in _SESSION_EXECUTION_TOOLS
+        and not has_workflow_override
+        and not validated
+    ):
+        return (
+            False,
+            "Session workflow not validated since the last change. Run "
+            "validate_before_execute (and fix any errors) before executing.",
         )
 
     return True, "Consent satisfied."

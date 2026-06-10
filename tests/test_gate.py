@@ -146,10 +146,14 @@ class TestGateDecisions:
         assert result.decision == GateDecision.DENY
         assert result.checks["system_health"] is False
 
-    def test_execution_tool_without_validation_allowed(self):
-        """EXECUTION tools no longer require validated=True — the prerequisite
-        check was dead (caller always passed validated=False). Fix-forward:
-        consent now passes without prior validation."""
+    def test_execution_tool_without_validation_denied(self):
+        """Session-workflow EXECUTION without prior validation is DENIED.
+
+        Director ratification 2026-06-09, ledger H1.4 — supersedes the
+        fix-forward that removed the dead check. The caller now wires
+        validated= from the session's validated_since_mutation flag (set by
+        validate_before_execute, cleared by mutation dispatch), so the
+        consent rule is enforceable instead of dead."""
         result = pre_dispatch_check(
             "execute_workflow",
             {},
@@ -159,8 +163,9 @@ class TestGateDecisions:
             has_undo=True,
             action_history=["load_workflow"],  # satisfy scout_before_act
         )
-        assert result.decision == GateDecision.ALLOW
-        assert result.checks["consent"] is True
+        assert result.decision == GateDecision.DENY
+        assert result.checks["consent"] is False
+        assert "validate_before_execute" in result.reason
 
     def test_execution_tool_with_validation_allowed(self):
         result = pre_dispatch_check(
@@ -173,6 +178,36 @@ class TestGateDecisions:
             action_history=["load_workflow"],  # satisfy scout_before_act
         )
         assert result.decision == GateDecision.ALLOW
+
+    def test_execution_tool_path_override_exempt(self):
+        """An explicit "path" input executes an EXTERNAL workflow file — the
+        session validation flag says nothing about it, so consent passes
+        even with validated=False (scope check still vets the path)."""
+        result = pre_dispatch_check(
+            "execute_workflow",
+            {"path": "x.json"},
+            breaker_state="closed",
+            session_active=True,
+            validated=False,
+            has_undo=True,
+            action_history=["load_workflow"],  # satisfy scout_before_act
+        )
+        assert result.checks["consent"] is True
+
+    def test_other_execution_tool_exempt_from_validation(self):
+        """EXECUTION tools that do NOT run the session workflow (analyze_image
+        here) stay exempt from the validate-first rule."""
+        assert get_risk_level("analyze_image") == RiskLevel.EXECUTION
+        result = pre_dispatch_check(
+            "analyze_image",
+            {},
+            breaker_state="closed",
+            session_active=True,
+            validated=False,
+            has_undo=True,
+            action_history=["load_workflow"],  # satisfy scout_before_act
+        )
+        assert result.checks["consent"] is True
 
     def test_all_five_checks_reported(self):
         result = pre_dispatch_check(
