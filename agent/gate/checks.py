@@ -3,7 +3,9 @@
 Check order:
   1. System health   — circuit breaker state
   2. Consent         — session active, validation done, escalation needed
-  3. Constitution    — wraps run_pre_checks() from constitution.py
+  3. Constitution    — wraps run_pre_checks() (lazy import — a broken
+                       agent.stage must not take the gate package down;
+                       the check itself fails closed instead, see C-P0-3)
   4. Reversibility   — undo availability for mutation tools
   5. Scope           — path sanitization for filesystem-touching inputs
 """
@@ -13,7 +15,6 @@ from __future__ import annotations
 from pathlib import Path
 
 from .risk_levels import RiskLevel
-from ..stage.constitution import run_pre_checks, all_passed, failed_checks
 
 
 # ---------------------------------------------------------------------------
@@ -141,7 +142,19 @@ def check_constitution(
 
     Keyword args are forwarded to run_pre_checks(). At minimum we need
     agent_name and allowed_tools; others fall back to safe defaults.
+
+    The constitution import is LAZY (C-P0-3): a stage package breakage no
+    longer kills the whole gate — READ_ONLY tools keep flowing via the
+    fast-path while mutation-class tools are denied by this failed check.
     """
+    try:
+        from ..stage.constitution import run_pre_checks, all_passed, failed_checks
+    except ImportError:
+        return (
+            False,
+            "Constitution check unavailable (agent.stage import failed) — failing closed.",
+        )
+
     agent_name: str = str(kwargs.get("agent_name", "default"))
     allowed_tools = kwargs.get("allowed_tools", None)
     # If no allowed_tools given, pass all tools (don't block on role check)

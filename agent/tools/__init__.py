@@ -328,10 +328,31 @@ def handle(
                 except Exception:
                     pass
 
+            # C-P0-3: wire the REAL circuit-breaker state into the gate's
+            # system-health check (it previously ran on the "closed" default).
+            from ..circuit_breaker import COMFYUI_BREAKER
+            _breaker_state = COMFYUI_BREAKER().state
+
+            # C-P0-3: per-session action history (stored in the registry
+            # WorkflowSession) feeds the constitution checks. Behavior-neutral
+            # today by design — scout_before_act treats empty history as "not
+            # tracked — skipped" and passes non-empty history unconditionally,
+            # and verify_after_mutation only fires when
+            # verified_since_mutation=False is passed (it is not) — but the
+            # wiring makes the substrate real instead of always-default.
+            _history: list = []
+            try:
+                from .workflow_patch import _get_state
+                _history = list(_get_state().get("action_history") or [])
+            except Exception:
+                pass
+
             gate_result = pre_dispatch_check(
                 name, tool_input,
+                breaker_state=_breaker_state,
                 session_active=_session_active,
                 has_undo=_has_undo,
+                action_history=_history,
             )
             if gate_result.decision == GateDecision.DENY:
                 from ..errors import error_json
@@ -377,8 +398,30 @@ def handle(
                 log.info("Gate ESCALATE-confirmed '%s' (risk %d) — proceeding",
                          name, gate_result.risk_level)
                 # confirmed -> fall through to dispatch
+
+            # C-P0-3: the call WILL dispatch (ALLOW fell through, or ESCALATE
+            # with confirm=true) — record it in the per-session action history
+            # (capped at the last 50) so the constitution checks see real
+            # history on the next call. DENY/LOCKED/blocked returned early.
+            try:
+                from .workflow_patch import _get_state
+                _st = _get_state()
+                _st["action_history"] = (
+                    list(_st.get("action_history") or []) + [name]
+                )[-50:]
+            except Exception:
+                pass
     except ImportError:
-        pass  # Gate not available — degrade silently
+        # Gate not available — FAIL CLOSED (C-P0-3). A broken agent.gate import
+        # previously degraded silently, letting even DESTRUCTIVE tools dispatch
+        # ungated. Closed means closed: deny every tool until the gate imports.
+        log.error("Gate import failed for '%s' — denying dispatch for safety",
+                  name, exc_info=True)
+        from ..errors import error_json
+        return error_json(
+            f"Gate unavailable for '{name}' — denied for safety (gate import "
+            f"failed). Check the agent.gate package and logs."
+        )
     except Exception:
         log.warning("Gate check failed for '%s' — denying for safety", name,
                     exc_info=True)
