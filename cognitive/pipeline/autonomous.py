@@ -499,7 +499,13 @@ class AutonomousPipeline:
                 if isinstance(quality, QualityScore):
                     result.quality = quality
                 elif isinstance(quality, (int, float)):
-                    result.quality = QualityScore(overall=float(quality))
+                    # Evaluator-swap prep (C-R5/C-R8 review): a bare float
+                    # carries no provenance — tag it "rule" so rule-era
+                    # records stay distinguishable from (future) vision-based
+                    # scores. See QualityScore.is_rule_era.
+                    result.quality = QualityScore(
+                        overall=float(quality), source="rule",
+                    )
                 result.log(f"Quality: {result.quality.overall:.1%}")
             except Exception as e:
                 result.log(f"Evaluation failed: {e}")

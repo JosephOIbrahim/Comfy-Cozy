@@ -144,7 +144,14 @@ class AnthropicProvider(LLMProvider):
 
         try:
             if timeout:
-                client = anthropic.Anthropic(timeout=timeout)
+                # C-R5: derive the per-call timeout via with_options (~40 us)
+                # instead of constructing a fresh anthropic.Anthropic per call
+                # (~0.25-0.29 s + a leaked file descriptor each time). The
+                # copy shares the cached client's httpx transport.
+                # max_retries=0 because the SDK default (2) silently triples
+                # worst-case latency under the caller's own timeout budget —
+                # the caller (vision path) owns retry policy.
+                client = self._client.with_options(timeout=timeout, max_retries=0)
             else:
                 client = self._client
             kwargs.update(_adapt_thinking_transport(_thinking_kwargs, client.messages.create))

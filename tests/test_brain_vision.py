@@ -288,46 +288,138 @@ class TestDispatchBrainMessage:
 
 
 # ---------------------------------------------------------------------------
-# Cycle 33: image size limit before base64 encoding
+# C-R8b (was Cycle 33's 50 MB file-size check): the guard is the API's real
+# per-image limit — 5 MB of encoded image data, applied POST-downscale.
 # ---------------------------------------------------------------------------
 
+def _vision_agent():
+    from agent.brain.vision import VisionAgent
+    from agent.brain._sdk import BrainConfig
+
+    return VisionAgent(BrainConfig(validate_path=lambda *a, **kw: None))
+
+
 class TestImageSizeLimit:
-    """_read_image_as_base64 must refuse files larger than 50 MB."""
+    """C-R8b: _read_image_as_base64 guards the post-downscale encoded payload
+    at the Vision API's documented 5 MB per-image limit (the old 50 MB
+    on-disk guard let doomed payloads sail into the API call)."""
 
-    def test_large_image_raises_value_error(self, tmp_path):
-        """Image > 50 MB must raise ValueError before base64 encoding."""
-        from agent.brain.vision import VisionAgent
-        from agent.brain._sdk import BrainConfig
+    def test_guard_constant_is_api_reality(self):
+        """The guard pins the API's documented per-image limit: 5 MB."""
+        from agent.brain import vision
 
-        big_img = tmp_path / "huge.png"
-        # Write a file larger than 50 MB (just header bytes, not a real PNG — size check only)
-        big_img.write_bytes(b"\x89PNG" + b"\x00" * (51 * 1024 * 1024))
+        assert vision._MAX_ENCODED_IMAGE_BYTES == 5 * 1024 * 1024
 
-        cfg = BrainConfig(validate_path=lambda *a, **kw: None)
-        agent = VisionAgent(cfg)
+    def test_oversized_encoded_payload_rejected(self, tmp_path, monkeypatch):
+        """Payload still over the limit after downscale must raise ValueError
+        with a human-readable message."""
+        from agent.brain import vision
+
+        img = tmp_path / "img.png"
+        img.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 256)
+        # Shrink the limit so a tiny payload trips the guard deterministically
+        monkeypatch.setattr(vision, "_MAX_ENCODED_IMAGE_BYTES", 16)
 
         with pytest.raises(ValueError, match="too large"):
-            agent._read_image_as_base64(str(big_img))
+            _vision_agent()._read_image_as_base64(str(img))
 
     def test_small_image_not_rejected(self, tmp_path):
-        """Image under the size limit must not be rejected (path validation aside)."""
-        from agent.brain.vision import VisionAgent
-        from agent.brain._sdk import BrainConfig
-
-        # Write a tiny "image" under 1 KB
+        """Image under the encoded-size limit must not be rejected."""
         small_img = tmp_path / "tiny.png"
         small_img.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 100)
 
-        cfg = BrainConfig(validate_path=lambda *a, **kw: None)
-        agent = VisionAgent(cfg)
-
         # Should not raise ValueError for size — may raise other errors (not PIL-related)
         try:
-            agent._read_image_as_base64(str(small_img))
+            _vision_agent()._read_image_as_base64(str(small_img))
         except ValueError as e:
             assert "too large" not in str(e), "Small image should not fail size check"
         except Exception:
             pass  # Other exceptions (PIL decode, etc.) are acceptable here
+
+
+# ---------------------------------------------------------------------------
+# C-R5: inner vision timeout must undercut the MCP server's hard kill
+# ---------------------------------------------------------------------------
+
+class TestVisionTimeout:
+    def test_timeout_undercuts_mcp_kill(self):
+        """C-R5: _VISION_TIMEOUT must be 90 s — strictly below the MCP
+        server's 120 s hard kill. At exactly 120 the MCP kill always wins and
+        the vision tool's own timeout error can NEVER surface to the user."""
+        from agent.brain import vision
+
+        assert vision._VISION_TIMEOUT == 90
+        assert vision._VISION_TIMEOUT < 120
+
+    def test_call_vision_passes_timeout(self, fake_image):
+        """The provider receives the (undercutting) timeout per call."""
+        from agent.brain import vision
+
+        with _patch_provider("{}") as mock_get:
+            handle("analyze_image", {"image_path": fake_image})
+
+        kwargs = mock_get.return_value.create.call_args.kwargs
+        assert kwargs["timeout"] == vision._VISION_TIMEOUT
+
+
+# ---------------------------------------------------------------------------
+# C-R8a: payload economics — downscale before base64 encoding
+# ---------------------------------------------------------------------------
+
+class TestVisionDownscale:
+    """C-R8a: images are downscaled so the longest side is <= 1568 px before
+    encoding — the API resizes larger images server-side anyway, so full-res
+    only burns bandwidth/tokens. Aspect preserved; never upscale; original
+    file untouched."""
+
+    def test_large_png_downscaled_aspect_preserved(self, tmp_path):
+        import base64
+        import io
+
+        from PIL import Image
+
+        src = tmp_path / "big.png"
+        Image.new("RGB", (4000, 3000), (40, 80, 160)).save(src)
+
+        data, media_type = _vision_agent()._read_image_as_base64(str(src))
+        sent = Image.open(io.BytesIO(base64.b64decode(data)))
+        assert media_type == "image/png"
+        assert sent.format == "PNG"
+        assert max(sent.size) == 1568
+        assert sent.size == (1568, 1176)  # 4:3 aspect preserved
+        # Original on disk is untouched
+        assert Image.open(src).size == (4000, 3000)
+
+    def test_small_image_never_upscaled(self, tmp_path):
+        import base64
+        import io
+
+        from PIL import Image
+
+        src = tmp_path / "small.png"
+        Image.new("RGB", (800, 600), (10, 20, 30)).save(src)
+        original_bytes = src.read_bytes()
+
+        data, _ = _vision_agent()._read_image_as_base64(str(src))
+        decoded = base64.b64decode(data)
+        assert Image.open(io.BytesIO(decoded)).size == (800, 600)
+        # Already under the cap: bytes pass through unchanged (no re-encode)
+        assert decoded == original_bytes
+
+    def test_jpeg_source_reencoded_as_jpeg(self, tmp_path):
+        import base64
+        import io
+
+        from PIL import Image
+
+        src = tmp_path / "big.jpg"
+        Image.new("RGB", (4000, 2000), (200, 100, 50)).save(src, quality=95)
+
+        data, media_type = _vision_agent()._read_image_as_base64(str(src))
+        sent = Image.open(io.BytesIO(base64.b64decode(data)))
+        assert media_type == "image/jpeg"
+        assert sent.format == "JPEG"
+        assert sent.size == (1568, 784)  # 2:1 aspect preserved
 
 
 # ---------------------------------------------------------------------------
