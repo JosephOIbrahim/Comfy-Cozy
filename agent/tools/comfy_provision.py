@@ -1010,7 +1010,7 @@ def _handle_repair_workflow(tool_input: dict) -> str:
 
     if result.get("error"):  # Cycle 68: error dict from callee silently became "no missing nodes"
         return to_json({"error": f"Could not check missing nodes: {result['error']}"})
-    missing = result.get("missing", [])
+    missing = result.get("missing_nodes", [])
     if not missing:
         return to_json({
             "status": "clean",
@@ -1022,9 +1022,9 @@ def _handle_repair_workflow(tool_input: dict) -> str:
     packs_to_install: dict[str, dict] = {}  # url -> {name, nodes}
     unresolved = []
     for m in missing:
-        class_type = m.get("class_type", "?")
-        pack_url = m.get("pack_url", "")
-        pack_name = m.get("pack_name", "")
+        class_type = m.get("node_type", "?")
+        pack_url = m.get("pack_url") or ""
+        pack_name = m.get("pack_title") or ""
 
         if pack_url and pack_url not in packs_to_install:
             packs_to_install[pack_url] = {

@@ -90,7 +90,11 @@ class TestS4RepairInstallGate:
         import agent.tools.comfy_discover as disc
         import agent.tools.comfy_provision as cp
         monkeypatch.setattr(disc, "handle", lambda name, ti: json.dumps(
-            {"missing": [{"class_type": "Foo", "pack_url": "https://github.com/x/foo", "pack_name": "foo"}]}
+            {"status": "missing_nodes", "missing_count": 1,
+             "missing_nodes": [{"node_type": "Foo", "pack_title": "foo",
+                                "pack_url": "https://github.com/x/foo", "pack_installed": False}],
+             "packs_to_install": [{"title": "foo", "url": "https://github.com/x/foo",
+                                   "installed": False, "missing_nodes": ["Foo"]}]}
         ) if name == "find_missing_nodes" else json.dumps({}))
         monkeypatch.setattr(cp, "_handle_install_node_pack",
                             lambda ti: (calls.append(ti), json.dumps({"installed": True, "message": "ok"}))[1])
