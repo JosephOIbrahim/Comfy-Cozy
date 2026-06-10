@@ -565,8 +565,27 @@ def _execute_with_websocket(
 # Handlers
 # ---------------------------------------------------------------------------
 
+def _set_session_validated(verdict: bool) -> None:
+    """Record the SESSION-workflow validation verdict for the gate's consent check.
+
+    Only session validations (no "path" input) call this — a path validation
+    says nothing about the session workflow. Defensive: the gate reads the
+    flag with a False default, so a failure here just leaves execution denied.
+    """
+    try:
+        from .workflow_patch import _get_state
+        _get_state()["validated_since_mutation"] = verdict
+    except Exception:
+        pass
+
+
 def _handle_validate_before_execute(tool_input: dict) -> str:
-    """Pre-flight validation of a workflow before queueing."""
+    """Pre-flight validation of a workflow before queueing.
+
+    When validating the SESSION workflow (no "path" input), records the
+    verdict in the session's validated_since_mutation flag — the pre-dispatch
+    gate requires it True before execute_workflow / execute_with_progress.
+    """
     path_str = tool_input.get("path")
 
     # Get workflow
@@ -692,6 +711,8 @@ def _handle_validate_before_execute(tool_input: dict) -> str:
         }
         if intelligence:
             result["intelligence"] = intelligence
+        if not path_str:
+            _set_session_validated(False)
         return to_json(result)
 
     result = {
@@ -703,6 +724,8 @@ def _handle_validate_before_execute(tool_input: dict) -> str:
     }
     if intelligence:
         result["intelligence"] = intelligence
+    if not path_str:
+        _set_session_validated(True)
     return to_json(result)
 
 

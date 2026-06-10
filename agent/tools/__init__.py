@@ -251,7 +251,7 @@ def handle(
     try:
         from ..config import GATE_ENABLED
         if GATE_ENABLED and _is_known:
-            from ..gate import pre_dispatch_check, GateDecision
+            from ..gate import pre_dispatch_check, GateDecision, RiskLevel
 
             # Determine session_active: either explicit ctx (MCP path with
             # SessionContext), or a workflow loaded in this connection's
@@ -340,10 +340,18 @@ def handle(
             # and verify_after_mutation only fires when
             # verified_since_mutation=False is passed (it is not) — but the
             # wiring makes the substrate real instead of always-default.
+            # H1.4: validated_since_mutation is set by validate_before_execute
+            # (session validations only) and cleared below when a mutation
+            # dispatches — it feeds the gate's consent check, which requires
+            # it True before execute_workflow / execute_with_progress run the
+            # session workflow. Defensive read, default False (deny-side).
             _history: list = []
+            _validated = False
             try:
                 from .workflow_patch import _get_state
-                _history = list(_get_state().get("action_history") or [])
+                _st = _get_state()
+                _history = list(_st.get("action_history") or [])
+                _validated = bool(_st.get("validated_since_mutation", False))
             except Exception:
                 pass
 
@@ -351,6 +359,7 @@ def handle(
                 name, tool_input,
                 breaker_state=_breaker_state,
                 session_active=_session_active,
+                validated=_validated,
                 has_undo=_has_undo,
                 action_history=_history,
             )
@@ -409,6 +418,11 @@ def handle(
                 _st["action_history"] = (
                     list(_st.get("action_history") or []) + [name]
                 )[-50:]
+                # H1.4: a mutation-class (REVERSIBLE) dispatch invalidates any
+                # prior validate_before_execute verdict — the session workflow
+                # is about to change, so execution must re-validate first.
+                if gate_result.risk_level == RiskLevel.REVERSIBLE:
+                    _st["validated_since_mutation"] = False
             except Exception:
                 pass
     except ImportError:

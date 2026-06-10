@@ -4,6 +4,10 @@ All five checks must pass for ALLOW.  Special handling:
   - READ_ONLY (level 0): bypasses all checks — zero latency overhead.
   - DESTRUCTIVE (level 4): always returns LOCKED.
   - PROVISION (level 3): returns ESCALATE (needs user confirmation).
+  - EXECUTION (level 2): execute_workflow / execute_with_progress on the
+    SESSION workflow require validated=True (validate_before_execute passed
+    since the last mutation); an explicit "path" input is exempt — the
+    workflow comes from that file, not the session.
 """
 
 from __future__ import annotations
@@ -115,8 +119,17 @@ def pre_dispatch_check(
     if not passed:
         reasons.append(reason)
 
-    # 2. Consent
-    passed, reason = check_consent(tool_name, risk, session_active, validated)
+    # 2. Consent — an explicit "path" input means execute_workflow /
+    # execute_with_progress runs an EXTERNAL file, not the session workflow,
+    # so the session validation flag does not describe it. The exemption is
+    # deliberate; check_scope still vets the path itself.
+    _has_workflow_override = (
+        bool(tool_input.get("path")) if isinstance(tool_input, dict) else False
+    )
+    passed, reason = check_consent(
+        tool_name, risk, session_active, validated,
+        has_workflow_override=_has_workflow_override,
+    )
     checks["consent"] = passed
     if not passed:
         reasons.append(reason)
