@@ -202,6 +202,11 @@ class TestToolRegistry:
             "provision_model",
             "provision_pipeline_status",
             "provision_pipeline_verify",
+            # Latency measurement (perf_tools)
+            "benchmark_tool",
+            "profile_tool",
+            "compare_baselines",
+            "latency_baseline",
         }
         assert expected == names, (
             f"Tool mismatch!\n"
@@ -210,7 +215,7 @@ class TestToolRegistry:
         )
 
     def test_total_tool_count(self):
-        assert len(ALL_TOOLS) == 126, f"Expected 126 tools, got {len(ALL_TOOLS)}"
+        assert len(ALL_TOOLS) == 130, f"Expected 130 tools, got {len(ALL_TOOLS)}"
 
     def test_brain_tool_error_returns_json(self):
         """Brain tool exceptions should be caught and returned as JSON errors."""
