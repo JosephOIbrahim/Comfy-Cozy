@@ -369,6 +369,18 @@ L-MISC     mixed bag:
             future finding covers it (H5 candidate). Crucible: 30/30 independent checks.
     suite   4440 passed ×2 (forge + verifier), ruff clean.
 
+[2026-06-09] H1-MERGE · Confirmation · the H1 train is ON MASTER · verified_by V1
+    merged  #60 (C-P0-1) → #61 (C-P0-2) → #62 (C-P0-3) → #59 (NIM lifecycle, after the E702 lint
+            fix @ 2c66d8e) — all by Joe's explicit word, merge commits, master now 91075b8.
+    combined-tree check  the four-PR union was never CI-tested as one tree, so the full suite ran
+            against merged master locally: 4443 passed, 0 failures (completeness test sees the
+            real nim_* registrations against the gate's forward entries — they reconciled).
+    milestone  tag v5.1.0 cut locally at 91075b8 (push pending Joe's word).
+    still-open  #63 vision (CI 7/7, awaiting merge word) · #64 readme (merge-order constraint
+            satisfied now #59 landed; CI finishing) · #65 consent (opened post-#62, single
+            commit efc5c92, CI starting).
+    next  H2 cuts from master @ 91075b8 — the caching race has its ratified home and a green base.
+
 [2026-06-09] H1.4-LEAD · Lead · L-INJECT-VALIDATED — load_workflow_from_data (workflow_patch.py:1213,
             the sidebar/MCP graph-injection path) replaces the session workflow OUTSIDE the dispatch
             boundary and does NOT clear validated_since_mutation: a passing validation of the
