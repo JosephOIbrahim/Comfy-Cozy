@@ -67,6 +67,11 @@ def _reset_shared_caches():
         invalidate_object_info_cache()
     except Exception:
         pass
+    try:
+        from agent.tools.comfy_discover import _reset_discover_memo_for_tests
+        _reset_discover_memo_for_tests()
+    except Exception:
+        pass
 
 
 @pytest.fixture(autouse=True)
