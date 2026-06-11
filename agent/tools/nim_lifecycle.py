@@ -19,6 +19,7 @@ import json
 import os
 import socket
 import tempfile
+import threading
 import time
 from dataclasses import dataclass, field
 from enum import Enum
@@ -40,6 +41,11 @@ _STATE_PATH = Path(
         str(Path.home() / ".comfy_cozy" / "nim_warm_state.jsonl"),
     )
 )
+
+# Guards the read-prune-rewrite window in record_warm_state against in-process
+# lost updates. Cross-process races remain possible; atomic os.replace bounds
+# the damage to one lost record, never a corrupt file.
+_STATE_LOCK = threading.Lock()
 
 
 def _host_id() -> str:
@@ -127,10 +133,13 @@ def record_warm_state(
     precision: str = "fp8",
     **extra: Any,
 ) -> dict:
-    """Atomically append a warm-state record (write-tmp + os.replace).
+    """Rewrite the warm-state file with the new record appended.
 
-    Matches the experience.jsonl durability convention; os.replace is the
-    Windows-atomic call (commit 2322a42).
+    Not an in-place append: the whole file is read under _STATE_LOCK, pruned
+    of records older than WARM_MAX_AGE_S, and atomically replaced (write-tmp
+    + flush + fsync + os.replace, the agent/memory/session.py:286-288 house
+    pattern). os.replace is the Windows-atomic call (commit 2322a42). A read
+    failure raises rather than wiping history.
     """
     record = {
         "model": model,
@@ -141,25 +150,45 @@ def record_warm_state(
         **extra,
     }
     _STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    existing: list[str] = []
-    if _STATE_PATH.exists():
-        try:
+    with _STATE_LOCK:
+        existing: list[str] = []
+        if _STATE_PATH.exists():
+            # A transient read error must NOT wipe history — raise instead of
+            # resetting to empty. nim_run() already swallows record_warm_state
+            # exceptions at its call site (try/except in the clean-completion
+            # block), so callers degrade gracefully.
             with _STATE_PATH.open("r", encoding="utf-8") as fh:
                 existing = [ln.rstrip("\n") for ln in fh if ln.strip()]
-        except Exception:
-            existing = []
-    existing.append(json.dumps(record, sort_keys=True))
-    fd, tmp = tempfile.mkstemp(dir=str(_STATE_PATH.parent), suffix=".tmp")
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as fh:
-            fh.write("\n".join(existing) + "\n")
-        os.replace(tmp, _STATE_PATH)
-    except Exception:
+        now = record["ts"]
+        kept: list[str] = []
+        for ln in existing:
+            # Prune on the write path only (read path stays pure — INV-2).
+            # Unparseable lines are dropped: they are invisible to
+            # _lookup_warm anyway, as are records with a non-numeric ts.
+            try:
+                rec = json.loads(ln)
+            except json.JSONDecodeError:
+                continue
+            ts = rec.get("ts", 0)
+            if not isinstance(ts, (int, float)) or (now - ts) > WARM_MAX_AGE_S:
+                continue
+            kept.append(ln)
+        kept.append(json.dumps(record, sort_keys=True))
+        fd, tmp = tempfile.mkstemp(dir=str(_STATE_PATH.parent), suffix=".tmp")
         try:
-            os.unlink(tmp)
-        except OSError:
-            pass
-        raise
+            with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                fh.write("\n".join(kept) + "\n")
+                # flush + fsync before the rename so a crash leaves a complete
+                # file (house pattern: agent/memory/session.py:286-288).
+                fh.flush()
+                os.fsync(fh.fileno())
+            os.replace(tmp, _STATE_PATH)
+        except Exception:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+            raise
     _advise_outcome(record)
     return record
 
