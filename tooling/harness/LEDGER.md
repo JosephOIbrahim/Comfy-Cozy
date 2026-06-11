@@ -639,6 +639,26 @@ L-MISC     mixed bag:
             Model-dir rglob fallback on network shares is per-save, first-save only — if a
             floor hits it, an index cache is the known next step.
 
+[2026-06-11] LOCK-CI · Confirmation · PR #71 9/9 GREEN · three PRs now merge-ready on Joe's
+            word: #69 (item 4), #70 (item 5), #71 (item 6).
+
+[2026-06-11] POOL-DESIGN · Confirmation (design; forge PARKED on #69 merge — same engine files,
+            no unauthorized PR stacking) · doc §4 item 7 scouted SOLO · verified_by V1
+    finding  friendlier than recorded: circuit_breaker.py ALREADY has a named registry
+            (get_breaker(name), :127-141; COMFYUI_BREAKER() = get_breaker("comfyui"), :150) —
+            per-host breakers are a KEYING change. get_engine caches per name
+            (engine/__init__.py:51-81); adapter reads config at construction (the documented
+            seam for a url override).
+    design  COMFYUI_ENDPOINTS env (empty default = single-endpoint, byte-identical);
+            COMFYUI_BREAKER(url=None) keys per host; ComfyUIAdapter(url=None); EndpointPool
+            (agent/engine/pool.py) as an IAIEngine delegating to the first endpoint whose
+            breaker allows, failing over on EngineConnectionError/Unavailable — the breaker's
+            OPEN/HALF_OPEN/recovery_timeout IS the health check (no new prober). Farm
+            adapters (Deadline-class) stay a Lead per the doc's own ordering.
+    test-plan  failover A→B; per-host breaker isolation; HALF_OPEN recovery re-admits A;
+            single-endpoint a-is-b identity pin holds; conftest breaker reset extended to the
+            registry without breaking the existing attr-reset fixture.
+
 [2026-06-10] H2-DEADEND · DeadEnd · reflexive `git stash` in the FORGE worktree mid-CRUCIBLE
             stashed the uncommitted test realignments and invalidated an in-flight suite run ·
             caught same-minute, `git stash pop` restored the identical 7-file diff, realignments
