@@ -53,6 +53,7 @@ class TestRiskRegistryComplete:
         import agent.tools as T
         from agent.gate.risk_levels import TOOL_RISK_LEVELS
 
+        T._ensure_stage()  # H2: stage tools register lazily now
         try:
             T._ensure_brain()
             known = set(T._HANDLERS) | set(T._BRAIN_TOOL_NAMES)

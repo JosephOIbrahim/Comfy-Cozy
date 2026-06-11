@@ -40,11 +40,10 @@ for _mod_name in _INTELLIGENCE_MODULE_NAMES:
     except Exception as _ie:
         log.warning("Tool module %r failed to import — its tools are unavailable: %s", _mod_name, _ie)
 
-for _mod_name in _STAGE_MODULE_NAMES:
-    try:
-        _MODULES.append(importlib.import_module(f"..stage.{_mod_name}", package=__name__))
-    except Exception as _ie:
-        log.warning("Stage module %r failed to import — its tools are unavailable: %s", _mod_name, _ie)
+# H2 (ledger C-R13): stage modules are NOT imported here — they pull
+# networkx (~294 ms) + pxr (~310 ms) into every cold import. They are
+# lazy-registered by _ensure_stage() below (importer-side only; the stage
+# package itself is untouched).
 
 # Intelligence layer tool schemas
 _LAYER_TOOLS: list[dict] = []
@@ -72,7 +71,7 @@ for _mod in _MODULES:
 # alert on drift. Brain layer counts are added by `_ensure_brain()` when
 # it lazy-loads; the line below is the stage+intelligence subtotal.
 log.info(
-    "tool dispatch: %d intelligence/stage tools registered (brain lazy)",
+    "tool dispatch: %d intelligence tools registered (stage + brain lazy)",
     len(_HANDLERS),
 )
 
@@ -101,6 +100,47 @@ def _ensure_brain():
             log.warning(
                 "Brain layer unavailable — brain tools will not be registered: %s", _be
             )
+
+
+# Stage tools are loaded lazily (H2 / C-R13): same pattern as the brain
+# layer. Loaded on first full-tool-list access or on dispatch of a name the
+# eager layers don't know.
+_stage_loaded = False
+_stage_lock = threading.Lock()
+_STAGE_TOOL_NAMES: set[str] = set()
+
+
+def _ensure_stage():
+    """Lazily import + register stage-layer tools (thread-safe)."""
+    global _stage_loaded
+    if _stage_loaded:
+        return
+    with _stage_lock:
+        if _stage_loaded:
+            return
+        for _mod_name in _STAGE_MODULE_NAMES:
+            try:
+                _mod = importlib.import_module(f"..stage.{_mod_name}", package=__name__)
+            except Exception as _ie:
+                log.warning(
+                    "Stage module %r failed to import — its tools are unavailable: %s",
+                    _mod_name, _ie,
+                )
+                continue
+            _MODULES.append(_mod)
+            for _tool in _mod.TOOLS:
+                _name = _tool["name"]
+                if _name in _HANDLERS:
+                    log.warning(
+                        "tool registration collision: %r registered by %s, "
+                        "overwriting prior registration from %s",
+                        _name, _mod.__name__, _HANDLERS[_name].__name__,
+                    )
+                _HANDLERS[_name] = _mod
+                _STAGE_TOOL_NAMES.add(_name)
+            _LAYER_TOOLS.extend(_mod.TOOLS)
+        _stage_loaded = True
+        log.info("tool dispatch: stage layer loaded (+%d tools)", len(_STAGE_TOOL_NAMES))
 
 
 # Capability registry (parallel index for smart routing)
@@ -159,7 +199,8 @@ def _observe(name: str, tool_input: dict, ctx: "object | None") -> None:
 
 
 def _get_all_tools() -> list[dict]:
-    """Get all tool schemas (intelligence + brain layers)."""
+    """Get all tool schemas (intelligence + stage + brain layers)."""
+    _ensure_stage()
     _ensure_brain()
     if not _brain_loaded:
         return list(_LAYER_TOOLS)
@@ -188,6 +229,7 @@ class _ToolList(list):
         with self._lock:
             if self._initialized:  # Double-check after acquiring lock
                 return
+            _ensure_stage()
             self.extend(_LAYER_TOOLS)
             _ensure_brain()
             if _brain_loaded:
@@ -245,6 +287,11 @@ def handle(
     # call are not present in _BRAIN_TOOL_NAMES, so _is_known=False and the
     # gate is silently skipped for high-risk brain tools. (Cycle 28 fix)
     _ensure_brain()
+
+    # H2 (C-R13): stage tools register lazily — only pay the stage import
+    # when the requested name isn't known to the eager layers.
+    if name not in _HANDLERS and name not in _BRAIN_TOOL_NAMES:
+        _ensure_stage()
 
     # Pre-dispatch gate (guarded by kill switch, only for known tools)
     _is_known = name in _HANDLERS or name in _BRAIN_TOOL_NAMES
