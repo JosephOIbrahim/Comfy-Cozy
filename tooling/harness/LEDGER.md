@@ -580,6 +580,37 @@ L-MISC     mixed bag:
             label is aspirational; tidy in H5. L-FALSE-COVERAGE (V1): TestToolErrorProtocol's
             _direct() coroutine is never awaited — vacuous test, H5.
 
+[2026-06-11] TC-CI · Confirmation · PR #69 (timeout coherence) 9/9 GREEN · verified_by V1 ·
+            merge awaiting Joe's word.
+
+[2026-06-11] EXR · Confirmation · doc-3.7 EXR ingestion BUILT and PUSHED (standing word) ·
+            verified_by V1 · branch feat/exr-vision @ d05f5b3 (base 79a6fa5) · PR #70
+    finding-refined  the doc's failure model was incomplete: big EXRs hit the 5 MB guard with
+            wrong advice, but SMALL EXRs sailed to the API mislabeled image/png (suffix map
+            defaulted unknowns, vision.py:180) and failed opaquely; the "deliberate pass-
+            through" branch actually served gif/webp only. verify_execution auto-feeds the
+            first history image into analyze_image with NO extension filter — a SaveEXR node
+            triggered the failure every verified run.
+    build   agent/brain/exr_ingest.py: exposure → AP1→Rec.709 (header chromaticities ≈ ACEScg,
+            1e-3 tol; absent = Rec.709 per spec) → clip → sRGB EOTF → PNG; flows through the
+            EXISTING downscale+guard. Data-pass refusal (channel-naming message). Unknown
+            suffixes error actionably (closes the mislabel class). hash_compare converts too.
+            vision_cache sandbox-validates cache-key reads (scout-found gap, fixed in-wave).
+            New extra exr=[openexr>=3.3] (wheels VERIFIED cp310-313 win+linux; numpy
+            transitive — NOT core); CI installs .[dev,stage,exr].
+    probed-API  OpenEXR 3.4 probed by execution pre-forge: File(header, {"RGB": Channel(arr)});
+            channels() groups RGB by default; header() is LIVE-BOUND to the open handle (the
+            AP1 decision must happen inside the context — forge's test caught the silent-skip).
+    suite   4504 passed / 0 failed ×2 (+12 new); independent probes: sRGB 0.5→188 exact, clip,
+            data-refusal, AP1-tagged vs untagged diverge. Ruff clean; freeze diff empty; scan
+            clean; hook silent.
+    leads   L-EXR-CP314 (V1, PyPI): openexr has NO cp314 wheel (3.4.12 stops at cp313) — re-
+            check before any 3.14 matrix entry; openimageio/opencolorio already ship cp314.
+            L-OCIO-STRETCH (V1, PyPI): opencolorio 2.5.2 wheels cp39-cp314 both platforms,
+            builtin ACES configs since 2.2 — the show-config transform is buildable when
+            wanted. L-METADATA-EXR (V0): write_image_metadata is PNG-only (image_metadata.py
+            :266) — EXR metadata embedding is T0.1 manifest territory, post-freeze.
+
 [2026-06-10] H2-DEADEND · DeadEnd · reflexive `git stash` in the FORGE worktree mid-CRUCIBLE
             stashed the uncommitted test realignments and invalidated an in-flight suite run ·
             caught same-minute, `git stash pop` restored the identical 7-file diff, realignments
