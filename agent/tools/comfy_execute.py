@@ -607,12 +607,17 @@ def _handle_validate_before_execute(tool_input: dict) -> str:
     errors = []
     warnings = []
 
-    # Fetch node registry from ComfyUI
+    # Fetch node schemas from ComfyUI (H2: class-scoped, TTL-cached — a few
+    # KB-sized per-class GETs instead of the ~4.6 MB full /object_info, and
+    # re-validate after a fix re-pays nothing. A class absent from the
+    # result is not installed; unreachable ComfyUI raises instead.)
     try:
-        with httpx.Client() as client:
-            resp = client.get(f"{COMFYUI_URL}/object_info", timeout=30.0)
-            resp.raise_for_status()
-            object_info = resp.json()
+        from .comfy_api import get_object_info_classes
+        workflow_classes = {
+            n["class_type"] for n in workflow.values()
+            if isinstance(n, dict) and "class_type" in n
+        }
+        object_info = get_object_info_classes(workflow_classes, timeout=30.0)
     except httpx.ConnectError:
         return to_json({"error": f"ComfyUI not reachable at {COMFYUI_URL}. Is it running?"})
     except Exception as e:

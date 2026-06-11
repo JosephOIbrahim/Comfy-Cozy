@@ -566,6 +566,11 @@ def _handle_install_node_pack(tool_input: dict) -> str:
                 log.warning("pip install failed for '%s': %s", name, e)
                 pip_result = f"Could not install dependencies: {e}"
 
+        # H2: the node registry changed — drop the cached /object_info so
+        # post-restart validation re-fetches instead of serving stale data.
+        from .comfy_api import invalidate_object_info_cache
+        invalidate_object_info_cache()
+
         return to_json({
             "installed": name,
             "path": str(target),
@@ -889,6 +894,10 @@ def _handle_uninstall_node_pack(tool_input: dict) -> str:
         source.rename(target)
     except Exception as e:
         return to_json({"error": f"Failed to disable: {e}"})
+
+    # H2: node registry changed — drop the cached /object_info.
+    from .comfy_api import invalidate_object_info_cache
+    invalidate_object_info_cache()
 
     return to_json({
         "disabled": name,

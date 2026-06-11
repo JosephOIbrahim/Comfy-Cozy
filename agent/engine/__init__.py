@@ -95,7 +95,15 @@ def _reset_cache_for_tests() -> None:
     """Test-only: clear the engine cache.
 
     Test fixtures can call this to force a fresh adapter (e.g. when
-    swapping env vars or mocking the adapter class).
+    swapping env vars or mocking the adapter class). Closes each cached
+    adapter's pooled HTTP client (H2) so resets don't leak sockets.
     """
     with _engine_lock:
+        for _eng in _engine_cache.values():
+            _close = getattr(_eng, "close", None)
+            if callable(_close):
+                try:
+                    _close()
+                except Exception:
+                    pass
         _engine_cache.clear()

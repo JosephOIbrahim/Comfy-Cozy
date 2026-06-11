@@ -183,11 +183,12 @@ def nim_preflight(model: str = "flux-dev") -> PreflightResult:
     try:
         with httpx.Client(timeout=5.0) as client:
             try:
-                resp = client.get(f"{COMFYUI_URL}/object_info")
-                resp.raise_for_status()
-                keys = set(resp.json().keys())
+                # H2: class-scoped TTL cache — only the NIM classes are
+                # fetched (~KB) instead of the full ~4.6 MB /object_info.
+                from .comfy_api import get_object_info_classes
+                found = set(get_object_info_classes(sorted(required), timeout=5.0).keys())
                 comfy_alive = True
-                missing = sorted(k for k in required if k not in keys)
+                missing = sorted(k for k in required if k not in found)
                 node_pack_present = not missing
             except Exception:
                 missing = sorted(required)

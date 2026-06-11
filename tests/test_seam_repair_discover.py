@@ -6,7 +6,9 @@ the REAL ``comfy_provision._handle_repair_workflow`` (consumer). repair_workflow
 calls the discover handle internally — that call is NOT stubbed. Mocks sit only
 at the true IO edges of the producer:
 
-- ComfyUI ``/object_info`` HTTP fetch (``httpx.Client``)
+- ComfyUI ``/object_info`` HTTP fetch (``comfy_api._get`` — the shared
+  pooled-client GET behind the H2 TTL cache; per-class GETs do
+  ``data.get(cls)`` so the full dict serves every class lookup)
 - ComfyUI-Manager registry files (``_MANAGER_DIR`` -> tmp extension-node-map.json)
 - installed-pack filesystem check (``CUSTOM_NODES_DIR`` -> empty tmp dir)
 - deprecation registry fetch (``node_replacement._fetch_replacements``)
@@ -62,19 +64,14 @@ def seam_edges(tmp_path):
 
     workflow_patch._get_state()["current_workflow"] = dict(_WORKFLOW)
 
-    mock_resp = MagicMock()
-    mock_resp.json.return_value = _OBJECT_INFO
-    mock_resp.raise_for_status = MagicMock()
-
     install_spy = MagicMock(
         return_value=json.dumps({"installed": True, "message": "spy"}))
 
     with patch.object(comfy_discover, "_MANAGER_DIR", manager_dir), \
          patch.object(comfy_discover, "CUSTOM_NODES_DIR", cn_dir), \
          patch("agent.tools.node_replacement._fetch_replacements", return_value={}), \
-         patch("agent.tools.comfy_discover.httpx.Client") as mock_cls, \
+         patch("agent.tools.comfy_api._get", return_value=_OBJECT_INFO), \
          patch("agent.tools.comfy_provision._handle_install_node_pack", install_spy):
-        mock_cls.return_value.__enter__.return_value.get.return_value = mock_resp
         yield install_spy
 
     workflow_patch._get_state()["current_workflow"] = None

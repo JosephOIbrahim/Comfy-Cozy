@@ -9,17 +9,19 @@ Secondary: HuggingFace Hub API for broader model search.
 Includes freshness tracking to detect stale registry data and suggest updates.
 """
 
+import copy
 import json
 import logging
 import os
 import re
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import httpx
 
-from ..config import COMFYUI_URL, CUSTOM_NODES_DIR, MODELS_DIR, MODEL_CATALOG_PATH
+from ..config import CUSTOM_NODES_DIR, MODELS_DIR, MODEL_CATALOG_PATH
 from ..rate_limiter import HUGGINGFACE_LIMITER
 from ._util import to_json, validate_path
 
@@ -814,6 +816,61 @@ def _annotate_provision_hints(results: list[dict]) -> None:
                 }
 
 
+# ---------------------------------------------------------------------------
+# H2 (ledger C-R11): concurrent external-source fan-out + short TTL memo
+# ---------------------------------------------------------------------------
+
+_DISCOVER_MEMO_TTL_S = 120.0
+_discover_memo: dict[tuple, tuple[float, tuple]] = {}
+_discover_memo_lock = threading.Lock()
+_discover_pool: ThreadPoolExecutor | None = None
+
+
+def _get_discover_pool() -> ThreadPoolExecutor:
+    global _discover_pool
+    if _discover_pool is None:
+        with _discover_memo_lock:
+            if _discover_pool is None:
+                _discover_pool = ThreadPoolExecutor(
+                    max_workers=2, thread_name_prefix="discover"
+                )
+    return _discover_pool
+
+
+def _reset_discover_memo_for_tests() -> None:
+    """Test-only: drop memoized external-source results."""
+    with _discover_memo_lock:
+        _discover_memo.clear()
+
+
+def _memoized_search(fn, args: tuple):
+    """Submit ``fn(*args)`` to the discover pool unless the memo is fresh.
+
+    Returns a zero-arg callable resolving to fn's ``(results, err)`` tuple,
+    so CivitAI and HuggingFace legs overlap instead of running serially.
+    Error results are never memoized (a transient outage shouldn't be
+    cached for the TTL); served and stored values are deep-copied because
+    downstream ranking/annotation mutates the result dicts in place.
+    """
+    key = (fn.__name__, args)
+    now = time.monotonic()
+    with _discover_memo_lock:
+        hit = _discover_memo.get(key)
+        if hit is not None and now - hit[0] < _DISCOVER_MEMO_TTL_S:
+            cached = copy.deepcopy(hit[1])
+            return lambda: cached
+    future = _get_discover_pool().submit(fn, *args)
+
+    def _resolve():
+        results, err = future.result()
+        if not err:
+            with _discover_memo_lock:
+                _discover_memo[key] = (time.monotonic(), copy.deepcopy((results, err)))
+        return results, err
+
+    return _resolve
+
+
 def _handle_discover(tool_input: dict) -> str:
     """Unified discovery across registry, CivitAI, and HuggingFace."""
     query = tool_input.get("query")  # Cycle 46: guard required field
@@ -867,23 +924,24 @@ def _handle_discover(tool_input: dict) -> str:
             if "local_catalog" not in sources_searched:
                 sources_searched.append("local_catalog")
 
-    # 4. CivitAI (models only)
+    # 4+5. CivitAI + HuggingFace (models only) — H2 (ledger C-R11): the two
+    # network legs run concurrently with a short TTL memo instead of
+    # serially uncached (worst case ~45 s per identical re-query).
+    civitai_job = hf_job = None
     if search_civitai and category in ("models", "all"):
-        civitai_results, civitai_err = _search_civitai_unified(
-            query, model_type, base_model, sort, max_results,
-        )
-        all_results.extend(civitai_results)
-        sources_searched.append("civitai")
-        if civitai_err:
-            errors.append({"source": "civitai", "error": civitai_err})
-
-    # 5. HuggingFace (models only)
+        civitai_job = ("civitai", _memoized_search(
+            _search_civitai_unified, (query, model_type, base_model, sort, max_results),
+        ))
     if search_hf and category in ("models", "all"):
-        hf_results, hf_err = _search_hf_unified(query, model_type, max_results)
-        all_results.extend(hf_results)
-        sources_searched.append("huggingface")
-        if hf_err:
-            errors.append({"source": "huggingface", "error": hf_err})
+        hf_job = ("huggingface", _memoized_search(
+            _search_hf_unified, (query, model_type, max_results),
+        ))
+    for source_name, job in filter(None, (civitai_job, hf_job)):
+        results, err = job()
+        all_results.extend(results)
+        sources_searched.append(source_name)
+        if err:
+            errors.append({"source": source_name, "error": err})
 
     # Deduplicate and rank
     deduped = _deduplicate(all_results)
@@ -1274,17 +1332,13 @@ def _handle_find_missing_nodes(tool_input: dict) -> str:
     if not class_types:
         return to_json({"error": "No nodes found in workflow."})
 
-    # Check which are available in live ComfyUI
+    # Check which are available in live ComfyUI (H2: class-scoped TTL cache —
+    # KB-sized per-class GETs instead of the ~4.6 MB full /object_info; a
+    # non-JSON startup error surfaces as ConnectError from the shared client)
     available = set()
     try:
-        with httpx.Client() as client:
-            resp = client.get(f"{COMFYUI_URL}/object_info", timeout=15.0)
-            resp.raise_for_status()
-            try:  # Cycle 66: ComfyUI may return HTML on startup error
-                object_info = resp.json()
-            except ValueError as e:
-                return to_json({"error": f"ComfyUI returned a non-JSON response: {e}"})
-            available = set(object_info.keys())
+        from .comfy_api import get_object_info_classes
+        available = set(get_object_info_classes(class_types, timeout=15.0).keys())
     except httpx.ConnectError:
         return to_json({
             "error": "ComfyUI not reachable. Start ComfyUI to check node availability.",

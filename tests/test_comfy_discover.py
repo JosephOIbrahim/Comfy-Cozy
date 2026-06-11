@@ -342,18 +342,14 @@ class TestFindMissingNodes:
         path = tmp_path / "wf.json"
         path.write_text(json.dumps(wf), encoding="utf-8")
 
-        # Mock /object_info returning both nodes
-        mock_resp = MagicMock()
-        mock_resp.json.return_value = {
+        # Mock /object_info returning both nodes (H2: the true fetch edge is
+        # comfy_api._get — per-class GETs return {cls: schema} subsets of this)
+        object_info = {
             "CheckpointLoaderSimple": {},
             "KSampler": {},
         }
-        mock_resp.raise_for_status = MagicMock()
 
-        with patch("agent.tools.comfy_discover.httpx.Client") as mock_cls:
-            mock_client = mock_cls.return_value.__enter__.return_value
-            mock_client.get.return_value = mock_resp
-
+        with patch("agent.tools.comfy_api._get", return_value=object_info):
             result = json.loads(comfy_discover.handle("find_missing_nodes", {
                 "path": str(path),
             }))
@@ -369,17 +365,12 @@ class TestFindMissingNodes:
         path = tmp_path / "wf.json"
         path.write_text(json.dumps(wf), encoding="utf-8")
 
-        mock_resp = MagicMock()
-        mock_resp.json.return_value = {
+        object_info = {
             "CheckpointLoaderSimple": {},
             # IPAdapterUnifiedLoader and VideoMatting missing
         }
-        mock_resp.raise_for_status = MagicMock()
 
-        with patch("agent.tools.comfy_discover.httpx.Client") as mock_cls:
-            mock_client = mock_cls.return_value.__enter__.return_value
-            mock_client.get.return_value = mock_resp
-
+        with patch("agent.tools.comfy_api._get", return_value=object_info):
             result = json.loads(comfy_discover.handle("find_missing_nodes", {
                 "path": str(path),
             }))
@@ -401,14 +392,7 @@ class TestFindMissingNodes:
         path = tmp_path / "wf.json"
         path.write_text(json.dumps(wf), encoding="utf-8")
 
-        mock_resp = MagicMock()
-        mock_resp.json.return_value = {}
-        mock_resp.raise_for_status = MagicMock()
-
-        with patch("agent.tools.comfy_discover.httpx.Client") as mock_cls:
-            mock_client = mock_cls.return_value.__enter__.return_value
-            mock_client.get.return_value = mock_resp
-
+        with patch("agent.tools.comfy_api._get", return_value={}):
             result = json.loads(comfy_discover.handle("find_missing_nodes", {
                 "path": str(path),
             }))
@@ -422,14 +406,7 @@ class TestFindMissingNodes:
             "1": {"class_type": "KSampler", "inputs": {}},
         }
 
-        mock_resp = MagicMock()
-        mock_resp.json.return_value = {"KSampler": {}}
-        mock_resp.raise_for_status = MagicMock()
-
-        with patch("agent.tools.comfy_discover.httpx.Client") as mock_cls:
-            mock_client = mock_cls.return_value.__enter__.return_value
-            mock_client.get.return_value = mock_resp
-
+        with patch("agent.tools.comfy_api._get", return_value={"KSampler": {}}):
             result = json.loads(comfy_discover.handle("find_missing_nodes", {}))
             assert result["status"] == "all_installed"
 
@@ -458,10 +435,7 @@ class TestFindMissingNodes:
         path = tmp_path / "wf.json"
         path.write_text(json.dumps(wf), encoding="utf-8")
 
-        with patch("agent.tools.comfy_discover.httpx.Client") as mock_cls:
-            mock_client = mock_cls.return_value.__enter__.return_value
-            mock_client.get.side_effect = _httpx.ConnectError("refused")
-
+        with patch("agent.tools.comfy_api._get", side_effect=_httpx.ConnectError("refused")):
             result = json.loads(comfy_discover.handle("find_missing_nodes", {
                 "path": str(path),
             }))
@@ -480,17 +454,12 @@ class TestFindMissingNodes:
         path = tmp_path / "ui.json"
         path.write_text(json.dumps(data), encoding="utf-8")
 
-        mock_resp = MagicMock()
-        mock_resp.json.return_value = {
+        object_info = {
             "KSampler": {},
             "CheckpointLoaderSimple": {},
         }
-        mock_resp.raise_for_status = MagicMock()
 
-        with patch("agent.tools.comfy_discover.httpx.Client") as mock_cls:
-            mock_client = mock_cls.return_value.__enter__.return_value
-            mock_client.get.return_value = mock_resp
-
+        with patch("agent.tools.comfy_api._get", return_value=object_info):
             result = json.loads(comfy_discover.handle("find_missing_nodes", {
                 "path": str(path),
             }))
@@ -508,14 +477,7 @@ class TestFindMissingNodes:
         path = tmp_path / "wf.json"
         path.write_text(json.dumps(wf), encoding="utf-8")
 
-        mock_resp = MagicMock()
-        mock_resp.json.return_value = {}  # both missing
-        mock_resp.raise_for_status = MagicMock()
-
-        with patch("agent.tools.comfy_discover.httpx.Client") as mock_cls:
-            mock_client = mock_cls.return_value.__enter__.return_value
-            mock_client.get.return_value = mock_resp
-
+        with patch("agent.tools.comfy_api._get", return_value={}):  # both missing
             result = json.loads(comfy_discover.handle("find_missing_nodes", {
                 "path": str(path),
             }))
@@ -743,13 +705,16 @@ class TestDiscover:
 
     def test_per_source_civitai(self, mock_registries):
         """CivitAI source with mock."""
-        with patch("agent.tools.comfy_discover._search_civitai_unified", return_value=(
+        # H2: _memoized_search keys the memo on fn.__name__, so the mock needs one.
+        civitai_mock = MagicMock(return_value=(
             [comfy_discover._normalize_result(
                 name="Test LoRA", result_type="model", source="civitai",
                 relevance_score=0.8, installed=False, url="https://civitai.com/models/1",
             )],
             None,
-        )):
+        ))
+        civitai_mock.__name__ = "_search_civitai_unified"
+        with patch("agent.tools.comfy_discover._search_civitai_unified", civitai_mock):
             result = json.loads(comfy_discover.handle("discover", {
                 "query": "test",
                 "sources": ["civitai"],
@@ -760,13 +725,15 @@ class TestDiscover:
 
     def test_per_source_huggingface(self):
         """HuggingFace source with mock."""
-        with patch("agent.tools.comfy_discover._search_hf_unified", return_value=(
+        hf_mock = MagicMock(return_value=(
             [comfy_discover._normalize_result(
                 name="test/model", result_type="model", source="huggingface",
                 relevance_score=0.5, installed=False, url="https://huggingface.co/test/model",
             )],
             None,
-        )):
+        ))
+        hf_mock.__name__ = "_search_hf_unified"
+        with patch("agent.tools.comfy_discover._search_hf_unified", hf_mock):
             result = json.loads(comfy_discover.handle("discover", {
                 "query": "test",
                 "sources": ["huggingface"],
@@ -853,9 +820,9 @@ class TestDiscover:
 
     def test_error_handling_partial_source_failure(self, mock_registries):
         """If one source fails, others should still return results."""
-        with patch("agent.tools.comfy_discover._search_civitai_unified", return_value=(
-            [], "CivitAI is down",
-        )):
+        civitai_mock = MagicMock(return_value=([], "CivitAI is down"))
+        civitai_mock.__name__ = "_search_civitai_unified"
+        with patch("agent.tools.comfy_discover._search_civitai_unified", civitai_mock):
             result = json.loads(comfy_discover.handle("discover", {
                 "query": "SDXL",
                 "category": "models",
