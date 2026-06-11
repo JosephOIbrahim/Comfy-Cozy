@@ -180,7 +180,7 @@ def patch(workflow: dict, buckets: dict, *, prompt: str, seed: int,
     for lid in buckets["load"]:
         ins = workflow[lid].setdefault("inputs", {})
         ins.setdefault("operation", "Start")
-        ins["offloading_policy"] = "None"   # best perf on 24GB+; 4090 qualifies
+        ins["offloading_policy"] = "System RAM"   # offload to RAM: NIM shares the 4090 with ComfyUI
 
     if not buckets["generate"]:
         sys.exit("No NIM generate node found — can't set the prompt. Fix detection first.")
@@ -241,7 +241,7 @@ def main() -> None:
 
     # --- COLD: forces the container pull (first run is slow, by design) ---
     print("\n=== COLD RUN (expect a long warmup while the container pulls) ===")
-    r_cold = nim_run(workflow, model=args.model)
+    r_cold = nim_run(workflow, model=args.model, warmup_timeout=3600)
     _show("cold", r_cold)
 
     print(f"\nwarm-state after cold run: {nim_state(args.model)}")

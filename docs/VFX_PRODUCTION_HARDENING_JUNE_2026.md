@@ -7,6 +7,16 @@ production actually runs: shots, versions, farms, reviews, deadlines.
 **Status keys:** ✅ shipped/verified · 🔧 fix landed this cycle (PRs #59–#64) · 🟡 queued
 (harness wave named) · 🔴 gap, not yet scheduled.
 
+> **CLOSED 2026-06-11 — every §4 item shipped.** Items 1–3 merged via PRs
+> #66–#68 (v5.2.0 "The Production Floor"); items 4–8 via PRs #69–#73
+> (v5.3.0 "Shot-Ready"). The edit loop measured 7.2 s → 0.48 s; downloads
+> resume; learning data is append-only+fsync'd; CI tests the machine that
+> ships; long jobs get real budgets; linear EXR reaches the vision loop;
+> `workflow.lock` answers question #1; `COMFYUI_ENDPOINTS` pools workers.
+> The 🟡/🔴 markers below are preserved as the 2026-06-09 snapshot this
+> plan was executed against. Reproduce→clean records:
+> `tooling/harness/LEDGER.md`.
+
 ---
 
 ## 1. First principles — what a production floor demands of any tool

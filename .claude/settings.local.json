@@ -111,7 +111,9 @@
       "Bash(gh pr list:*)",
       "Bash(gh pr diff:*)",
       "Bash(gh pr checks:*)",
-      "Skill(schedule)"
+      "Skill(schedule)",
+      "Bash(rm -rf G:/Comfy-Cozy-ci)",
+      "Read(//g/Comfy-Cozy-ci/**)"
     ]
   }
 }

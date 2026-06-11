@@ -17,7 +17,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 pip install -e ".[dev]"                    # Install
 agent run                                  # CLI agent (standalone fallback)
 agent mcp                                  # MCP server (primary interface)
-python -m pytest tests/ -v                 # All tests (~3600, all mocked, <60s)
+python -m pytest tests/ -v                 # All tests (~4540, all mocked, ~3 min)
 python -m pytest tests/test_workflow_patch.py -v          # Single file
 python -m pytest tests/test_workflow_patch.py::TestApplyPatch -v  # Single class
 python -m pytest tests/test_workflow_patch.py::TestApplyPatch::test_load_and_patch -v  # Single test
@@ -59,7 +59,7 @@ ruff format agent/ tests/                  # Format
 14. Never generate entire workflows from scratch. Make surgical, validated modifications.
 15. Every patch is validated before application. No exceptions.
 
-## Tool Overview (113 dispatched tools: 64 intelligence + 22 stage via `_HANDLERS`; 27 brain via `_BRAIN_TOOL_NAMES` (BrainAgent SDK auto-register))
+## Tool Overview (129 dispatched tools: 80 intelligence + 22 stage (lazy, importer-side) via `_HANDLERS`; 27 brain via `_BRAIN_TOOL_NAMES` (lazy, BrainAgent SDK auto-register))
 
 | Category | Tools |
 |----------|-------|
@@ -162,7 +162,7 @@ cognitive/         # Standalone library — does NOT import agent.* (clean depen
   prediction/      # CWM, arbiter, counterfactuals
   tools/           # Standalone async functions (NOT in MCP registry, consumed by pipeline only)
   transport/       # Events, interrupts
-tests/             # ~3600 tests, all mocked, pytest + pytest-asyncio
+tests/             # ~4540 tests, all mocked, pytest + pytest-asyncio
   conftest.py      # autouse fixtures: _reset_conn_session, reset_workflow_state
   fixtures/        # Shared test data (sample workflows, fake images)
 ```
@@ -313,11 +313,17 @@ Phase 6 complete. Cozy persistence + harness shipped (4150+ tests passing).
 - ~~Moneta reference adapter~~ — `agent/integrations/moneta.py` bidirectional file-watch transport (placeholder for Moneta API)
 - ~~Cozy MoE subagents~~ — `.claude/agents/cozy-{scout,architect,provisioner,forge,crucible,vision,scribe}.md`
 
-**Phase 7 — Next:**
-1. Vision-based evaluator — replace rule-based 0.7/0.1 with `analyze_image` scoring
-2. Auto-retry loop — re-COMPOSE when `quality.overall < threshold` (stub exists in pipeline)
-3. Integration test harness — `@pytest.mark.integration` for live ComfyUI tests
+**Phase 7 — status:**
+1. ~~Vision-based evaluator~~ — shipped 5.0.0 (multi-axis scoring via injected `vision_analyzer`, auto-wires when brain available)
+2. ~~Auto-retry loop~~ — shipped 5.0.0 (re-executes under threshold, parameter nudges, 3 attempts, breaker-gated)
+3. ~~Integration test harness~~ — shipped 5.0.0 (`tests/integration/`, session-scoped fixtures, clean skip without ComfyUI; excluded in CI per the marker definition)
 4. Real Moneta wire format — replace file-watch transport in `agent/integrations/moneta.py` with HTTP/RPC once API contract lands
+
+**VFX production hardening (June 2026) — COMPLETE:** all eight items of
+`docs/VFX_PRODUCTION_HARDENING_JUNE_2026.md` §4 merged via PRs #66–#73 and
+shipped as v5.2.0 + v5.3.0 (caching, persistence durability, CI honesty,
+per-tool timeouts, EXR vision, workflow.lock, endpoint pool, lead
+conversion). Evidence: `tooling/harness/LEDGER.md`.
 
 ## Cozy Environment Variables
 
