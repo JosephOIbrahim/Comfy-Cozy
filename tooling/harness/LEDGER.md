@@ -747,6 +747,31 @@ L-MISC     mixed bag:
             converted or parked-with-probe. The hardening doc's §4 order: items 1-7 merged,
             item 8 = PR #73 in review.
 
+[2026-06-11] CLOSE-THE-LOOP · Confirmation · THE HARDENING ORDER IS COMPLETE AND SHIPPED ·
+            verified_by V1 · pre-approved capsule executed by Joe's word
+    #73     one windows-3.11 leg failed on the file-watch adapter's malformed-delta unit test
+            in tests/test_cozy_persistence.py (exact id in the #73 CI logs) — adjudicated
+            FLAKE before merging: file untouched by H5 (only adapter-adjacent change is the
+            integration-deselected e2e teardown, which cannot execute in CI), 3 sibling
+            windows legs green same run, 20/20 local stress, rerun 9/9. MERGED → master
+            11c4ea0. Lead L-FLAKY-DELTA (V1, one observed CI failure): timing-sensitive
+            poll-interval test on slow runners — probe = stress on a throttled runner;
+            candidate fix = marker-wait with generous deadline instead of fixed sleeps.
+    shipped v5.3.0 "Shot-Ready" @ 23e1319: README/TL;DR + architecture diagram (EndpointPool,
+            per-host breakers, 1..N workers, workflow.lock store) + validate-flow drift label +
+            counts 4,540+ + CHANGELOG 5.3.0 + version/description bumps; tag + GitHub release
+            (notes: merged-work only, evidence-trail pointer); repo description refreshed.
+            Scans clean; hooks silent throughout.
+    cleanup worktrees -tc/-exr/-lock/-pool/-h5 removed (merged); -rel removed post-release;
+            -ci husk STILL file-locked (deregistered, inert — delete when the handle drops).
+            ComfyUI left RUNNING (Joe's dev server — not mine to stop).
+    state   doc §4: ALL EIGHT ITEMS MERGED. Science-harness finish line crossed (H5 entry).
+            Open horizons, banked: L-PANEL adversarial pass (own session, probe list named);
+            post-2026-06-16 stage-freeze lift opens [RFC-stage] (in-module lazy imports — the
+            ~250 ms first-validate stage-import cost noted at H2 is its first customer);
+            L-COG-WS-FALLBACK awaits ratification; model_compat full fail-closed is a board
+            option; L-FLAKY-DELTA above. Mile 8 of 8.
+
 [2026-06-10] H2-DEADEND · DeadEnd · reflexive `git stash` in the FORGE worktree mid-CRUCIBLE
             stashed the uncommitted test realignments and invalidated an in-flight suite run ·
             caught same-minute, `git stash pop` restored the identical 7-file diff, realignments
