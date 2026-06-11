@@ -772,6 +772,54 @@ L-MISC     mixed bag:
             L-COG-WS-FALLBACK awaits ratification; model_compat full fail-closed is a board
             option; L-FLAKY-DELTA above. Mile 8 of 8.
 
+[2026-06-11] L-PANEL · Confirmation · the banked UI-panel dimension PROBED + partially FORGED ·
+            verified_by V1 · branch fix/l-panel-hardening @ b3991ea (base master 3ac78e9, after
+            amend for a disclosure reword) · COMMITTED, push pending Joe's per-call word
+    probe   5-way adversarial fan-out (no spend-limit this run, Opus 4.8). Converted 6 cap-killed
+            V0 findings into precise verdicts.
+    forged (V1, tested)
+      A  /agent/* bridge routes were UNAUTHENTICATED mutation surface (push_workflow replaces
+         every tab's canvas; canvas_changed seeds the buffer the agent trusts) while every
+         /comfy-cozy/* route was gated. bridge_auth_failure() = the audited Origin-first gate
+         (browser same-origin; non-browser Bearer when token set), lifted to module level so it
+         is pure-unit-testable; agent httpx clients send the token. 6 tests, no live ComfyUI.
+      B  raw str(e) reached the rendered chat at 5 chat/WS sites (the "~30 leaks" framing was
+         WRONG — panel REST already clean). safe_error_message() keeps exc_info server-side.
+         The panel-chat test that PINNED the leak ("API down" in message) now pins the FIX
+         (raw text absent) — a real site-level reproduce→clean for B, not just the helper.
+    refuted "MCP_AUTH_TOKEN 401s the bridge" — FALSE (routes were never gated; defect was the
+            opposite). Recorded so it is not re-litigated.
+    parked forge-ready (NOT blind-forged — Floor)
+      C streaming-not-rendered + D tab-switch-drop: real, both in the LIVING sidebar.js, both
+        browser-render-bound; exact diffs recorded. E ~60KB dead modules: real but the flagged
+        appMode.js is the half-built CORRECT streaming path (entangled with C) and is documented
+        — deleting it would foreclose C's cleaner fix, so NOT deleted. All in
+        docs/L-PANEL_ADVERSARIAL_PASS_JUNE_2026.md. Probe = a browser session + the sidebar-vs-
+        appMode architecture call (named).
+    suite   4550 passed / 0 failed. Ruff clean on touched files (one pre-existing E401 in
+            panel/__init__.py left untouched — not in the CI lint path, surgical-changes rule).
+    incident  the brightline guard flagged MY OWN RFC prose naming a bright-line subsystem in a
+            tracked doc (the I5 invariants line). NOT a relabel-to-bypass: removed the
+            unnecessary codename from generic design prose (neutral seam language — the
+            sanctioned tracked-artifact rule), amended the LOCAL-ONLY commit, range re-scan clean.
+            ALSO: the worktree's pre-COMMIT hook did not fire (let the flagged commit land
+            locally); the pre-PUSH hook + manual --range scan are the backstop that caught it.
+            Lead L-WORKTREE-HOOK: confirm core.hooksPath pre-commit fires from worktrees, or the
+            pre-push hook is the sole guard there.
+
+[2026-06-11] RFC-001 · Confirmation · stage-freeze pass = DESIGN, forge GATED to 2026-06-16 ·
+            freeze-legal · docs/rfcs/RFC-001-stage-dag-drop-networkx.md (on fix/l-panel-hardening)
+    finding networkx is a 323ms (measured, -X importtime) CORE dependency with EXACTLY ONE
+            consumer repo-wide — agent/stage/dag/engine.py, a 6-node graph whose topology is
+            hardcoded and whose topological order is a compile-time constant. The validate path
+            pays it on first validate (the cost H2/C-R13 deferred as [RFC-stage]).
+    proposal drop networkx entirely (replace the DiGraph with the static order tuple it always
+            returns) → −323ms first-validate, −1 core dep for every install, ZERO behavior
+            change. §3 is the diff, §5 is the gate. Lazy-import alternative REJECTED (build_dag
+            is called right after import, so it helps nothing on the validate path).
+    freeze  agent/stage/** is FROZEN until 2026-06-16 (today is 06-11) → RFC only; NO forge.
+            git diff master -- agent/stage/ EMPTY. The RFC is forge-ready for the lift.
+
 [2026-06-10] H2-DEADEND · DeadEnd · reflexive `git stash` in the FORGE worktree mid-CRUCIBLE
             stashed the uncommitted test realignments and invalidated an in-flight suite run ·
             caught same-minute, `git stash pop` restored the identical 7-file diff, realignments
