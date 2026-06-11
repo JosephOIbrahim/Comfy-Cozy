@@ -48,7 +48,11 @@ TOOLS: list[dict] = [
 
 
 def _fetch_profile(prompt_id: str) -> dict:
-    resp = httpx.get(f"{COMFYUI_URL}/agent/exec_profile/{prompt_id}", timeout=10.0)
+    from .canvas_bridge import bridge_auth_headers
+    resp = httpx.get(
+        f"{COMFYUI_URL}/agent/exec_profile/{prompt_id}", timeout=10.0,
+        headers=bridge_auth_headers(),
+    )
     if resp.status_code == 404:
         raise FileNotFoundError("profile route or prompt_id not found")
     resp.raise_for_status()

@@ -107,3 +107,15 @@ def run_in_executor_with_session(
 
     ctx = contextvars.copy_context()
     return loop.run_in_executor(None, lambda: ctx.run(runner))
+
+
+def safe_error_message(context: str = "operation") -> str:
+    """Generic, client-safe error text for the chat surface (L-PANEL).
+
+    Raw exception text carries internal paths, ``[WinError ...]`` codes, and
+    dict KeyErrors. The chat-path handlers already log the real exception
+    server-side (``exc_info=True``); this returns the bubble text the browser
+    renders, so nothing internal reaches the transcript. ``context`` is a
+    fixed, non-sensitive label (e.g. "agent turn", "workflow update").
+    """
+    return f"The {context} failed — check the server logs for details."

@@ -966,11 +966,13 @@ def _run_agent_sync(conv: ConversationState, user_text: str, msg_queue: queue.Qu
 
         except Exception as e:
             log.error("Agent turn error: %s", e, exc_info=True)
+            from agent._session_helpers import safe_error_message
+            _safe = safe_error_message("agent turn")
             # Mark active agents as errored
             for a in list(_active_agents):
-                _emit_agent_status(msg_queue, a, "error", message=str(e))
+                _emit_agent_status(msg_queue, a, "error", message=_safe)
             _active_agents.clear()
-            msg_queue.put({"type": "error", "message": str(e)})
+            msg_queue.put({"type": "error", "message": _safe})
             return
 
     # Complete remaining agents on turn limit
@@ -1306,9 +1308,10 @@ async def _handle_panel_action(ws, conv, loop, action, data):
 
     except Exception as e:
         log.error("Direct action failed: %s", e, exc_info=True)
+        from agent._session_helpers import safe_error_message
         await ws.send_json({
             "type": "error",
-            "message": f"Action failed: {e}",
+            "message": safe_error_message("action"),
         })
 
     await ws.send_json({"type": "stage", "stage": "DONE", "detail": ""})
