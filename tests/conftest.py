@@ -49,6 +49,33 @@ def _reset_circuit_breakers():
 
 
 @pytest.fixture(autouse=True)
+def _isolate_experience_file(tmp_path, monkeypatch):
+    """Redirect the cognitive experience JSONL to a per-test temp file.
+
+    Without this, every ``pipeline.run()`` in the suite (~56 call sites)
+    persists test chunks into the developer's REAL experience store
+    (``COMFYUI_DATABASE/comfy-cozy-experience.jsonl``) — real-store
+    pollution. Patching the call-time resolver keeps every
+    AutonomousPipeline constructed inside a test pointed at tmp_path.
+
+    The CANON-EXPFILE drift-stopper test in test_cognitive_pipeline.py
+    opts out by holding an import-time reference to the real resolver,
+    which this setattr does not touch.
+    """
+    try:
+        import cognitive.pipeline.autonomous as _auto
+    except ImportError:
+        yield
+        return
+    monkeypatch.setattr(
+        _auto,
+        "_default_experience_file",
+        lambda: str(tmp_path / "experience.jsonl"),
+    )
+    yield
+
+
+@pytest.fixture(autouse=True)
 def reset_workflow_state():
     """Deep-snapshot and restore ``workflow_patch`` state between tests.
 
