@@ -611,6 +611,34 @@ L-MISC     mixed bag:
             wanted. L-METADATA-EXR (V0): write_image_metadata is PNG-only (image_metadata.py
             :266) — EXR metadata embedding is T0.1 manifest territory, post-freeze.
 
+[2026-06-11] EXR-CI · Confirmation · PR #70 9/9 GREEN (exr extra installed on all 8 legs) ·
+            merge awaiting Joe's word. PR #69 also 9/9 green, same state.
+
+[2026-06-11] SPEND-LIMIT · DeadEnd · the lock-wave scout workflow died on the monthly subagent
+            spend limit — BOTH scouts refused before reading a byte. Continued SOLO inline
+            (scout+forge+crucible by the orchestrator directly); quality gates unchanged.
+            RULE: when delegation is unavailable, the wave slows but the Floor does not bend.
+
+[2026-06-11] LOCK · Confirmation · doc-3.8 workflow.lock BUILT and PUSHED (standing word) ·
+            verified_by V1 · branch feat/workflow-lock @ 00a36b6 (base 79a6fa5) · PR #71 ·
+            built SOLO (spend limit — no subagents)
+    build   agent/tools/workflow_lock.py (no new MCP tool → no gate surface): save_workflow
+            writes <name>.lock.json pinning model SHA-256s (resolution under MODELS_DIR;
+            field knowledge REUSED from model_compat._extract_models_from_workflow), installed
+            pack git commits (pure .git/HEAD reads incl. detached + packed-refs), live
+            comfyui_version (system_stats field verified live = 0.24.0), workflow sha256.
+            validate_before_execute appends drifted-since-lock WARNINGS (explicit path or the
+            session's loaded_path); no sidecar = silence — provenance, not a gate. Hash cost:
+            (path,size,mtime_ns) in-process cache + prior-sidecar reuse (re-save never
+            re-hashes — test pins ONE sha256 call); validate re-hashes only on stat change
+            (touched-but-identical stays quiet). Lock failure never fails the save.
+            conftest _reset_shared_caches clears the hash cache (A-CACHE-RESET house rule).
+    suite   4505 passed / 0 failed ×2 (+12 new). Ruff clean; freeze diff empty; scan clean;
+            hook silent.
+    deferred  save_session integration (own store shape; same helper callable later).
+            Model-dir rglob fallback on network shares is per-save, first-save only — if a
+            floor hits it, an index cache is the known next step.
+
 [2026-06-10] H2-DEADEND · DeadEnd · reflexive `git stash` in the FORGE worktree mid-CRUCIBLE
             stashed the uncommitted test realignments and invalidated an in-flight suite run ·
             caught same-minute, `git stash pop` restored the identical 7-file diff, realignments
