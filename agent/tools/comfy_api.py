@@ -329,7 +329,7 @@ def _handle_get_all_nodes(tool_input: dict) -> str:
     name_filter = (tool_input.get("name_filter") or "").lower()
     fmt = tool_input.get("format", "summary")
 
-    all_info = _get("/object_info", timeout=30.0)
+    all_info = get_object_info(timeout=30.0)  # H2: shared TTL cache
 
     # Apply filters
     filtered_names = []
@@ -445,12 +445,11 @@ def _handle_get_node_info(tool_input: dict) -> str:
     detail = tool_input.get("detail", "summary")  # #4 progressive disclosure
     if detail not in ("summary", "signature", "full"):
         detail = "summary"
-    all_info = _get(f"/object_info/{node_type}", timeout=10.0)
-
-    info = all_info.get(node_type)
+    # H2: per-class TTL cache (served from the warm full cache when present)
+    info = get_object_info_classes([node_type], timeout=10.0).get(node_type)
     if not info:
         # Try case-insensitive search
-        all_nodes = _get("/object_info", timeout=30.0)
+        all_nodes = get_object_info(timeout=30.0)
         matches = [n for n in all_nodes if n.lower() == node_type.lower()]
         if matches:
             info = all_nodes[matches[0]]

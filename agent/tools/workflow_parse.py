@@ -674,12 +674,15 @@ def _validate_against_comfyui(nodes: dict, connections: list[dict]) -> dict:
     errors = []
     warnings = []
 
-    # Fetch all node info
+    # Fetch node schemas (H2: class-scoped TTL cache — KB-sized per-class
+    # GETs instead of the ~4.6 MB full /object_info)
     try:
-        with httpx.Client() as client:
-            resp = client.get(f"{COMFYUI_URL}/object_info", timeout=30.0)
-            resp.raise_for_status()
-            all_info = resp.json()
+        from .comfy_api import get_object_info_classes
+        wf_classes = {
+            n.get("class_type", "") for n in nodes.values()
+            if isinstance(n, dict) and not n.get("_ui_node") and n.get("class_type")
+        }
+        all_info = get_object_info_classes(wf_classes, timeout=30.0)
     except httpx.ConnectError:
         return {"error": f"ComfyUI not reachable at {COMFYUI_URL}. Is it running?"}
     except Exception as e:

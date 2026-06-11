@@ -19,7 +19,7 @@ from pathlib import Path
 
 import httpx
 
-from ..config import COMFYUI_URL, CUSTOM_NODES_DIR, MODELS_DIR, MODEL_CATALOG_PATH
+from ..config import CUSTOM_NODES_DIR, MODELS_DIR, MODEL_CATALOG_PATH
 from ..rate_limiter import HUGGINGFACE_LIMITER
 from ._util import to_json, validate_path
 
@@ -1274,17 +1274,13 @@ def _handle_find_missing_nodes(tool_input: dict) -> str:
     if not class_types:
         return to_json({"error": "No nodes found in workflow."})
 
-    # Check which are available in live ComfyUI
+    # Check which are available in live ComfyUI (H2: class-scoped TTL cache —
+    # KB-sized per-class GETs instead of the ~4.6 MB full /object_info; a
+    # non-JSON startup error surfaces as ConnectError from the shared client)
     available = set()
     try:
-        with httpx.Client() as client:
-            resp = client.get(f"{COMFYUI_URL}/object_info", timeout=15.0)
-            resp.raise_for_status()
-            try:  # Cycle 66: ComfyUI may return HTML on startup error
-                object_info = resp.json()
-            except ValueError as e:
-                return to_json({"error": f"ComfyUI returned a non-JSON response: {e}"})
-            available = set(object_info.keys())
+        from .comfy_api import get_object_info_classes
+        available = set(get_object_info_classes(class_types, timeout=15.0).keys())
     except httpx.ConnectError:
         return to_json({
             "error": "ComfyUI not reachable. Start ComfyUI to check node availability.",
