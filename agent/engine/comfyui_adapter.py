@@ -246,12 +246,25 @@ class ComfyUIAdapter(IAIEngine):
         ws_url = f"{scheme}://{self._host}:{self._port}/ws?clientId={client_id}"
 
         try:
-            ws_cm = websockets.sync.client.connect(ws_url, close_timeout=5, open_timeout=10)
+            # C-R6 hardening: max_size lifts the library's 1 MiB frame cap
+            # (a preview frame above it closes the socket with code 1009);
+            # ping_timeout=60 survives model-load stalls that leave a ping
+            # unanswered past the 20 s default.
+            ws_cm = websockets.sync.client.connect(
+                ws_url,
+                close_timeout=5,
+                open_timeout=10,
+                max_size=16 * 1024 * 1024,
+                ping_interval=20,
+                ping_timeout=60,
+            )
         except Exception as e:
             raise EngineConnectionError(f"WebSocket connect failed: {e}") from e
 
         with ws_cm as ws:
-            ws.recv_bufsize = 16 * 1024 * 1024  # 16MB for preview images
+            # Socket read chunk size only — the frame-size cap is the
+            # max_size connect kwarg above.
+            ws.recv_bufsize = 16 * 1024 * 1024
 
             def _events() -> Iterator[EngineEvent]:
                 while True:
@@ -262,6 +275,14 @@ class ComfyUIAdapter(IAIEngine):
                         # check deadlines and keep going.
                         yield EngineEvent(type="__timeout__", data={}, raw={})
                         continue
+                    except (websockets.exceptions.ConnectionClosed, OSError) as e:
+                        # C-R6: translate mid-stream transport loss so the
+                        # event stream's contract is uniformly EngineError-
+                        # family (callers fall back to history polling).
+                        # TimeoutError (an OSError subclass) is caught above.
+                        raise EngineConnectionError(
+                            f"WebSocket connection lost mid-stream: {e}"
+                        ) from e
                     if isinstance(raw, bytes):
                         # Preview images — skip.
                         continue

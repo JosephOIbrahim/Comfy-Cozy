@@ -131,6 +131,74 @@ def _check_comfyui_reachable() -> dict:
         }
 
 
+# Default outer dispatch budget per tool call (seconds). Covers the slowest
+# ordinary tools; long-running tools get larger budgets via _tool_time_budget.
+_DEFAULT_TOOL_TIMEOUT = 120.0
+# Ceiling on any caller-supplied timeout argument (24 h).
+_MAX_CALLER_TIMEOUT = 86400.0
+
+
+def _tool_time_budget(name: str, arguments: dict | None) -> float | None:
+    """Outer dispatch budget in seconds for one tool call; None = unbounded.
+
+    WHY: the dispatch runs handlers in a thread executor wrapped in
+    asyncio.wait_for. A wait_for timeout cannot cancel the worker thread —
+    on expiry the tool keeps running ORPHANED while the client gets an
+    error, so this budget is a *wait*, not a kill. It must therefore
+    STRICTLY EXCEED the tool's own inner timeout so the tool's graceful
+    result (e.g. execute_workflow's status:"timeout" payload with the
+    prompt_id) reaches the client instead of being abandoned mid-flight.
+
+    Per-tool rules (inner budget + margin):
+    - execute_workflow: caller ``timeout`` (default 120) + 30
+    - execute_with_progress: caller ``timeout`` (default 300) + 60
+    - run_pipeline: stage count (min 1) x ``timeout_per_stage``
+      (default 300) + 60
+    - nim_run: ``warmup_timeout`` (else 900, cold worst case — dispatch
+      cannot know warm/cold) + ``cook_timeout`` (else 300) + 60
+    - download_model: None — byte-bounded internally (20 GB cap with a
+      30 s per-read liveness timeout); a fixed ceiling would re-break
+      large model downloads
+    - install_node_pack: 360 (clone 120 + pip 120 + lock 5 + margin)
+    - repair_workflow with auto_install: 900 (may clone+install packs)
+    - vision tools (analyze_image etc.): default — inner
+      _VISION_TIMEOUT=90 stays strictly under 120 (brain/vision.py)
+    - everything else: default
+
+    Caller-supplied numbers clamp to [default, 86400]; any parse failure
+    falls back to the default budget.
+    """
+    args = arguments if isinstance(arguments, dict) else {}
+
+    def _num(key: str, fallback: float) -> float:
+        val = args.get(key)
+        if val is None:
+            return float(fallback)
+        return min(max(float(val), _DEFAULT_TOOL_TIMEOUT), _MAX_CALLER_TIMEOUT)
+
+    try:
+        if name == "execute_workflow":
+            return _num("timeout", 120) + 30.0
+        if name == "execute_with_progress":
+            return _num("timeout", 300) + 60.0
+        if name == "run_pipeline":
+            pipeline = args.get("pipeline")
+            stages = pipeline.get("stages") if isinstance(pipeline, dict) else None
+            count = max(len(stages), 1) if isinstance(stages, list) else 1
+            return count * _num("timeout_per_stage", 300) + 60.0
+        if name == "nim_run":
+            return _num("warmup_timeout", 900) + _num("cook_timeout", 300) + 60.0
+        if name == "download_model":
+            return None
+        if name == "install_node_pack":
+            return 360.0
+        if name == "repair_workflow" and args.get("auto_install"):
+            return 900.0
+    except (TypeError, ValueError):
+        return _DEFAULT_TOOL_TIMEOUT
+    return _DEFAULT_TOOL_TIMEOUT
+
+
 def create_mcp_server() -> "Server":
     """Create and configure the MCP server with all agent tools.
 
@@ -347,25 +415,31 @@ def create_mcp_server() -> "Server":
             _cs.set(_conn_name_local)
             return _partial()
 
+        budget = _tool_time_budget(name, arguments)
         try:
             # Wrap in asyncio.wait_for so a hung tool handler (e.g. ComfyUI
             # unreachable, stuck lock) cannot block the MCP event loop
-            # indefinitely. 120 s covers the slowest legitimate operations
-            # (large model downloads are handled separately with their own
-            # streaming timeout). (Cycle 31 fix)
+            # indefinitely. The budget is per-tool (_tool_time_budget):
+            # long-running tools get budgets strictly above their own inner
+            # timeouts so their graceful results reach the client;
+            # download_model gets None (unbounded) because it is
+            # byte-bounded internally. (Cycle 31 fix; L-MISC-a per-tool)
             result = await asyncio.wait_for(
                 loop.run_in_executor(None, _handler),
-                timeout=120.0,
+                timeout=budget,
             )
         except asyncio.TimeoutError:
-            log.error("Tool %s timed out after 120 s", name)
+            log.error("Tool %s did not respond within %.0f s", name, budget)
             return types.CallToolResult(
                 isError=True,
                 content=[types.TextContent(
                     type="text",
                     text=(
-                        f"Tool '{name}' timed out after 120 s. "
-                        "ComfyUI may be unresponsive — check that it is running."
+                        f"Tool '{name}' did not respond within {budget:.0f} s. "
+                        "The wait was abandoned, not the work — the operation "
+                        "may still complete in the background. For execution "
+                        "tools, check get_execution_status or get_history; "
+                        "otherwise re-query the relevant status tool."
                     ),
                 )],
             )
