@@ -199,16 +199,61 @@ class TestToolErrorProtocol:
 # ---------------------------------------------------------------------------
 
 class TestToolTimeout:
-    """run_in_executor must be wrapped with asyncio.wait_for so hung tools don't block forever."""
+    """run_in_executor must be wrapped with asyncio.wait_for so hung tools don't block forever.
 
-    def test_timeout_configured_in_source(self):
-        """Verify asyncio.wait_for with timeout=120.0 is present in the call_tool handler."""
+    The outer budget is per-tool (_tool_time_budget) and is a *wait*, not a
+    kill: the worker thread is orphaned on expiry, so the budget must strictly
+    exceed each tool's inner timeout for its graceful result to reach the
+    client.
+    """
+
+    def test_wait_for_present_in_source(self):
+        """asyncio.wait_for + asyncio.TimeoutError must remain in the dispatch."""
         import inspect
         from agent import mcp_server
         source = inspect.getsource(mcp_server)
         assert "asyncio.wait_for" in source, "asyncio.wait_for must wrap run_in_executor"
-        assert "120.0" in source or "timeout=120" in source, "timeout must be 120 s"
         assert "asyncio.TimeoutError" in source, "TimeoutError must be caught"
+
+    def test_default_tool_gets_default_budget(self):
+        from agent.mcp_server import _DEFAULT_TOOL_TIMEOUT, _tool_time_budget
+        assert _DEFAULT_TOOL_TIMEOUT == 120.0
+        assert _tool_time_budget("load_workflow", {}) == 120.0
+        assert _tool_time_budget("get_node_info", None) == 120.0
+
+    def test_execute_with_progress_exceeds_inner_timeout(self):
+        from agent.mcp_server import _tool_time_budget
+        assert _tool_time_budget("execute_with_progress", {"timeout": 300}) >= 360
+
+    def test_malformed_timeout_falls_back_to_default(self):
+        from agent.mcp_server import _DEFAULT_TOOL_TIMEOUT, _tool_time_budget
+        budget = _tool_time_budget("execute_with_progress", {"timeout": "bogus"})
+        assert budget == _DEFAULT_TOOL_TIMEOUT
+
+    def test_nim_run_covers_cold_warmup_plus_cook(self):
+        from agent.mcp_server import _tool_time_budget
+        assert _tool_time_budget("nim_run", {}) >= 1260
+
+    def test_download_model_is_unbounded(self):
+        from agent.mcp_server import _tool_time_budget
+        assert _tool_time_budget("download_model", {}) is None
+
+    def test_vision_budget_exceeds_inner_vision_timeout(self):
+        from agent.brain.vision import _VISION_TIMEOUT
+        from agent.mcp_server import _tool_time_budget
+        budget = _tool_time_budget("analyze_image", {})
+        assert budget == 120.0
+        assert budget > _VISION_TIMEOUT
+
+    def test_caller_timeout_clamped_to_ceiling(self):
+        from agent.mcp_server import _tool_time_budget
+        budget = _tool_time_budget("execute_workflow", {"timeout": 1e12})
+        assert budget <= 86400 + 30
+
+    def test_run_pipeline_scales_with_stage_count(self):
+        from agent.mcp_server import _tool_time_budget
+        args = {"pipeline": {"stages": [{}, {}, {}]}}
+        assert _tool_time_budget("run_pipeline", args) >= 960
 
     @pytest.mark.asyncio
     async def test_hung_tool_times_out(self):
