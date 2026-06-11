@@ -681,6 +681,23 @@ L-MISC     mixed bag:
             (4=#69, 5=#70, 6=#71, 7=#72 pending CI) except item 8 (H5 lead conversion),
             which is the closing round over the banked leads.
 
+[2026-06-11] RELEASE-5.2.0 · Confirmation · v5.2.0 "The Production Floor" PUBLISHED (Joe's
+            explicit release instruction) · verified_by V1
+    shipped  master fa4a970 (release-prep commit, scan clean, hook silent): README diagrams
+            now show the object_info TTL cache node, class-scoped GETs, pooled engine client,
+            append-only fsync'd experience store, ~1 ms cached re-validate in the fix loop;
+            TL;DR gains measured edit-loop + durable-learning bullets; test counts 4,490+;
+            CI-matrix honesty sentence; CHANGELOG gains 5.2.0 AND a backfilled 5.1.0 (the
+            GitHub release existed with no changelog entry); pyproject+__init__ 5.0.0→5.2.0;
+            description 113→129 tools. Tag v5.2.0 pushed; GitHub release created (notes =
+            measured claims only, merged-work only; the four green PRs listed as in-review).
+            Repo description refreshed (126→129 tools + the new headline capabilities).
+            Docs branch (this ledger) pushed through the per-commit guard — the evidence
+            trail the PR bodies cite is now publicly reachable.
+    scope-discipline  #69-#72 stay OUT of the release/diagrams — not merged, not claimed.
+            Untracked local scratch (logs, quarantine, RSI/harness working files) deliberately
+            NOT committed.
+
 [2026-06-10] H2-DEADEND · DeadEnd · reflexive `git stash` in the FORGE worktree mid-CRUCIBLE
             stashed the uncommitted test realignments and invalidated an in-flight suite run ·
             caught same-minute, `git stash pop` restored the identical 7-file diff, realignments
