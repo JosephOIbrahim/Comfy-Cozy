@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import threading
 from contextlib import contextmanager
 from typing import Iterator
 
@@ -80,6 +81,28 @@ class ComfyUIAdapter(IAIEngine):
         self._url = COMFYUI_URL
         self._host = COMFYUI_HOST
         self._port = COMFYUI_PORT
+        # H2 (ledger C-R4): one pooled client per adapter instead of a fresh
+        # httpx.Client per call — the per-call TLS/TCP setup cost ~170-230 ms
+        # on every 1 s status poll.
+        self._client_lock = threading.Lock()
+        self._client: httpx.Client | None = None
+
+    def _http(self) -> httpx.Client:
+        """Shared pooled client (lazy, thread-safe)."""
+        if self._client is None:
+            with self._client_lock:
+                if self._client is None:
+                    self._client = httpx.Client(
+                        limits=httpx.Limits(max_connections=10, max_keepalive_connections=5),
+                    )
+        return self._client
+
+    def close(self) -> None:
+        """Close the pooled client (called by the test-reset hook)."""
+        with self._client_lock:
+            if self._client is not None:
+                self._client.close()
+                self._client = None
 
     # ------------------------------------------------------------------
     # IAIEngine — execution operations
@@ -102,22 +125,21 @@ class ComfyUIAdapter(IAIEngine):
 
         payload = {"prompt": workflow, "client_id": client_id}
         try:
-            with httpx.Client() as client:
-                resp = client.post(
-                    f"{self._url}/prompt",
-                    json=payload,
-                    timeout=30.0,
+            resp = self._http().post(
+                f"{self._url}/prompt",
+                json=payload,
+                timeout=30.0,
+            )
+            resp.raise_for_status()
+            breaker.record_success()
+            data = resp.json()
+            prompt_id = data.get("prompt_id")
+            if not prompt_id:
+                raise EngineError(
+                    "ComfyUI accepted the workflow but didn't return a job ID. "
+                    "It may be overloaded — try again in a few seconds."
                 )
-                resp.raise_for_status()
-                breaker.record_success()
-                data = resp.json()
-                prompt_id = data.get("prompt_id")
-                if not prompt_id:
-                    raise EngineError(
-                        "ComfyUI accepted the workflow but didn't return a job ID. "
-                        "It may be overloaded — try again in a few seconds."
-                    )
-                return prompt_id
+            return prompt_id
         except httpx.ConnectError as e:
             breaker.record_failure()
             raise EngineConnectionError(
@@ -156,9 +178,8 @@ class ComfyUIAdapter(IAIEngine):
         cancel can use the same shape.
         """
         try:
-            with httpx.Client() as client:
-                resp = client.post(f"{self._url}/interrupt", timeout=10.0)
-                resp.raise_for_status()
+            resp = self._http().post(f"{self._url}/interrupt", timeout=10.0)
+            resp.raise_for_status()
         except httpx.ConnectError as e:
             raise EngineConnectionError(
                 f"ComfyUI not reachable at {self._url}."
@@ -188,16 +209,15 @@ class ComfyUIAdapter(IAIEngine):
         else:
             path = "/history"
         try:
-            with httpx.Client() as client:
-                resp = client.get(f"{self._url}{path}", timeout=10.0)
-                resp.raise_for_status()
-                breaker.record_success()
-                try:
-                    return resp.json()
-                except ValueError as e:
-                    raise EngineConnectionError(
-                        f"ComfyUI returned non-JSON on {path}: {e}"
-                    ) from e
+            resp = self._http().get(f"{self._url}{path}", timeout=10.0)
+            resp.raise_for_status()
+            breaker.record_success()
+            try:
+                return resp.json()
+            except ValueError as e:
+                raise EngineConnectionError(
+                    f"ComfyUI returned non-JSON on {path}: {e}"
+                ) from e
         except httpx.ConnectError as e:
             breaker.record_failure()
             raise EngineConnectionError(str(e)) from e
