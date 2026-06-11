@@ -13,7 +13,9 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
-        python-version: ["3.10", "3.11", "3.12"]
+        # Every Python the classifiers advertise — 3.13 was advertised but
+        # never tested before this matrix entry.
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
 
     steps:
       - uses: actions/checkout@v4
@@ -24,8 +26,15 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Install dependencies
+        # CI must install what the product imports (hardening doc 3.4):
+        # without the stage extra, all 21 stage-layer test files silently
+        # SKIP and the USD substrate is green-by-skip.
         run: |
-          pip install -e ".[dev]"
+          pip install -e ".[dev,stage]"
+
+      - name: Verify the stage substrate imports
+        # Fail loud if the usd-core wheel breaks — never back to green-by-skip.
+        run: python -c "from pxr import Usd; print('usd-core OK:', Usd.GetVersion())"
 
       - name: Security audit (pip-audit)
         continue-on-error: true
@@ -37,4 +46,10 @@ jobs:
         run: ruff check agent/ tests/
 
       - name: Test
-        run: python -m pytest tests/ -v --ignore=tests/test_provisioner.py
+        # test_provisioner.py un-ignored: it was excluded only because its
+        # module-level agent.stage imports made collection ERROR without
+        # usd-core, which is now installed (33 tests, all mocked).
+        # Integration tests are excluded EXPLICITLY — the marker definition in
+        # pyproject.toml prescribes exactly this for CI (previously they were
+        # excluded only by every one of them happening to skip).
+        run: python -m pytest tests/ -v -m "not integration"
