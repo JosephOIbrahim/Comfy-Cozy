@@ -73,14 +73,26 @@ class ComfyUIAdapter(IAIEngine):
     pattern of agent.tools.comfy_api._get_client).
     """
 
-    def __init__(self) -> None:
+    def __init__(self, url: str | None = None) -> None:
         # Lazy-import config so an import-time failure in config doesn't
         # break the engine module being imported.
         from ..config import COMFYUI_HOST, COMFYUI_PORT, COMFYUI_URL
 
-        self._url = COMFYUI_URL
-        self._host = COMFYUI_HOST
-        self._port = COMFYUI_PORT
+        if url is None:
+            self._url = COMFYUI_URL
+            self._host = COMFYUI_HOST
+            self._port = COMFYUI_PORT
+        else:
+            # Pool-created endpoint adapter (hardening 3.5). Keeps its own
+            # per-endpoint circuit breaker; the default adapter stays on the
+            # shared "comfyui" breaker so gate health wiring and test resets
+            # see exactly what they always did.
+            from urllib.parse import urlparse
+            self._url = url.rstrip("/")
+            parsed = urlparse(self._url)
+            self._host = parsed.hostname or self._url
+            self._port = parsed.port or 8188
+        self._breaker_url = None if url is None else self._url
         # H2 (ledger C-R4): one pooled client per adapter instead of a fresh
         # httpx.Client per call — the per-call TLS/TCP setup cost ~170-230 ms
         # on every 1 s status poll.
@@ -302,13 +314,13 @@ class ComfyUIAdapter(IAIEngine):
     # Internal helpers
     # ------------------------------------------------------------------
 
-    @staticmethod
-    def _breaker():
+    def _breaker(self):
         """Resolve the ComfyUI circuit breaker lazily.
 
         Lazy import keeps the engine module import-cheap and matches
         the pattern in agent/tools/comfy_execute.py (which imports the
-        breaker per-call from inside its helpers).
+        breaker per-call from inside its helpers). Default adapters share
+        the "comfyui" breaker; pool-created ones are keyed per endpoint.
         """
         from ..circuit_breaker import COMFYUI_BREAKER
-        return COMFYUI_BREAKER()
+        return COMFYUI_BREAKER(self._breaker_url)
