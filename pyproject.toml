@@ -52,6 +52,10 @@ embed = [
     # BGE-small-en-v1.5 (384-dim); sentence-transformers pulls torch (CPU is fine).
     "sentence-transformers>=2.2.0",
 ]
+exr = [
+    # Linear EXR ingestion for the vision tools (agent/brain/exr_ingest.py); numpy is transitive.
+    "openexr>=3.3",
+]
 
 [project.urls]
 Homepage = "https://github.com/JosephOIbrahim/comfyui-agent"

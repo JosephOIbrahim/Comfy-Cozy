@@ -12,7 +12,7 @@ import hashlib
 import threading
 from pathlib import Path
 
-from ._util import to_json
+from ._util import to_json, validate_path
 
 _CACHE_MAX = 256
 
@@ -73,6 +73,12 @@ def _handle_analyze_image_cached(tool_input: dict) -> str:
     if tool_input.get("invalidate"):
         with _lock:
             _cache.clear()
+
+    # Sandbox check BEFORE reading bytes for the cache key — analyze_image
+    # validates its path (brain side); the key read must not bypass that.
+    path_err = validate_path(image_path, must_exist=True)
+    if path_err:
+        return to_json({"error": path_err})
 
     # Compute the cache key; if we can't, fall through to a live analysis.
     prompt_used = tool_input.get("prompt_used")
