@@ -147,9 +147,17 @@ def reset_all() -> None:
 
 
 # Pre-configured breakers
-def COMFYUI_BREAKER() -> CircuitBreaker:
-    """Circuit breaker for ComfyUI HTTP API calls."""
-    return get_breaker("comfyui", failure_threshold=3, recovery_timeout=30.0)
+def COMFYUI_BREAKER(url: str | None = None) -> CircuitBreaker:
+    """Circuit breaker for ComfyUI HTTP API calls.
+
+    With no argument: the shared default-endpoint breaker (every existing
+    caller — gate health wiring, tools layer, test resets — unchanged).
+    With a url: a per-endpoint breaker, so one unhealthy worker on a
+    multi-endpoint floor never opens the circuit for its siblings
+    (hardening 3.5; consumed by agent/engine/pool.py).
+    """
+    name = "comfyui" if url is None else f"comfyui:{url}"
+    return get_breaker(name, failure_threshold=3, recovery_timeout=30.0)
 
 
 def CIVITAI_BREAKER() -> CircuitBreaker:

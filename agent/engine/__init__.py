@@ -83,6 +83,13 @@ def get_engine(name: str | None = None) -> IAIEngine:
 def _create_engine(name: str) -> IAIEngine:
     """Lazy-import and instantiate an engine adapter."""
     if name == "comfyui":
+        # Multi-endpoint floors (hardening 3.5): COMFYUI_ENDPOINTS routes
+        # through the failover pool; empty (default) keeps the single
+        # adapter byte-identical to before the pool existed.
+        from ..config import COMFYUI_ENDPOINTS
+        if COMFYUI_ENDPOINTS:
+            from .pool import EndpointPool
+            return EndpointPool(COMFYUI_ENDPOINTS)
         from .comfyui_adapter import ComfyUIAdapter
         return ComfyUIAdapter()
 

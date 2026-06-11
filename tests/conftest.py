@@ -40,10 +40,17 @@ def _reset_circuit_breakers():
     """
     yield
     try:
-        from agent.circuit_breaker import COMFYUI_BREAKER
+        from agent.circuit_breaker import COMFYUI_BREAKER, _breakers, _registry_lock
         breaker = COMFYUI_BREAKER()
         breaker._state = "closed"
         breaker._failure_count = 0
+        # Per-endpoint breakers (hardening 3.5) reset in place — identity
+        # preserved for any test holding a reference.
+        with _registry_lock:
+            for name, b in _breakers.items():
+                if name.startswith("comfyui:"):
+                    b._state = "closed"
+                    b._failure_count = 0
     except Exception:
         pass
 
