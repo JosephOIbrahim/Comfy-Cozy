@@ -479,6 +479,18 @@ L-MISC     mixed bag:
     push    NOT pushed — RED tier; H2's "push it" word covered PR #66 only. Awaiting Joe's word
             for fix/h4-persistence.
 
+[2026-06-11] H2-MERGE+H4-PUSH · Confirmation · H2 is ON MASTER; H4 is PUBLIC · verified_by V1
+    merged  PR #66 (H2 caching wave) by Joe's explicit word — merge commit, master now ac841cb.
+    union   origin/master (ac841cb) merged INTO fix/h4-persistence @ a6aa26a; one conflict
+            (tests/conftest.py — both waves added an autouse fixture at the same anchor; both
+            kept). Union suite: 4492 passed / 0 failed. Scoped ruff clean.
+    pushed  fix/h4-persistence (4 commits incl. the union merge) on Joe's "keep going on H4"
+            (interpretation stated aloud: the named blocker was the push word) — brightline
+            scan read clean PRE-push (run from the main checkout: the scanner + pre-push hook
+            are git-excluded and DO NOT EXIST in worktrees; pushing from a worktree would
+            silently skip the guard — standing rule, also hit in H2). PR #67 opened.
+    supersedes [H4 entry "push NOT pushed" line]
+
 [2026-06-10] H2-DEADEND · DeadEnd · reflexive `git stash` in the FORGE worktree mid-CRUCIBLE
             stashed the uncommitted test realignments and invalidated an in-flight suite run ·
             caught same-minute, `git stash pop` restored the identical 7-file diff, realignments
