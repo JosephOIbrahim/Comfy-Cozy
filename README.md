@@ -32,7 +32,8 @@ graph LR
 > - Plain-English co-pilot for ComfyUI. You describe the change; the agent loads workflows, swaps models, patches parameters, runs generations, evaluates output.
 > - **129 MCP tools** across **4 LLM providers** — Claude, GPT-4o, Gemini, Ollama. Swap providers with one env var.
 > - Every mutation is a **reversible delta layer** (LIVRPS). Full undo stack. Nothing destructive lands without your say-so.
-> - **Experience persists.** Session 1 ships with built-in knowledge. After ~30 runs the agent starts biasing toward what's actually worked for you.
+> - **Experience persists.** Session 1 ships with built-in knowledge. After ~30 runs the agent starts biasing toward what's actually worked for you. Every run appends one fsync'd line — never a rewrite, never silent loss.
+> - **The edit loop is fast.** Validate → fix → re-validate dropped from ~7 s to ~0.5 s (measured): node schemas are fetched class-scoped and cached, so a re-validate after a fix costs ~1 ms. Interrupted model downloads resume from the byte they died at, with live progress.
 > - Ships three ways: **inside Claude Code/Desktop (MCP)**, **standalone CLI**, **native ComfyUI sidebar**. Pick one.
 
 ---
@@ -64,7 +65,7 @@ graph LR
 
 ## Sponsor This Project
 
-Comfy Cozy is production software. 4,400+ tests (all mocked, runnable in under a minute) cover the 129 MCP tools that drive the workflow lifecycle end-to-end. Four LLM providers — Anthropic, OpenAI, Gemini, Ollama — sit behind a single abstraction with parity across all four. The [CHANGELOG](CHANGELOG.md) tracks active hardening and new work.
+Comfy Cozy is production software. 4,490+ tests (all mocked, runnable in minutes) cover the 129 MCP tools that drive the workflow lifecycle end-to-end. CI runs the full advertised matrix — Python 3.10–3.13 on Ubuntu and Windows — with the USD stage layer actually installed and tested, not skipped. Four LLM providers — Anthropic, OpenAI, Gemini, Ollama — sit behind a single abstraction with parity across all four. The [CHANGELOG](CHANGELOG.md) tracks active hardening and new work.
 
 If Comfy Cozy saves you time inside ComfyUI, sponsorship is the most direct way to keep it moving.
 
@@ -123,7 +124,7 @@ One command. No build step. No Docker. No conda. Just pip.
 <summary>Want the test suite too? (optional, click to expand)</summary>
 
 ```bash
-pip install -e ".[dev]"           # + 4,400+ passing tests
+pip install -e ".[dev]"           # + 4,490+ passing tests
 pip install -e ".[dev,stage]"     # + USD stage subsystem (~200MB, most users skip)
 ```
 
@@ -525,7 +526,8 @@ graph TB
     subgraph Backend ["Agent Backend (Python)"]
         Routes["49 REST Routes<br/>+ WebSocket"]
         Tools["129 Tools<br/>workflow -- models -- vision -- session -- provision"]
-        Engine["IAIEngine<br/>ComfyUIAdapter<br/>queue / interrupt / history / ws"]
+        Cache["object_info cache<br/>TTL + invalidate<br/>re-validate ~1 ms"]
+        Engine["IAIEngine<br/>ComfyUIAdapter<br/>pooled client -- queue / interrupt / history / ws"]
         Cog["Cognitive Engine<br/>LIVRPS delta stack -- CWM -- experience"]
     end
     subgraph ComfyUI ["ComfyUI"]
@@ -533,7 +535,7 @@ graph TB
         Canvas["Live Canvas"]
     end
     subgraph Disk ["Persistence"]
-        EXP[("experience.jsonl<br/>cross-session learning")]
+        EXP[("experience.jsonl<br/>append-only, fsync'd<br/>cross-session learning")]
         Sessions[("sessions/<br/>workflow state")]
     end
 
@@ -541,6 +543,8 @@ graph TB
     Sidebar <-->|"canvas sync"| Canvas
     Routes --> Tools
     Tools --> Cog
+    Tools -->|introspection| Cache
+    Cache -->|"class-scoped GETs"| API
     Tools -->|execution path| Engine
     Engine -->|httpx + websockets| API
     Cog --> EXP
@@ -554,7 +558,7 @@ graph TB
     classDef orange fill:#d99458,color:#1a1a1a,stroke:#1a1a1a
     classDef yellow fill:#d9c958,color:#1a1a1a,stroke:#1a1a1a
     class Engine orange
-    class Sidebar,Routes,Tools,Cog,API,Canvas,EXP,Sessions yellow
+    class Sidebar,Routes,Tools,Cache,Cog,API,Canvas,EXP,Sessions yellow
 ```
 
 ```mermaid
@@ -592,7 +596,7 @@ flowchart TD
     Repair --> Confirm{"Pack list shown —<br/>you approve?"}
     Confirm -->|"yes → confirm=true"| Install["install packs"]
     Confirm -->|no| Report
-    Install --> Revalidate["re-validate"]
+    Install --> Revalidate["re-validate<br/>cached schemas — ~1 ms"]
     SetInput --> Revalidate
     Discover --> SetInput
     Revalidate --> Check2{"Still errors?"}
@@ -1341,7 +1345,7 @@ panel/
     superduperPanel.js    Headless canvas↔agent bridge entry point
     agentClient.js        HTTP client incl. getWorkflowApiWithTouched / ackPush
     graphMode.js          GRAPH-mode panel + delta-failure status bar + modal
-tests/                4,400+ pytest + 87 Vitest, all mocked, ~60s + ~250ms
+tests/                4,490+ pytest + 87 Vitest, all mocked, ~3min + ~250ms
   panel/                  Vitest suite for write-back v1 (sample, deltaFailures,
                           pushApplyTouched, pushControl, pushOrchestrator,
                           integration, stress + LiteGraph stubs)
@@ -1428,7 +1432,7 @@ All settings live in your `.env` file:
 No ComfyUI needed -- everything is mocked:
 
 ```bash
-python -m pytest tests/ -v        # 4,400+ passing tests, ~70s
+python -m pytest tests/ -v        # 4,490+ passing tests, ~3min
 
 # Skip tests that require a real ComfyUI server or API keys
 python -m pytest tests/ -v -m "not integration"

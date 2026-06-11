@@ -7,6 +7,65 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+In review: per-tool MCP dispatch budgets + WebSocket hardening (#69), linear
+EXR ingestion for the vision loop (#70), workflow.lock reproducibility
+sidecar (#71), multi-endpoint engine pool (#72).
+
+## [5.2.0] - 2026-06-11 — The Production Floor
+
+### Performance (measured, reproduce records in `tooling/harness/`)
+- **Validate → fix → re-validate: 7.2 s → 0.48 s (−93%).** `/object_info` is
+  now fetched class-scoped (KB instead of 4.6 MB) behind a TTL+invalidate
+  cache in `comfy_api.py`; a re-validate after a fix costs ~1 ms. All seven
+  fetch sites converted; node-pack install/uninstall invalidate the cache.
+- **Status polls: ~170 ms → 0.3 ms.** The engine adapter keeps one pooled
+  HTTP client instead of a fresh TLS handshake per 1 s poll.
+- **Cold `import agent.tools`: ~500 ms → ~195 ms.** Stage modules
+  (networkx + pxr) lazy-register importer-side.
+- **`discover`: external sources concurrent + 120 s memo** (was serial,
+  worst ~45 s per identical re-query).
+
+### Reliability
+- **Experience log is append-only and fsync'd** — one line per run instead
+  of a full 10.9 MB rewrite; compaction bounds the file. The
+  `EXPERIENCE_FILE` default fork between the agent and cognitive layers is
+  resolved (one canonical path; the panel and the pipeline finally read the
+  same file).
+- **NIM warm-state lost-update race closed** (lock across read-prune-rewrite,
+  fsync before atomic replace); a transient read error no longer silently
+  wipes history.
+- **Interrupted model downloads resume** from the partial via HTTP Range
+  (SHA-256 still covers the whole file), report real progress per MB, and
+  the confirmation prompt identifies host/destination/resume state with
+  zero pre-consent network. Transient failures keep the partial.
+- The dispatcher forwards progress signature-aware — a TypeError inside a
+  confirmed download can no longer re-execute the full fetch.
+
+### CI honesty
+- CI installs the USD stage extra: 21 stage-layer test files and
+  `test_provisioner.py` (33 tests) now actually run on every leg instead of
+  silently skipping, with an explicit `from pxr import Usd` check.
+- Python 3.13 added to the matrix (advertised since 5.0, tested never).
+- Integration tests excluded explicitly per the marker definition (they
+  previously stayed out of CI only by every one of them happening to skip).
+- The test suite no longer writes the developer's real experience store
+  (~56 pipeline call sites now isolated to tmp dirs).
+
+## [5.1.0] - 2026-06-10 — The Honest Gate
+
+- Safety gate fails **closed** on import failure; live circuit-breaker state
+  and per-session action history wired into its checks; all dispatched tools
+  explicitly risk-classified with a drift-stopper test.
+- Session-workflow execution requires a passing `validate_before_execute`
+  (gate-enforced consent flag, cleared on every mutation).
+- `repair_workflow` reads the live `find_missing_nodes` contract (the mocks
+  had hidden a key mismatch); the cross-module seam test is now a standing
+  merge requirement.
+- CLI system prompt rule 5 mirrors the canonical confirm-gated install flow.
+- Vision economics: shared SDK client, ≤1568 px downscale (40.6 → 3.9 MB
+  payloads), real API-limit guard, prompt-keyed cache, rule-era tagging.
+- NVIDIA NIM lifecycle wrapper (`nim_preflight` / `nim_run` / `nim_state`).
+
 ## [5.0.0] - 2026-05-31 — The Autonomous Co-Pilot
 
 ### Added

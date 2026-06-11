@@ -1,7 +1,7 @@
 [project]
 name = "comfyui-agent"
-version = "5.0.0"
-description = "AI co-pilot for ComfyUI — 113 tools, cognitive architecture that learns from every generation, minimal typography-forward UI"
+version = "5.2.0"
+description = "AI co-pilot for ComfyUI — 129 MCP tools, sub-second re-validate, durable cross-session learning, minimal typography-forward UI"
 readme = "README.md"
 license = {text = "MIT"}
 authors = [{name = "Joseph Ibrahim"}]
