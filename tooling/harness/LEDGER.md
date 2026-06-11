@@ -538,6 +538,14 @@ L-MISC     mixed bag:
             leak is what broke the bystander. Both forge-eligible in H5; the file is a manual
             pre-ship test per CLAUDE.md so master is not blocked.
 
+[2026-06-11] CI-HONESTY-MERGE · Confirmation · the CI-honesty build is ON MASTER · verified_by V1
+    merged  PR #68 by Joe's explicit word after 9/9 green (8 matrix legs + review bot) — master
+            now 79a6fa5. The stage layer is no longer green-by-skip: 21 stage test files +
+            test_provisioner (33) execute on every leg, with an explicit pxr import step; 3.13
+            tested on both platforms; integration tests excluded explicitly per the marker
+            definition. Hardening doc §4 item 3 CLOSED. Residual husk: G:/Comfy-Cozy-ci
+            directory held by a file lock post-deregistration — inert, delete when released.
+
 [2026-06-10] H2-DEADEND · DeadEnd · reflexive `git stash` in the FORGE worktree mid-CRUCIBLE
             stashed the uncommitted test realignments and invalidated an in-flight suite run ·
             caught same-minute, `git stash pop` restored the identical 7-file diff, realignments
