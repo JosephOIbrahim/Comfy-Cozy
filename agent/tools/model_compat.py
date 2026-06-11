@@ -108,7 +108,9 @@ MODEL_FAMILIES = {
         "label": "Wan (Video/3D)",
         "resolution": "variable",
         "checkpoint_patterns": [
-            r"(?i)wan[-_]?2\.?1", r"(?i)wan[-_]?v2",
+            # Any WAN 2.x (2.1, 2.2, ...) — the old 2\.?1-only pattern left
+            # WAN 2.2 unrecognized (ledger L-MISC-b, reproduced).
+            r"(?i)wan[-_]?2[\._]?\d", r"(?i)wan[-_]?v2",
             r"(?i)wan[-_]?i2v", r"(?i)wan[-_]?t2v",
             r"(?i)wan[-_]?fun",
         ],
@@ -221,7 +223,17 @@ TOOLS: list[dict] = [
 # ---------------------------------------------------------------------------
 
 def _identify_family(model_name: str) -> str:
-    """Identify model family from filename using pattern matching."""
+    """Identify model family from filename using pattern matching.
+
+    Two defects fixed here (ledger L-MISC-b, both reproduced):
+    - Boundary check: a match preceded by a letter/digit is rejected, so
+      "mysd15_..." no longer reads as sd15 from inside another word.
+    - First-match-wins replaced by latest-position-wins across ALL
+      families: filename convention puts the base-family qualifier toward
+      the end ("..._style_sdxl"), and alphabetical family order used to
+      decide ties arbitrarily (sd15 always beat sdxl).
+    """
+    candidates: list[tuple[int, str]] = []
     for family_id, family in sorted(MODEL_FAMILIES.items()):
         for pattern_list in [
             family["checkpoint_patterns"],
@@ -229,9 +241,15 @@ def _identify_family(model_name: str) -> str:
             family["controlnet_patterns"],
         ]:
             for pattern in pattern_list:
-                if re.search(pattern, model_name):
-                    return family_id
-    return "unknown"
+                m = re.search(pattern, model_name)
+                if not m:
+                    continue
+                if m.start() > 0 and model_name[m.start() - 1].isalnum():
+                    continue  # mid-word hit, not a real family marker
+                candidates.append((m.start(), family_id))
+    if not candidates:
+        return "unknown"
+    return max(candidates)[1]
 
 
 def _extract_models_from_workflow(workflow: dict) -> list[str]:
@@ -261,16 +279,31 @@ def _check_compatibility(models: list[str]) -> dict:
 
     # Find unique families (excluding unknown)
     families = set(f for f in identified.values() if f != "unknown")
+    # L-MISC-b: unknowns used to pass SILENTLY — surface them. The verdict
+    # stays True (an unrecognized community model is not proof of a
+    # mismatch), but the caller and the artist can now see what the
+    # checker could not verify.
+    unknown_models = sorted(m for m, f in identified.items() if f == "unknown")
 
     if len(families) <= 1:
         family = families.pop() if families else "unknown"
+        message = (
+            f"All models belong to "
+            f"{MODEL_FAMILIES.get(family, {}).get('label', 'unknown')} family."
+        )
+        if unknown_models:
+            message += (
+                f" NOTE: {len(unknown_models)} model(s) of unknown family — "
+                f"compatibility not verifiable: {', '.join(unknown_models)}."
+            )
         return {
             "compatible": True,
             "family": family,
             "family_label": MODEL_FAMILIES.get(family, {}).get("label", "Unknown"),
             "resolution": MODEL_FAMILIES.get(family, {}).get("resolution", "unknown"),
             "models": identified,
-            "message": f"All models belong to {MODEL_FAMILIES.get(family, {}).get('label', 'unknown')} family.",
+            "unknown_models": unknown_models,
+            "message": message,
         }
 
     # Multiple families detected — incompatible

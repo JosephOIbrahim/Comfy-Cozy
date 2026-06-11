@@ -129,56 +129,37 @@ class TestToolErrorProtocol:
     """Test MCP protocol compliance for tool errors."""
 
     def test_tool_exception_returns_is_error_true(self):
-        """Tool exceptions must return CallToolResult(isError=True) per MCP spec."""
-        from agent.mcp_server import create_mcp_server
+        """Tool exceptions must return CallToolResult(isError=True) per MCP spec.
 
-        # Retrieve the registered call_tool handler via the server's handler map
-        server = create_mcp_server()
-
-        # Simulate a tool that raises an exception
-        async def _run():
-            with patch("agent.tools.handle", side_effect=RuntimeError("boom")):
-                # Directly test the error path by invoking the handler internals
-                # We patch handle_tool at the import site inside call_tool closure
-                pass
-
-        # Direct approach: test the exception branch directly
-        async def _direct():
-            from agent import mcp_server as ms
-
-            # Re-create server so the patch is in scope for handle_tool
-            with patch("agent.tools.handle", side_effect=RuntimeError("test-error")) as mock_h:
-                srv = ms.create_mcp_server()
-                # Get the registered call_tool handler
-                # The handler is registered via @server.call_tool() decorator
-                # We can retrieve it from server._tool_handler
-                handler_fn = srv._call_tool_handler
-                loop = asyncio.get_running_loop()
-
-                # Patch run_in_executor to run the partial synchronously (raises)
-                original_run = loop.run_in_executor
-
-                async def fake_executor(executor, fn, *args):
-                    return fn()  # This will raise
-
-                loop.run_in_executor = fake_executor
-                try:
-                    result = await handler_fn("execute_workflow", {})
-                finally:
-                    loop.run_in_executor = original_run
-
-                return result
-
-        # Simpler: just test the exception branch code directly
+        Drives the REAL registered CallToolRequest handler end-to-end (the
+        prior version of this test defined a coroutine it never awaited and
+        asserted on a hand-built literal — ledger L-FALSE-COVERAGE). The
+        patch must precede create_mcp_server(): the handler binds
+        agent.tools.handle at creation time. Arguments must be schema-valid
+        or the MCP SDK's input validation answers before our handler runs.
+        """
         import mcp.types as mcp_types
 
-        # Construct the return value that the exception branch should produce
-        err_result = mcp_types.CallToolResult(
-            isError=True,
-            content=[mcp_types.TextContent(type="text", text="Error executing test_tool: boom")],
-        )
-        assert err_result.isError is True
-        assert err_result.content[0].text == "Error executing test_tool: boom"
+        async def _drive():
+            with patch("agent.tools.handle", side_effect=RuntimeError("test-error")) as mock_h:
+                from agent import mcp_server as ms
+                srv = ms.create_mcp_server()
+                handler = srv.request_handlers[mcp_types.CallToolRequest]
+                req = mcp_types.CallToolRequest(
+                    method="tools/call",
+                    params=mcp_types.CallToolRequestParams(
+                        name="set_input",
+                        arguments={"node_id": "3", "input_name": "text", "value": "x"},
+                    ),
+                )
+                res = await handler(req)
+                return res.root, mock_h
+
+        result, mock_h = asyncio.run(_drive())
+        assert mock_h.called, "the dispatch must actually reach agent.tools.handle"
+        assert result.isError is True
+        assert "set_input" in result.content[0].text
+        assert "test-error" in result.content[0].text
 
     def test_call_tool_result_is_error_shape(self):
         """Verify the exact shape used in the exception handler is valid."""

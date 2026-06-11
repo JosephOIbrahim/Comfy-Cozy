@@ -241,24 +241,6 @@ def _pickle_blocked(suffix: str, tool_input: dict) -> bool:
     return not allowed
 
 
-def _verify_sha256(path, expected_hex: str) -> "str | None":
-    """None if `path`'s SHA-256 matches expected_hex (case-insensitive), else an error
-    message. Hashes the already-downloaded file — no network I/O."""
-    import hashlib
-    h = hashlib.sha256()
-    try:
-        with open(path, "rb") as f:
-            for chunk in iter(lambda: f.read(1024 * 1024), b""):
-                h.update(chunk)
-    except OSError as e:
-        return f"Could not read the downloaded file for the hash check: {e}"
-    actual = h.hexdigest().lower()
-    if actual != expected_hex.lower():
-        return (f"SHA-256 mismatch: expected {expected_hex}, got {actual} — the "
-                f"downloaded file does not match the expected hash; discarded.")
-    return None
-
-
 # Allowed URL schemes/hosts for model downloads (SSRF prevention)
 _ALLOWED_DOWNLOAD_HOSTS = frozenset([
     "github.com", "gitlab.com", "bitbucket.org",

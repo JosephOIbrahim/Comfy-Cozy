@@ -174,3 +174,22 @@ class TestValidatedConsent:
             )
         assert verdict.get("valid") is True, verdict
         assert _flag() is False, "path validation must not arm the session flag"
+
+
+class TestInjectionClearsConsent:
+    """L-INJECT-VALIDATED (reproduced live, ledger H5): load_workflow_from_data
+    replaces the session graph OUTSIDE the dispatch boundary — a passing
+    validation of the PREVIOUS graph must not authorize the injected one."""
+
+    def test_injected_graph_does_not_inherit_validation(self, sample_workflow):
+        _seed_loaded(sample_workflow)
+        with _object_info_mocked(_object_info_for(sample_workflow)):
+            verdict = json.loads(handle("validate_before_execute", {}))
+        assert verdict.get("valid") is True, verdict
+        assert _flag() is True
+
+        err = workflow_patch.load_workflow_from_data(
+            {"1": {"class_type": "KSampler", "inputs": {}}}, source="<sidebar>"
+        )
+        assert err is None
+        assert _flag() is False, "injected graph must not inherit prior consent"
