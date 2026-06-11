@@ -49,4 +49,7 @@ jobs:
         # test_provisioner.py un-ignored: it was excluded only because its
         # module-level agent.stage imports made collection ERROR without
         # usd-core, which is now installed (33 tests, all mocked).
-        run: python -m pytest tests/ -v
+        # Integration tests are excluded EXPLICITLY — the marker definition in
+        # pyproject.toml prescribes exactly this for CI (previously they were
+        # excluded only by every one of them happening to skip).
+        run: python -m pytest tests/ -v -m "not integration"
