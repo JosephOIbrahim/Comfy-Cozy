@@ -59,6 +59,7 @@ class ExperienceAccumulator:
         self._chunks: list[ExperienceChunk] = []
         self._max_chunks = max_chunks
         self._chunks_lock = threading.Lock()
+        self._appends_since_compact = 0  # C-R10a: triggers compaction at _max_chunks
 
     @property
     def generation_count(self) -> int:
@@ -211,8 +212,36 @@ class ExperienceAccumulator:
             with open(tmp_path, "w", encoding="utf-8") as f:
                 for chunk in snapshot:
                     f.write(json.dumps(chunk.to_dict(), sort_keys=True) + "\n")
+                f.flush()
+                os.fsync(f.fileno())  # C-R10a: durable before the rename
             os.replace(tmp_path, p)
         return len(snapshot)
+
+    def append_to(self, path: str, chunk: ExperienceChunk) -> None:
+        """Append a single chunk to a JSONL file (C-R10a).
+
+        One fsync'd line per call — replaces the full-snapshot rewrite on the
+        hot path so a run costs O(1) disk instead of O(n). Disk format per
+        line is byte-identical to save(). Every _max_chunks appends, save()
+        runs as compaction, bounding the file at ~2x max_chunks lines (load()
+        also truncates past max_chunks, so consumers stay correct regardless).
+        """
+        import json
+        from pathlib import Path
+        p = Path(path)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        line = json.dumps(chunk.to_dict(), sort_keys=True) + "\n"
+        with _save_lock:
+            with open(p, "a", encoding="utf-8") as f:
+                f.write(line)
+                f.flush()
+                os.fsync(f.fileno())
+            self._appends_since_compact += 1
+            needs_compact = self._appends_since_compact >= self._max_chunks
+        # Compact outside _save_lock — save() acquires it (non-reentrant).
+        if needs_compact:
+            self.save(str(p))
+            self._appends_since_compact = 0
 
     @classmethod
     def load(cls, path: str, max_chunks: int = 10000) -> ExperienceAccumulator:
