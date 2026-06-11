@@ -491,6 +491,25 @@ L-MISC     mixed bag:
             silently skip the guard — standing rule, also hit in H2). PR #67 opened.
     supersedes [H4 entry "push NOT pushed" line]
 
+[2026-06-11] H4-MERGE · Confirmation · H4 is ON MASTER · verified_by V1
+    merged  PR #67 (persistence wave) by Joe's explicit word — merge commit, master now 0b1a37a
+            (carries H2 + H4 + the conftest both-fixtures union). PR CI was 7/7 green pre-merge.
+
+[2026-06-11] CI-HONESTY · Confirmation (CI evidence PENDING the #68 run) · doc-3.4 build PUSHED ·
+            branch ci/stage-layer-honesty @ f6da63e · PR #68 · L-MISC-d PROMOTED to build
+    change  one file (.github/workflows/ci.yml): install .[dev,stage] (stage extra existed,
+            CI never used it; usd-core 26.5 ships cp310-cp314 wheels both platforms — verified
+            on PyPI pre-build); explicit "from pxr import Usd" step (no relapse to
+            green-by-skip); 3.13 added to the matrix (advertised-never-tested); 
+            test_provisioner.py un-ignored (probe: 33/33 with usd-core; the ignore existed
+            because collection ERRORED without it).
+    caveat  ubuntu legs execute the 21 stage test files for the FIRST TIME in #68's checks —
+            a red leg there is the purchase working, fix-forward.
+    lead    L-STALE-DISCOVERY (V1, reproduced locally): tests/integration/test_discovery.py
+            patches comfy_discover._search_civitai which no longer exists — skips in CI
+            (comfyui_available fixture, no server) and FAILS locally with ComfyUI running.
+            Stale since the discover refactor; fold into H5.
+
 [2026-06-10] H2-DEADEND · DeadEnd · reflexive `git stash` in the FORGE worktree mid-CRUCIBLE
             stashed the uncommitted test realignments and invalidated an in-flight suite run ·
             caught same-minute, `git stash pop` restored the identical 7-file diff, realignments
