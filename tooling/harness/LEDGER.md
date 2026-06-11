@@ -659,6 +659,28 @@ L-MISC     mixed bag:
             single-endpoint a-is-b identity pin holds; conftest breaker reset extended to the
             registry without breaking the existing attr-reset fixture.
 
+[2026-06-11] POOL · Confirmation · doc-3.5 endpoint pool BUILT and PUSHED (standing word) ·
+            verified_by V1 · branch feat/engine-pool @ 53f04a0 (base 79a6fa5) · PR #72 ·
+            built SOLO · supersedes [POOL-DESIGN "parked on #69" — revised: #69's adapter
+            hunks (connect/_events) are textually disjoint from the pool's (__init__/_breaker);
+            union merge-down at merge time, H4 precedent]
+    build   COMFYUI_ENDPOINTS (empty default = byte-identical single-endpoint);
+            COMFYUI_BREAKER(url) keys the EXISTING registry per host (a keying change, as
+            scouted); ComfyUIAdapter(url=None) — default keeps the SHARED breaker so gate
+            wiring + conftest resets see what they always did; EndpointPool (IAIEngine):
+            failover on EngineConnectionError/Unavailable, breaker cycle IS the health check
+            (OPEN endpoints fast-fail with zero network — spy-proven), HALF_OPEN re-admits.
+            JOB AFFINITY: prompt_id+client_id pinned (FIFO 256) at queue; history/ws/interrupt
+            route to the queueing worker; pinned calls authoritative (never silently ask the
+            wrong worker). Aggregate mirror into the shared breaker keeps the gate's
+            system-health meaning in pool mode. Farm adapters stay a Lead (doc's own ordering).
+            conftest breaker reset extended in place to comfyui:* names (identity preserved).
+    suite   4504 passed / 0 failed ×2 (+12 new). Ruff clean; freeze diff empty; scan clean;
+            hook silent.
+    note    doc §4 order: ALL EIGHT ITEMS now either merged (1-3) or green-in-review
+            (4=#69, 5=#70, 6=#71, 7=#72 pending CI) except item 8 (H5 lead conversion),
+            which is the closing round over the banked leads.
+
 [2026-06-10] H2-DEADEND · DeadEnd · reflexive `git stash` in the FORGE worktree mid-CRUCIBLE
             stashed the uncommitted test realignments and invalidated an in-flight suite run ·
             caught same-minute, `git stash pop` restored the identical 7-file diff, realignments
