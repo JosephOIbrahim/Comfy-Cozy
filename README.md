@@ -66,7 +66,7 @@ graph LR
 
 ## Sponsor This Project
 
-Comfy Cozy is production software. 4,540+ tests (all mocked, runnable in minutes) cover the 129 MCP tools that drive the workflow lifecycle end-to-end. CI runs the full advertised matrix — Python 3.10–3.13 on Ubuntu and Windows — with the USD stage layer actually installed and tested, not skipped. Four LLM providers — Anthropic, OpenAI, Gemini, Ollama — sit behind a single abstraction with parity across all four. The [CHANGELOG](CHANGELOG.md) tracks active hardening and new work.
+Comfy Cozy is production software. 4,550+ tests (all mocked, runnable in minutes) cover the 129 MCP tools that drive the workflow lifecycle end-to-end. CI runs the full advertised matrix — Python 3.10–3.13 on Ubuntu and Windows — with the USD stage layer actually installed and tested, not skipped. Four LLM providers — Anthropic, OpenAI, Gemini, Ollama — sit behind a single abstraction with parity across all four. The [CHANGELOG](CHANGELOG.md) tracks active hardening and new work.
 
 If Comfy Cozy saves you time inside ComfyUI, sponsorship is the most direct way to keep it moving.
 
@@ -125,7 +125,7 @@ One command. No build step. No Docker. No conda. Just pip.
 <summary>Want the test suite too? (optional, click to expand)</summary>
 
 ```bash
-pip install -e ".[dev]"           # + 4,540+ passing tests
+pip install -e ".[dev]"           # + 4,550+ passing tests
 pip install -e ".[dev,stage]"     # + USD stage subsystem (~200MB, most users skip)
 ```
 
@@ -235,9 +235,10 @@ Want the agent to **load workflows straight onto your canvas**, **see the edits 
 
 ```mermaid
 graph LR
-    Agent[Comfy Cozy] -->|"push_workflow_to_canvas"| Push["POST /agent/push_workflow"]
-    Push --> Canvas["Your ComfyUI canvas<br/>(every open tab reloads)"]
-    Canvas -->|"you hand-edit a node"| Buf["POST /agent/canvas_changed"]
+    Agent[Comfy Cozy] -->|"push_workflow_to_canvas"| Gate{"Origin + Bearer<br/>gate"}
+    Gate -->|"POST /agent/push_workflow"| Canvas["Your ComfyUI canvas<br/>(every open tab reloads)"]
+    Canvas -->|"you hand-edit a node"| Gate
+    Gate -->|"POST /agent/canvas_changed"| Buf["canvas buffer"]
     Buf -->|"get_canvas_state"| Agent
     Render["Your render finishes"] -->|"per-node timing"| Prof["GET /agent/exec_profile/{id}"]
     Prof -->|"get_execution_profile"| Agent
@@ -245,8 +246,10 @@ graph LR
     classDef orange fill:#d99458,color:#1a1a1a,stroke:#1a1a1a
     classDef yellow fill:#d9c958,color:#1a1a1a,stroke:#1a1a1a
     class Canvas,Render orange
-    class Agent,Push,Buf,Prof yellow
+    class Agent,Gate,Buf,Prof yellow
 ```
+
+> The mutating bridge routes are **Origin-gated** (a browser fetch can't attach a custom header, so same-origin *is* the auth layer) and Bearer-gated for non-browser callers when `MCP_AUTH_TOKEN` is set — so a cross-origin page can't hijack your canvas.
 
 **What you get:**
 - *"Load my portrait workflow onto the canvas"* -- it appears in your browser, no file juggling
@@ -1348,7 +1351,7 @@ panel/
     superduperPanel.js    Headless canvas↔agent bridge entry point
     agentClient.js        HTTP client incl. getWorkflowApiWithTouched / ackPush
     graphMode.js          GRAPH-mode panel + delta-failure status bar + modal
-tests/                4,540+ pytest + 87 Vitest, all mocked, ~3min + ~250ms
+tests/                4,550+ pytest + 87 Vitest, all mocked, ~3min + ~250ms
   panel/                  Vitest suite for write-back v1 (sample, deltaFailures,
                           pushApplyTouched, pushControl, pushOrchestrator,
                           integration, stress + LiteGraph stubs)
@@ -1435,7 +1438,7 @@ All settings live in your `.env` file:
 No ComfyUI needed -- everything is mocked:
 
 ```bash
-python -m pytest tests/ -v        # 4,540+ passing tests, ~3min
+python -m pytest tests/ -v        # 4,550+ passing tests, ~3min
 
 # Skip tests that require a real ComfyUI server or API keys
 python -m pytest tests/ -v -m "not integration"

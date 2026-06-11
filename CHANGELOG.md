@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.3.1] - 2026-06-11 — Panel Hardening
+
+The L-PANEL adversarial pass — the cap-killed UI dimension probed against live
+source, the verifiable defects fixed.
+
+### Security
+- **The `/agent/*` canvas-bridge routes were unauthenticated mutation surface.**
+  `push_workflow_to_canvas` reloads every connected tab's canvas and
+  `canvas_changed` seeds the buffer the agent later trusts — both ungated while
+  every `/comfy-cozy/*` route was already gated. They now use the same
+  Origin-first gate as the audited sidebar WebSocket (browser must be
+  same-origin; non-browser callers must carry the Bearer token when
+  `MCP_AUTH_TOKEN` is configured). The agent's own calls send the token
+  automatically. Verified by unit tests and a live push → hand-edit round-trip
+  against ComfyUI 0.24.
+
+### Fixed
+- **Raw exception text no longer leaks into the chat transcript.** Five
+  chat/WebSocket error paths put the raw `str(e)` (internal paths,
+  `[WinError …]`, dict KeyErrors) into the bubble the browser renders; they now
+  emit a generic message while the full detail is logged server-side.
+
+### Docs
+- `docs/L-PANEL_ADVERSARIAL_PASS_JUNE_2026.md` records the full pass: two fixes,
+  one refuted finding (the "`MCP_AUTH_TOKEN` 401s the bridge" claim was false),
+  and three real-but-browser-bound findings (streaming render, tab-switch, dead
+  modules) parked forge-ready with exact diffs.
+- `docs/rfcs/RFC-001`: drop networkx — a 323 ms single-consumer core dependency
+  — from the static Workflow-Intelligence DAG (design only; forge gated to the
+  June-16 stage-freeze lift).
+
 ## [5.3.0] - 2026-06-11 — Shot-Ready
 
 The second half of the production-hardening order (#69–#73): long jobs,

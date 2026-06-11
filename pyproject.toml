@@ -1,6 +1,6 @@
 [project]
 name = "comfyui-agent"
-version = "5.3.0"
+version = "5.3.1"
 description = "AI co-pilot for ComfyUI — 129 MCP tools, sub-second re-validate, EXR-aware vision loop, workflow.lock provenance, multi-endpoint floors, durable cross-session learning"
 readme = "README.md"
 license = {text = "MIT"}
