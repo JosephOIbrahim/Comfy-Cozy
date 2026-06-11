@@ -108,5 +108,34 @@ are designed-but-unwired (the "Workflow Zone").
 
 ---
 
-*Forged: A, B (+ tests). Parked forge-ready: C, D, E — each with its exact diff,
-pending a browser session and the sidebar-vs-appMode architecture call.*
+---
+
+## Live verification (V1, against ComfyUI 0.24.0 @ 127.0.0.1:8188)
+
+`tooling/harness/bridge_live_verify.py` drives the three advertised bridge
+capabilities through the *auth-gated* agent tools, proving the auth change does
+not break the agent's own calls (no token configured here, so
+`bridge_auth_headers() == {}` and the default path is exercised):
+
+| Capability | Result |
+|---|---|
+| **Load a workflow onto the canvas** (`push_workflow_to_canvas`) | ✅ `pushed: true`; every tab reloads |
+| **See your hand edits** (`canvas_changed` → `get_canvas_state`) | ✅ round-trip — an edited seed (`13371337`) was written via `canvas_changed` and read back through `get_canvas_state` |
+| **Per-node render timing** (`get_execution_profile`) | ⚠️ route works (clean 404 on an uncaptured id); a real SDXL execution queued + completed, but the capture was **empty on the long-running instance** |
+
+The profiling gap is **not** from this PR (it does not touch `profiling.py` or
+the `send_sync` observer). A live `/ws` capture confirms ComfyUI 0.24 emits
+exactly the events the bridge observes (`execution_start` / `executing` /
+`execution_success`, all carrying `prompt_id`), and they reach `/ws` — which
+`send_sync` feeds — so the observer simply was not active on the **stale
+installed copy** (the pre-auth 125-line version). The installed node pack has
+been refreshed to the fixed version; a ComfyUI restart should activate both the
+auth gate and the capture. Residual probe **L-BRIDGE-PROFILE**: re-run
+`bridge_live_verify.py` after a restart; if the capture is still empty, the
+`send_sync` wrapper needs to intercept ComfyUI 0.24's actual broadcast path.
+
+---
+
+*Forged: A, B (+ tests, + live capability verification). Parked forge-ready:
+C, D, E — each with its exact diff, pending a browser session and the
+sidebar-vs-appMode architecture call. Residual: L-BRIDGE-PROFILE (restart probe).*
