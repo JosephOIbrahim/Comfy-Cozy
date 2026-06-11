@@ -9,12 +9,17 @@ from agent.progress import ProgressReporter, _NoopReporter
 
 
 def _mock_httpx_client():
-    """Create a properly chained httpx.Client context manager mock."""
+    """Mock the shared httpx.Client constructor (H2 pooled-client edge).
+
+    The engine adapter builds ONE pooled client per adapter and calls
+    .get/.post on it directly (no context manager); the same mock also
+    returns itself from __enter__ for call sites still using
+    `with httpx.Client() as client`.
+    """
     mock_client = MagicMock()
-    mock_cm = MagicMock()
-    mock_cm.__enter__ = MagicMock(return_value=mock_client)
-    mock_cm.__exit__ = MagicMock(return_value=False)
-    patcher = patch("agent.tools.comfy_execute.httpx.Client", return_value=mock_cm)
+    mock_client.__enter__ = MagicMock(return_value=mock_client)
+    mock_client.__exit__ = MagicMock(return_value=False)
+    patcher = patch("agent.tools.comfy_execute.httpx.Client", return_value=mock_client)
     return patcher, mock_client
 
 
@@ -231,7 +236,7 @@ class TestProgressInExecution:
         mock_client.get.return_value = history_resp
         with patch.object(comfy_execute, "_HAS_WS", True), \
              patcher, \
-             patch("agent.tools.comfy_execute.websockets.sync.client.connect", return_value=mock_ws):
+             patch("agent.engine.comfyui_adapter.websockets.sync.client.connect", return_value=mock_ws):
 
             result = json.loads(comfy_execute.handle(
                 "execute_with_progress",
@@ -317,8 +322,9 @@ class TestProgressInExecution:
 
         with patch.object(comfy_execute, "_HAS_WS", True), \
              patch("agent.tools.comfy_execute.httpx.Client") as mock_http, \
-             patch("agent.tools.comfy_execute.websockets.sync.client.connect", return_value=mock_ws):
-            mock_client = mock_http.return_value.__enter__.return_value
+             patch("agent.engine.comfyui_adapter.websockets.sync.client.connect", return_value=mock_ws):
+            # H2: the engine adapter uses one pooled client, no context manager.
+            mock_client = mock_http.return_value
             mock_client.post.return_value = queue_resp
 
             result = json.loads(comfy_execute.handle(
