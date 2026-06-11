@@ -823,9 +823,11 @@ L-MISC     mixed bag:
             profiling.py). Installed node pack REFRESHED to the auth-gated version (active on
             the next ComfyUI restart). Lead L-BRIDGE-PROFILE: re-run after restart; if still
             empty, the send_sync observer must intercept 0.24's actual broadcast path.
-    release v5.3.1 "Panel Hardening" prepped on master worktree @ 183a611 (version 5.3.0→5.3.1,
-            CHANGELOG 5.3.1, README bridge diagram + Origin/Bearer gate node + security note,
-            counts 4,540+→4,550+). Scan clean. PUSH+TAG+RELEASE pending the merged-CI green.
+    release v5.3.1 "Panel Hardening" SHIPPED: merged-CI concluded success (9/9); master 183a611,
+            tag v5.3.1, GitHub release live, description gains "Origin-gated canvas bridge".
+            README bridge diagram + Origin/Bearer gate node + security note; counts 4,550+.
+            Worktrees -panel/-rel2 removed; only the main checkout remains. ComfyUI left running
+            (installed node pack refreshed; restart activates the gate + L-BRIDGE-PROFILE probe).
 
 [2026-06-11] RFC-001 · Confirmation · stage-freeze pass = DESIGN, forge GATED to 2026-06-16 ·
             freeze-legal · docs/rfcs/RFC-001-stage-dag-drop-networkx.md (on fix/l-panel-hardening)
