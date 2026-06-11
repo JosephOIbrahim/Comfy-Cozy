@@ -1248,6 +1248,12 @@ def load_workflow_from_data(data: dict, source: str = "<sidebar>") -> str | None
         _get_state()["current_workflow"] = copy.deepcopy(nodes)
         # MoE-R2: deque(maxlen=N) auto-trims undo history.
         _get_state()["history"] = deque(maxlen=_MAX_HISTORY)
+        # L-INJECT-VALIDATED (reproduced live): this loader replaces the
+        # session graph OUTSIDE the dispatch boundary, so a validation of
+        # the PREVIOUS graph must not authorize executing this one.
+        # Unconditional — not gated on GATE_ENABLED — so a mid-session
+        # gate flip can't carry a stale consent through either.
+        _get_state()["validated_since_mutation"] = False
 
         # Create engine from loaded workflow (session-scoped)
         _set_engine(_create_engine(nodes))

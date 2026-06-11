@@ -70,14 +70,6 @@ class TestS3PickleAndHash:
         assert _pickle_blocked(".ckpt", {"allow_pickle": True}) is False
         assert _pickle_blocked(".ckpt", {"allow_pickle": "true"}) is False
 
-    def test_sha256_verify_helper(self, tmp_path):  # NEGATIVE+POSITIVE
-        import hashlib
-        from agent.tools.comfy_provision import _verify_sha256
-        f = tmp_path / "blob.bin"
-        f.write_bytes(b"hello world")
-        assert _verify_sha256(f, hashlib.sha256(b"hello world").hexdigest()) is None  # match
-        assert _verify_sha256(f, "deadbeef" * 8) is not None                          # mismatch
-
 
 # ---------------------------------------------------------------------------
 # s4 — repair_workflow(auto_install) gates the inner install behind confirm

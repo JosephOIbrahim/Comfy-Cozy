@@ -90,12 +90,16 @@ _SUGGEST_WIRING = {
     "total_nodes": 5,
 }
 
-_MISSING_NODES_NONE = {"missing": []}
+# Real producer contract (find_missing_nodes): "missing_nodes" with
+# node_type/pack_title entries — the old "missing" shape here was the same
+# fabricated-mock drift that hid C-P0-1 (ledger L-PIPESTAT, reproduced live).
+_MISSING_NODES_NONE = {"missing_nodes": [], "missing_count": 0}
 
 _MISSING_NODES_SOME = {
-    "missing": [
-        {"class_type": "IPAdapterApply", "pack_name": "ComfyUI_IPAdapter_plus"},
+    "missing_nodes": [
+        {"node_type": "IPAdapterApply", "pack_title": "ComfyUI_IPAdapter_plus"},
     ],
+    "missing_count": 1,
 }
 
 _COMPAT_OK = {

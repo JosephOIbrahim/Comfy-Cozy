@@ -75,8 +75,9 @@ What's genuinely shipped and load-bearing:
   single most important differentiator vs. hobbyist agent-Comfy.
 - **Three delivery surfaces**: MCP (inside Claude Code/Desktop), standalone CLI,
   native ComfyUI sidebar.
-- **Validate → repair → execute** as one continuous flow (auto-install missing
-  packs, re-validate, run — no stopping to ask).
+- **Validate → repair → execute** as one continuous flow for workflow edits;
+  installing missing packs pauses exactly once for a human yes
+  (needs_confirmation → confirm=true), then re-validates and runs.
 
 What's recent and signals the real trajectory (from git, last ~10 commits):
 
@@ -239,9 +240,9 @@ Every edit is checked before it lands and reversible the second you change your
 mind.
 
 Say "dreamier" — it lowers CFG and reaches for the right sampler. Say "this is
-slow" — it finds the bottleneck. When a node's missing, it installs the pack,
-re-validates, and runs, without stopping to ask. It speaks your language, not
-the terminal's.
+slow" — it finds the bottleneck. When a node's missing, it shows you the pack,
+waits for your yes, then installs, re-validates, and runs. It speaks your
+language, not the terminal's.
 
 While the rest of the field races to make the node graph *disappear*, Cozy makes
 a different bet: you don't want your canvas taken away. You want a colleague who

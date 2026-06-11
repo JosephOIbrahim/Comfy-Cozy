@@ -1,7 +1,9 @@
 """Mocked unit tests for the nim_lifecycle two-deadline state machine (PRD §10, AC-5/8).
 
-No GPU / no ComfyUI — feeds nim_run a synthetic EngineEvent stream. Lives under
-tests/manual/ (forge zone) and is run explicitly by the crucible.
+No GPU / no ComfyUI — feeds nim_run a synthetic EngineEvent stream. Note:
+despite the tests/manual/ location this file IS collected by the default
+suite (testpaths=["tests"], no collect_ignore) — ledger L-MANUAL-COLLECTED;
+the "manual" label here is historical, the tests are ordinary mocked units.
 """
 import pytest
 
