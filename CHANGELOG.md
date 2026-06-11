@@ -7,9 +7,63 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-In review: per-tool MCP dispatch budgets + WebSocket hardening (#69), linear
-EXR ingestion for the vision loop (#70), workflow.lock reproducibility
-sidecar (#71), multi-endpoint engine pool (#72).
+## [5.3.0] - 2026-06-11 — Shot-Ready
+
+The second half of the production-hardening order (#69–#73): long jobs,
+linear EXR, reproducibility, multi-worker floors, and the closing
+lead-conversion round. Every performance/behavior claim was reproduced
+live before the fix and verified after.
+
+### Long jobs are normal jobs (#69)
+- **Per-tool MCP dispatch budgets** replace the blanket 120 s kill that
+  orphaned worker threads while telling the client the call failed. Budgets
+  honor caller-supplied timeouts (clamped to 24 h); `nim_run` gets its full
+  cold-pull window (~21 min), downloads wait unbounded (byte-bounded with
+  per-read liveness), and the vision tools keep their inner-timeout-wins
+  invariant. Timeout messages now state the budget and how to check on
+  background completion.
+- **WebSocket hardening**: 16 MiB frame cap (previews over 1 MiB used to
+  close the socket with code 1009), pings that survive model-load stalls,
+  mid-stream disconnects translated to the engine's error family, and
+  `nim_run` now falls back to history polling instead of failing a queued
+  run when the socket dies — warm-state timing is only recorded when it
+  was actually observed.
+
+### The VFX-specific gap (#70)
+- **Linear EXR ingestion for the vision loop**: ACEScg→sRGB display
+  transform (header-chromaticity aware) in front of `analyze_image` /
+  `compare_outputs` / `hash_compare_images`; data/utility passes (Z,
+  normals) are refused with a channel-naming message instead of being
+  judged as images; unknown image formats now error actionably instead of
+  being sent to the API mislabeled as PNG. New optional extra:
+  `pip install comfyui-agent[exr]`.
+
+### Reproducibility (#71)
+- **`workflow.lock` sidecar**: `save_workflow` pins every referenced model
+  file's SHA-256, every custom pack's installed git commit, and the ComfyUI
+  version next to the saved graph; `validate_before_execute` warns when
+  anything drifted since the lock. Drift informs — it never blocks. Hashes
+  are stat-cached so re-saves never re-hash a 12 GB checkpoint.
+
+### Multi-artist floors (#72)
+- **`COMFYUI_ENDPOINTS` engine pool**: per-host circuit breakers (one
+  unhealthy worker never opens the circuit for its siblings), failover with
+  the breaker's recovery cycle as the health check, and job affinity —
+  history/ws/interrupt for a prompt route back to the worker that queued it.
+  Single-endpoint mode is byte-identical to before.
+
+### Honesty round (#73)
+- `provision_pipeline_status` could never report missing nodes from real
+  data (same wrong-key class as the original repair bug) — fixed.
+- A sidebar-injected graph no longer inherits the previous graph's
+  validation consent.
+- `model_compat`: WAN 2.2 recognized; boundary-checked family matching (no
+  more `mysd15_style_sdxl` → sd15); unknown families surfaced instead of
+  silently passing.
+- A POSIX-only kill in an e2e teardown aborted cleanup mid-`finally` on
+  Windows, leaking adapter state into bystander tests — fixed, plus a
+  vacuous never-awaited MCP test now drives the real handler, and four
+  rotten integration tests were realigned to current reality.
 
 ## [5.2.0] - 2026-06-11 — The Production Floor
 
