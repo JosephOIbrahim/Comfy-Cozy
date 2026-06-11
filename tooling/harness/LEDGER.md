@@ -510,6 +510,34 @@ L-MISC     mixed bag:
             (comfyui_available fixture, no server) and FAILS locally with ComfyUI running.
             Stale since the discover refactor; fold into H5.
 
+[2026-06-11] CI-HONESTY-2 · Confirmation · #68's first run DID ITS JOB — 4 ubuntu legs green
+            (21 stage files + 3.13 executed for the first time ever), 4 windows legs red on two
+            surfaced-not-caused failures · verified_by V1 (CI logs + local reproduce)
+    root    ONE root, two symptoms: installing usd-core un-skipped the POSIX-only subprocess
+            e2e test of the file-watch memory adapter (tests/integration/ — exact file in PR
+            #68's CI logs; os.kill with signal.SIGKILL at :161 — AttributeError on Windows,
+            reproduced locally); its mid-test crash left the adapter armed, which intercepted
+            a later test's mocked knowledge-file read ("delta ingest failed ... MagicMock/...")
+            so the expected debug log never fired (test_system_prompt_metadata caplog assert).
+    fix     CI test step now runs -m "not integration" — the pyproject marker definition's OWN
+            prescription; CI's previous green relied on every integration test happening to
+            skip. Local scoped suite 4464/0. Commit 32ba81b (amended from a flagged local-only
+            commit — see incident below). Stage tests are not integration-marked; the honesty
+            purchase stands.
+    incident  the brightline guard FLAGGED MY OWN ci.yml comment (it named the e2e subsystem
+            while narrating the failure). Per the standing relabel-is-bypass rule: HALTED,
+            handed to Joe with options; Joe ratified (c) = drop the narrative from public
+            artifacts, keep the mechanical fact, story lives HERE. The flagged commit was
+            local-only/unpushed → amended (no published history touched), full-range re-scan
+            clean, pushed with hook silent. RULE REFINED: agent-authored prose in public
+            artifacts must not name bright-line subsystems even when describing failures —
+            cite the ledger entry instead.
+    leads   L-SIGKILL-E2E (V1, reproduced local+CI): the adapter e2e test's :161 os.kill(pid,
+            signal.SIGKILL) is POSIX-only — fix is proc.kill() (cross-platform); also the
+            crashed test leaves the adapter armed (missing try/finally teardown) — that state
+            leak is what broke the bystander. Both forge-eligible in H5; the file is a manual
+            pre-ship test per CLAUDE.md so master is not blocked.
+
 [2026-06-10] H2-DEADEND · DeadEnd · reflexive `git stash` in the FORGE worktree mid-CRUCIBLE
             stashed the uncommitted test realignments and invalidated an in-flight suite run ·
             caught same-minute, `git stash pop` restored the identical 7-file diff, realignments
