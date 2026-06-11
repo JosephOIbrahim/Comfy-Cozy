@@ -177,16 +177,33 @@ class VisionAgent(BrainAgent):
             ".gif": "image/gif",
             ".webp": "image/webp",
         }
-        media_type = media_types.get(suffix, "image/png")
+        # 3.7: unknown suffixes used to silently claim image/png and fail
+        # opaquely at the API — reject them up front instead.
+        if suffix not in media_types and suffix != ".exr":
+            raise ValueError(
+                f"Unsupported image format '{suffix}' — "
+                "supported: .png .jpg .jpeg .gif .webp .exr"
+            )
         file_size = p.stat().st_size
         if file_size == 0:  # Cycle 53: empty file sends blank base64 to Vision API
             raise ValueError(f"Image file is empty (0 bytes): {path}")
-        # Guard against TOCTOU: file could be deleted/replaced between stat() and
-        # read_bytes(). Translate OSError into FileNotFoundError with context. (Cycle 34 fix)
-        try:
-            raw = p.read_bytes()
-        except (FileNotFoundError, OSError) as e:
-            raise FileNotFoundError(f"Image file unavailable (removed after size check?): {e}") from e
+        if suffix == ".exr":
+            # 3.7: linear EXR -> display-referred sRGB PNG; the converted
+            # bytes flow through the normal downscale + size guard below.
+            from .exr_ingest import exr_to_display_png
+
+            raw = exr_to_display_png(str(p))
+            media_type = "image/png"
+        else:
+            media_type = media_types[suffix]
+            # Guard against TOCTOU: file could be deleted/replaced between stat() and
+            # read_bytes(). Translate OSError into FileNotFoundError with context. (Cycle 34 fix)
+            try:
+                raw = p.read_bytes()
+            except (FileNotFoundError, OSError) as e:
+                raise FileNotFoundError(
+                    f"Image file unavailable (removed after size check?): {e}"
+                ) from e
         # C-R8a: downscale to the Vision API's optimal max before encoding.
         # The original file on disk is never touched.
         raw = _downscale_for_vision(raw, media_type)
@@ -199,7 +216,7 @@ class VisionAgent(BrainAgent):
                 f"Image is still too large for the Vision API after downscaling: "
                 f"{len(data) / (1024 * 1024):.1f} MB encoded "
                 f"(limit: {_MAX_ENCODED_IMAGE_BYTES // (1024 * 1024)} MB). "
-                "Reduce the image dimensions or save it as JPEG, then try again."
+                "Reduce the image dimensions or analyze a smaller crop."
             )
         return data, media_type
 
@@ -485,8 +502,8 @@ class VisionAgent(BrainAgent):
             return self.to_json({"error": f"Image not found: {image_b}"})
 
         try:
-            img_a = Image.open(path_a)
-            img_b = Image.open(path_b)
+            img_a = _open_image_for_hash(path_a)
+            img_b = _open_image_for_hash(path_b)
         except Exception as e:
             return self.to_json({"error": f"Failed to open images: {e}"})
 
@@ -534,6 +551,19 @@ class VisionAgent(BrainAgent):
 # ---------------------------------------------------------------------------
 # Stateless helpers (shared)
 # ---------------------------------------------------------------------------
+
+def _open_image_for_hash(path: Path):
+    """Open an image for perceptual hashing.
+
+    3.7: EXR converts to display-referred PNG first (Pillow has no EXR
+    codec); everything else opens directly.
+    """
+    if path.suffix.lower() == ".exr":
+        from .exr_ingest import exr_to_display_png
+
+        return Image.open(io.BytesIO(exr_to_display_png(str(path))))
+    return Image.open(path)
+
 
 def _downscale_for_vision(raw: bytes, media_type: str) -> bytes:
     """Downscale encoded image bytes so the longest side is <= _VISION_MAX_DIM.

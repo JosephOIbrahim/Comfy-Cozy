@@ -30,7 +30,7 @@ jobs:
         # without the stage extra, all 21 stage-layer test files silently
         # SKIP and the USD substrate is green-by-skip.
         run: |
-          pip install -e ".[dev,stage]"
+          pip install -e ".[dev,stage,exr]"
 
       - name: Verify the stage substrate imports
         # Fail loud if the usd-core wheel breaks — never back to green-by-skip.
