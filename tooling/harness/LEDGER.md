@@ -807,6 +807,26 @@ L-MISC     mixed bag:
             Lead L-WORKTREE-HOOK: confirm core.hooksPath pre-commit fires from worktrees, or the
             pre-push hook is the sole guard there.
 
+[2026-06-11] L-PANEL-MERGE+LIVE · Confirmation · PR #74 MERGED + live bridge V1 · verified_by V1
+    merged  PR #74 (L-PANEL auth+errors + RFC-001) by Joe's word, master dd73543. CI: prior
+            commit 9/9 green; harness-commit re-run still in-flight at merge (only added a
+            non-collected tooling script + a doc) — tag/release GATED on its green conclusion.
+    live    bridge_live_verify.py drove the three canvas-bridge capabilities through the
+            AUTH-GATED tools against live ComfyUI 0.24 (the real risk of an auth change is the
+            agent 401-ing ITSELF — disproven): push_workflow_to_canvas reloads the canvas ✓;
+            an edited seed (13371337) round-trips canvas_changed→get_canvas_state ✓; the
+            no-token default path confirms bridge_auth_headers()=={} is non-breaking. Capability
+            3 (per-node timing): route works (clean 404), but the capture was EMPTY on the STALE
+            installed node pack. A /ws probe proved ComfyUI 0.24 emits the exact events the
+            bridge observes (execution_start/executing/execution_success, all with prompt_id),
+            so it is a stale-install/observer issue, NOT PR #74 (which never touched
+            profiling.py). Installed node pack REFRESHED to the auth-gated version (active on
+            the next ComfyUI restart). Lead L-BRIDGE-PROFILE: re-run after restart; if still
+            empty, the send_sync observer must intercept 0.24's actual broadcast path.
+    release v5.3.1 "Panel Hardening" prepped on master worktree @ 183a611 (version 5.3.0→5.3.1,
+            CHANGELOG 5.3.1, README bridge diagram + Origin/Bearer gate node + security note,
+            counts 4,540+→4,550+). Scan clean. PUSH+TAG+RELEASE pending the merged-CI green.
+
 [2026-06-11] RFC-001 · Confirmation · stage-freeze pass = DESIGN, forge GATED to 2026-06-16 ·
             freeze-legal · docs/rfcs/RFC-001-stage-dag-drop-networkx.md (on fix/l-panel-hardening)
     finding networkx is a 323ms (measured, -X importtime) CORE dependency with EXACTLY ONE
