@@ -105,11 +105,16 @@ class TestRunAgentSync:
         assert any(e["type"] == "done" for e in events)
 
     def test_error_on_turn_exception(self):
-        """Exception in run_agent_turn puts 'error' in queue and returns."""
+        """Exception in run_agent_turn emits 'error' but NEVER leaks the raw
+        exception text into the client message (L-PANEL finding B).
+
+        The internal detail must stay server-side (logged with exc_info); the
+        bubble the browser renders is a generic, safe message.
+        """
         conv = self._make_conv()
         msg_queue = queue.Queue()
 
-        mock_run = MagicMock(side_effect=RuntimeError("API down"))
+        mock_run = MagicMock(side_effect=RuntimeError("API down /secret/path KeyError"))
 
         with patch("agent.main.run_agent_turn", mock_run), \
              patch("agent.queue_progress.QueueProgressReporter", MagicMock()):
@@ -120,8 +125,12 @@ class TestRunAgentSync:
             events.append(msg_queue.get_nowait())
 
         assert any(e["type"] == "error" for e in events)
-        error_events = [e for e in events if e["type"] == "error"]
-        assert "API down" in error_events[0]["message"]
+        msg = [e for e in events if e["type"] == "error"][0]["message"]
+        # the raw exception text must NOT reach the client
+        assert "API down" not in msg
+        assert "/secret/path" not in msg
+        # the safe, contextual message is what the browser sees
+        assert "agent turn" in msg and "server logs" in msg
 
     def test_cancellation_stops_turns_between_iterations(self):
         """Cancelling mid-run stops at the next inter-turn check."""

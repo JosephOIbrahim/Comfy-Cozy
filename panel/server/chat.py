@@ -250,7 +250,8 @@ def _run_agent_sync(conv: ConversationState, user_text: str, msg_queue: queue.Qu
 
         except Exception as e:
             log.error("Agent turn error: %s", e, exc_info=True)
-            msg_queue.put({"type": "error", "message": str(e)})
+            from agent._session_helpers import safe_error_message
+            msg_queue.put({"type": "error", "message": safe_error_message("agent turn")})
             return
 
     msg_queue.put({"type": "done"})
@@ -497,11 +498,12 @@ async def websocket_handler(request):
                                 }
                             )
                         except Exception as e:
-                            log.warning("Workflow update error: %s", e)
+                            log.warning("Workflow update error: %s", e, exc_info=True)
+                            from agent._session_helpers import safe_error_message
                             await ws.send_json(
                                 {
                                     "type": "error",
-                                    "message": f"Workflow update failed: {e}",
+                                    "message": safe_error_message("workflow update"),
                                 }
                             )
 
