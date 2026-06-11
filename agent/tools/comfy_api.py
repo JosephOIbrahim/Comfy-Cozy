@@ -6,6 +6,9 @@ queue status, and execution history.
 """
 
 import threading
+import time
+from collections.abc import Iterable
+from urllib.parse import quote
 
 import httpx
 
@@ -33,6 +36,92 @@ def _get_client() -> httpx.Client:
                     limits=httpx.Limits(max_connections=10, max_keepalive_connections=5),
                 )
     return _client
+
+# ---------------------------------------------------------------------------
+# /object_info cache (H2): TTL + explicit invalidation
+# ---------------------------------------------------------------------------
+# The full /object_info payload is ~4.6 MB and was re-fetched uncached at
+# every call site (ledger C-R3) — seconds per validate. One shared TTL cache
+# plus cheap per-class GETs collapse the validate -> fix -> re-validate loop.
+
+_OBJECT_INFO_TTL_S = 300.0
+
+_object_info_lock = threading.Lock()
+_object_info_full: dict | None = None
+_object_info_full_at = 0.0
+_object_info_classes: dict[str, tuple[float, dict | None]] = {}
+
+
+def invalidate_object_info_cache() -> None:
+    """Drop all cached /object_info state.
+
+    Call after anything that changes ComfyUI's node registry
+    (node-pack install/uninstall); also wired into the test suite's
+    autouse reset fixture so cached state never leaks across tests.
+    """
+    global _object_info_full, _object_info_full_at
+    with _object_info_lock:
+        _object_info_full = None
+        _object_info_full_at = 0.0
+        _object_info_classes.clear()
+
+
+def get_object_info(timeout: float = 30.0, force_refresh: bool = False) -> dict:
+    """Full /object_info payload, served from the TTL cache when warm.
+
+    Raises like _get() (ConnectError / HTTPStatusError). A failed fetch
+    leaves the cache untouched; an expired cache is never served.
+    The lock is held across the fetch so concurrent callers wait for one
+    fetch instead of each paying the multi-second download.
+    """
+    global _object_info_full, _object_info_full_at
+    with _object_info_lock:
+        fresh = time.monotonic() - _object_info_full_at < _OBJECT_INFO_TTL_S
+        if _object_info_full is not None and fresh and not force_refresh:
+            return _object_info_full
+        data = _get("/object_info", timeout=timeout)
+        _object_info_full = data
+        _object_info_full_at = time.monotonic()
+        return data
+
+
+def get_object_info_classes(class_types: Iterable[str], timeout: float = 10.0) -> dict[str, dict]:
+    """Schemas for the given node classes only.
+
+    Served from the warm full-payload cache when available; otherwise one
+    per-class GET /object_info/{class} (~KB instead of ~4.6 MB) per class,
+    each TTL-cached. A class absent from the result is not installed —
+    ComfyUI returns an empty body for unknown classes — while an
+    unreachable ComfyUI raises, so "missing" is never conflated with "down".
+    """
+    wanted = sorted(set(class_types))
+    out: dict[str, dict] = {}
+    now = time.monotonic()
+    to_fetch: list[str] = []
+    with _object_info_lock:
+        if _object_info_full is not None and now - _object_info_full_at < _OBJECT_INFO_TTL_S:
+            for cls in wanted:
+                schema = _object_info_full.get(cls)
+                if schema is not None:
+                    out[cls] = schema
+            return out
+        for cls in wanted:
+            hit = _object_info_classes.get(cls)
+            if hit is not None and now - hit[0] < _OBJECT_INFO_TTL_S:
+                if hit[1] is not None:
+                    out[cls] = hit[1]
+            else:
+                to_fetch.append(cls)
+    # Network outside the lock — per-class GETs are small and independent.
+    for cls in to_fetch:
+        data = _get(f"/object_info/{quote(cls)}", timeout=timeout)
+        schema = data.get(cls) if isinstance(data, dict) else None
+        with _object_info_lock:
+            _object_info_classes[cls] = (time.monotonic(), schema)
+        if schema is not None:
+            out[cls] = schema
+    return out
+
 
 # ---------------------------------------------------------------------------
 # Tool schemas (Anthropic tool-use format)

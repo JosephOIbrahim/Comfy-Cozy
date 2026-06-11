@@ -49,6 +49,27 @@ def _reset_circuit_breakers():
 
 
 @pytest.fixture(autouse=True)
+def _reset_shared_caches():
+    """Reset cross-call cached state between tests (ledger A-CACHE-RESET).
+
+    The engine adapter singleton and the /object_info TTL cache are
+    module-level state; a warm entry leaking across the mocked suite would
+    mask regressions (H0.2 named this the Wave-2 merge blocker).
+    """
+    yield
+    try:
+        from agent.engine import _reset_cache_for_tests
+        _reset_cache_for_tests()
+    except Exception:
+        pass
+    try:
+        from agent.tools.comfy_api import invalidate_object_info_cache
+        invalidate_object_info_cache()
+    except Exception:
+        pass
+
+
+@pytest.fixture(autouse=True)
 def reset_workflow_state():
     """Deep-snapshot and restore ``workflow_patch`` state between tests.
 

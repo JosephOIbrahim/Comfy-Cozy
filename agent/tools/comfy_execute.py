@@ -607,12 +607,11 @@ def _handle_validate_before_execute(tool_input: dict) -> str:
     errors = []
     warnings = []
 
-    # Fetch node registry from ComfyUI
+    # Fetch node registry from ComfyUI (H2: shared TTL cache — re-validate
+    # after a fix no longer re-pays the multi-second /object_info download)
     try:
-        with httpx.Client() as client:
-            resp = client.get(f"{COMFYUI_URL}/object_info", timeout=30.0)
-            resp.raise_for_status()
-            object_info = resp.json()
+        from .comfy_api import get_object_info
+        object_info = get_object_info(timeout=30.0)
     except httpx.ConnectError:
         return to_json({"error": f"ComfyUI not reachable at {COMFYUI_URL}. Is it running?"})
     except Exception as e:
