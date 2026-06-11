@@ -546,6 +546,40 @@ L-MISC     mixed bag:
             definition. Hardening doc §4 item 3 CLOSED. Residual husk: G:/Comfy-Cozy-ci
             directory held by a file lock post-deregistration — inert, delete when released.
 
+[2026-06-11] TC · Confirmation · L-MISC-a PROBED TRUE then FIXED + C-R6 FIXED — timeout-coherence
+            wave BUILT and PUSHED (standing word: "when ready commit & push") · verified_by V1 ·
+            branch fix/timeout-coherence @ e1a6cbb (base 79a6fa5) · PR #69 · doc §4 item 4
+    L-MISC-a→V1  blanket wait_for(120.0) at mcp_server.py:356-359, worker thread ORPHANED on
+            expiry (uncancellable; side effects land after the client is told failure). WORSE
+            than recorded: execute_with_progress 300 s / install 245 s worst / nim_run ~1200 s
+            cold all unreachable; execute_workflow's 120 s default TIES the kill so its graceful
+            status:"timeout"+prompt_id payload could never surface; the :353-355 comment claiming
+            downloads "handled separately" was FALSE (time-unbounded by design, byte-bounded).
+    fix-a   _tool_time_budget(name, args): dynamic budgets honor caller timeouts (clamp 24 h),
+            download_model=None (unbounded; 30 s per-read liveness), vision stays 120 (inner 90
+            must keep winning — pinned), default 120 retained. Budget is a WAIT not a kill —
+            documented. Message states budget + background-completion caveat. Source-grep test
+            → 9 behavior tests. 12-case probe all-OK.
+    fix-b   C-R6: connect gains max_size=16 MiB (1 MiB default closed 1009 on big previews;
+            recv_bufsize was a read-chunk knob — no-op for the cap, verified) + ping_timeout=60;
+            mid-stream ConnectionClosed/OSError → EngineConnectionError (TimeoutError stays
+            first in the chain — OSError subclass since 3.10, sentinel contract pinned);
+            nim_run polls /history under the SAME phase deadline on WS death instead of failing
+            a queued run (monitoring="polling_fallback" + ws_error, mirroring comfy_execute);
+            warm-state in fallback recorded ONLY when the WARMUP→COOKING flip was observed
+            (fabricated warm times could false-fail later cold pulls).
+    refinements  comfy_execute ALREADY had the mid-stream polling fallback (C-R6's "no polling
+            fallback" applies to nim_run only — record corrected); connect-TIME failures were
+            already translated; installed websockets is 16.0.
+    suite   4507 passed / 0 failed ×2 (master baseline 4492; +15 net new). Ruff clean. Freeze
+            diff empty. Scan clean pre-push; hook silent.
+    leads   L-COG-WS-FALLBACK (V1, test-pinned): cognitive/tools/execute.py has the same
+            no-fallback WS behavior, PINNED by test_execute_websocket_unreachable — changing it
+            is a deliberate contract change, H5 candidate. L-MANUAL-COLLECTED (V1): tests/manual/
+            IS collected by default runs (testpaths=["tests"], no collect_ignore) — the "manual"
+            label is aspirational; tidy in H5. L-FALSE-COVERAGE (V1): TestToolErrorProtocol's
+            _direct() coroutine is never awaited — vacuous test, H5.
+
 [2026-06-10] H2-DEADEND · DeadEnd · reflexive `git stash` in the FORGE worktree mid-CRUCIBLE
             stashed the uncommitted test realignments and invalidated an in-flight suite run ·
             caught same-minute, `git stash pop` restored the identical 7-file diff, realignments
