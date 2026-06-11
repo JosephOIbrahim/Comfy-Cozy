@@ -278,12 +278,11 @@ class TestValidateWorkflow:
         """If ComfyUI isn't running, should return a clear error."""
         import httpx
 
+        # H2: the true fetch edge is comfy_api._get (per-class /object_info GET).
         with patch(
-            "agent.tools.workflow_parse.httpx.Client"
-        ) as mock_client_cls:
-            mock_client = mock_client_cls.return_value.__enter__.return_value
-            mock_client.get.side_effect = httpx.ConnectError("refused")
-
+            "agent.tools.comfy_api._get",
+            side_effect=httpx.ConnectError("refused"),
+        ):
             result = json.loads(
                 workflow_parse.handle("validate_workflow", {"path": str(api_workflow)})
             )
@@ -343,14 +342,7 @@ class TestValidateWorkflow:
             },
         }
 
-        mock_resp = type("MockResp", (), {
-            "json": lambda self: mock_object_info,
-            "raise_for_status": lambda self: None,
-        })()
-
-        with patch("agent.tools.workflow_parse.httpx.Client") as mock_cls:
-            mock_cls.return_value.__enter__.return_value.get.return_value = mock_resp
-
+        with patch("agent.tools.comfy_api._get", return_value=mock_object_info):
             result = json.loads(
                 workflow_parse.handle("validate_workflow", {"path": str(api_workflow)})
             )
@@ -369,14 +361,7 @@ class TestValidateWorkflow:
         wf.write_text(json.dumps(data), encoding="utf-8")
 
         mock_object_info = {"KSampler": {"input": {"required": {}}, "output": []}}
-        mock_resp = type("MockResp", (), {
-            "json": lambda self: mock_object_info,
-            "raise_for_status": lambda self: None,
-        })()
-
-        with patch("agent.tools.workflow_parse.httpx.Client") as mock_cls:
-            mock_cls.return_value.__enter__.return_value.get.return_value = mock_resp
-
+        with patch("agent.tools.comfy_api._get", return_value=mock_object_info):
             result = json.loads(
                 workflow_parse.handle("validate_workflow", {"path": str(wf)})
             )
@@ -411,14 +396,7 @@ class TestValidateWorkflow:
                 "output": ["CONDITIONING"],
             },
         }
-        mock_resp = type("MockResp", (), {
-            "json": lambda self: mock_object_info,
-            "raise_for_status": lambda self: None,
-        })()
-
-        with patch("agent.tools.workflow_parse.httpx.Client") as mock_cls:
-            mock_cls.return_value.__enter__.return_value.get.return_value = mock_resp
-
+        with patch("agent.tools.comfy_api._get", return_value=mock_object_info):
             result = json.loads(
                 workflow_parse.handle("validate_workflow", {"path": str(wf)})
             )
@@ -620,14 +598,7 @@ class TestValidation3DWorkflow:
             },
         }
 
-        mock_resp = type("MockResp", (), {
-            "json": lambda self: mock_object_info,
-            "raise_for_status": lambda self: None,
-        })()
-
-        with patch("agent.tools.workflow_parse.httpx.Client") as mock_cls:
-            mock_cls.return_value.__enter__.return_value.get.return_value = mock_resp
-
+        with patch("agent.tools.comfy_api._get", return_value=mock_object_info):
             result = json.loads(
                 workflow_parse.handle("validate_workflow", {"path": str(hunyuan3d_workflow)})
             )
@@ -663,14 +634,7 @@ class TestValidation3DWorkflow:
             },
         }
 
-        mock_resp = type("MockResp", (), {
-            "json": lambda self: mock_object_info,
-            "raise_for_status": lambda self: None,
-        })()
-
-        with patch("agent.tools.workflow_parse.httpx.Client") as mock_cls:
-            mock_cls.return_value.__enter__.return_value.get.return_value = mock_resp
-
+        with patch("agent.tools.comfy_api._get", return_value=mock_object_info):
             result = json.loads(
                 workflow_parse.handle("validate_workflow", {"path": str(wf)})
             )
@@ -849,14 +813,7 @@ class TestAutogrowWorkflow:
                 "output": ["FLOAT", "INT"],
             },
         }
-        mock_resp = type("Resp", (), {
-            "json": lambda self: mock_info,
-            "raise_for_status": lambda self: None,
-        })()
-        with patch("httpx.Client") as mock_client:
-            mock_client.return_value.__enter__ = lambda s: s
-            mock_client.return_value.__exit__ = lambda s, *a: None
-            mock_client.return_value.get.return_value = mock_resp
+        with patch("agent.tools.comfy_api._get", return_value=mock_info):
             result = workflow_parse._validate_against_comfyui(nodes, connections)
 
         assert result["valid"] is True

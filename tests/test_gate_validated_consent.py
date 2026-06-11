@@ -80,14 +80,13 @@ def _object_info_for(workflow: dict, *, drop: str | None = None) -> dict:
 
 @contextmanager
 def _object_info_mocked(object_info: dict):
-    """Mock the /object_info GET edge inside validate_before_execute."""
-    mock_resp = MagicMock()
-    mock_resp.json.return_value = object_info
-    mock_resp.raise_for_status = MagicMock()
-    with patch("httpx.Client") as mock_client:
-        mock_client.return_value.__enter__ = MagicMock(return_value=mock_client.return_value)
-        mock_client.return_value.__exit__ = MagicMock(return_value=False)
-        mock_client.return_value.get.return_value = mock_resp
+    """Mock the /object_info fetch edge inside validate_before_execute.
+
+    H2: the true edge is comfy_api._get (per-class GET behind the TTL
+    cache); a per-class call does data.get(cls), so the full dict serves
+    every class lookup and an absent key reads as "not installed".
+    """
+    with patch("agent.tools.comfy_api._get", return_value=object_info):
         yield
 
 

@@ -16,7 +16,6 @@ from pathlib import Path
 
 import httpx
 
-from ..config import COMFYUI_URL
 from ._util import to_json, validate_path
 
 TOOLS: list[dict] = [
@@ -48,9 +47,10 @@ _CONTROL_WIDGETS = {"control_after_generate"}
 
 
 def _get_object_info() -> dict:
-    resp = httpx.get(f"{COMFYUI_URL}/object_info", timeout=30.0)
-    resp.raise_for_status()
-    return resp.json()
+    # H2: shared TTL cache — UI->API mapping needs the full payload, but
+    # within the TTL it is fetched once process-wide instead of per parse.
+    from .comfy_api import get_object_info
+    return get_object_info(timeout=30.0)
 
 
 def _required_input_order(node_schema: dict) -> list[tuple[str, object]]:

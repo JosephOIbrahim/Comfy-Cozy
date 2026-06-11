@@ -7,15 +7,18 @@ from agent.tools import comfy_execute
 
 
 def _mock_httpx_client():
-    """Create a properly chained httpx.Client context manager mock.
+    """Mock the shared httpx.Client constructor (H2 pooled-client edge).
 
     Returns (patcher, mock_client) — mock_client has .post, .get, etc.
+    The engine adapter builds ONE pooled client per adapter and calls
+    .get/.post on it directly (no context manager); the same mock also
+    returns itself from __enter__ for the remaining call sites that
+    still use `with httpx.Client() as client`.
     """
     mock_client = MagicMock()
-    mock_cm = MagicMock()
-    mock_cm.__enter__ = MagicMock(return_value=mock_client)
-    mock_cm.__exit__ = MagicMock(return_value=False)
-    patcher = patch("agent.tools.comfy_execute.httpx.Client", return_value=mock_cm)
+    mock_client.__enter__ = MagicMock(return_value=mock_client)
+    mock_client.__exit__ = MagicMock(return_value=False)
+    patcher = patch("agent.tools.comfy_execute.httpx.Client", return_value=mock_client)
     return patcher, mock_client
 
 
@@ -278,7 +281,8 @@ class TestExecuteWithProgress:
 
         with patch.object(comfy_execute, "_HAS_WS", False), \
              patch("agent.tools.comfy_execute.httpx.Client") as mock_cls:
-            mock_client = mock_cls.return_value.__enter__.return_value
+            # H2: the engine adapter uses one pooled client, no context manager.
+            mock_client = mock_cls.return_value
             mock_client.post.return_value = queue_resp
             mock_client.get.return_value = history_resp
 
@@ -330,7 +334,7 @@ class TestExecuteWithProgress:
         mock_client.get.return_value = history_resp
         with patch.object(comfy_execute, "_HAS_WS", True), \
              patcher, \
-             patch("agent.tools.comfy_execute.websockets.sync.client.connect", return_value=mock_ws):
+             patch("agent.engine.comfyui_adapter.websockets.sync.client.connect", return_value=mock_ws):
 
             result = json.loads(comfy_execute.handle("execute_with_progress", {
                 "path": str(sample_workflow),
@@ -406,14 +410,8 @@ class TestEmptyRequiredInputValidation:
             "text": ["STRING", {}],
             "clip": ["CLIP", {}],
         })
-        mock_resp = MagicMock()
-        mock_resp.json.return_value = object_info
-        mock_resp.raise_for_status = MagicMock()
-
-        with patch("httpx.Client") as mock_client:
-            mock_client.return_value.__enter__ = MagicMock(return_value=mock_client.return_value)
-            mock_client.return_value.__exit__ = MagicMock(return_value=False)
-            mock_client.return_value.get.return_value = mock_resp
+        # H2: the true fetch edge is comfy_api._get (per-class /object_info GET).
+        with patch("agent.tools.comfy_api._get", return_value=object_info):
             result = json.loads(comfy_execute.handle("validate_before_execute", {
                 "path": str(path),
             }))
@@ -440,14 +438,7 @@ class TestEmptyRequiredInputValidation:
             "text": ["STRING", {}],
             "clip": ["CLIP", {}],
         })
-        mock_resp = MagicMock()
-        mock_resp.json.return_value = object_info
-        mock_resp.raise_for_status = MagicMock()
-
-        with patch("httpx.Client") as mock_client:
-            mock_client.return_value.__enter__ = MagicMock(return_value=mock_client.return_value)
-            mock_client.return_value.__exit__ = MagicMock(return_value=False)
-            mock_client.return_value.get.return_value = mock_resp
+        with patch("agent.tools.comfy_api._get", return_value=object_info):
             result = json.loads(comfy_execute.handle("validate_before_execute", {
                 "path": str(path),
             }))
@@ -473,14 +464,7 @@ class TestEmptyRequiredInputValidation:
             "text": ["STRING", {}],
             "clip": ["CLIP", {}],
         })
-        mock_resp = MagicMock()
-        mock_resp.json.return_value = object_info
-        mock_resp.raise_for_status = MagicMock()
-
-        with patch("httpx.Client") as mock_client:
-            mock_client.return_value.__enter__ = MagicMock(return_value=mock_client.return_value)
-            mock_client.return_value.__exit__ = MagicMock(return_value=False)
-            mock_client.return_value.get.return_value = mock_resp
+        with patch("agent.tools.comfy_api._get", return_value=object_info):
             result = json.loads(comfy_execute.handle("validate_before_execute", {
                 "path": str(path),
             }))
@@ -502,14 +486,7 @@ class TestEmptyRequiredInputValidation:
             "text": ["STRING", {}],
             "clip": ["CLIP", {}],
         })
-        mock_resp = MagicMock()
-        mock_resp.json.return_value = object_info
-        mock_resp.raise_for_status = MagicMock()
-
-        with patch("httpx.Client") as mock_client:
-            mock_client.return_value.__enter__ = MagicMock(return_value=mock_client.return_value)
-            mock_client.return_value.__exit__ = MagicMock(return_value=False)
-            mock_client.return_value.get.return_value = mock_resp
+        with patch("agent.tools.comfy_api._get", return_value=object_info):
             result = json.loads(comfy_execute.handle("validate_before_execute", {
                 "path": str(path),
             }))
