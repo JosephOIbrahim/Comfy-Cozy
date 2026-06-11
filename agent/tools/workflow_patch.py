@@ -684,10 +684,22 @@ def _handle_save(tool_input: dict) -> str:
     changes = len(
         jsonpatch.make_patch(_get_state()["base_workflow"], _get_state()["current_workflow"]).patch
     )
-    return to_json({
+    result = {
         "saved": output_path,
         "changes_from_base": changes,
-    })
+    }
+    # workflow.lock (hardening 3.8): pin packs/models/version next to the
+    # saved graph. Best-effort — a lock failure never fails the save.
+    try:
+        from .workflow_lock import write_lock_sidecar
+        lock_file = write_lock_sidecar(
+            output_path, _get_state()["current_workflow"], content.encode("utf-8")
+        )
+        result["lock"] = str(lock_file)
+    except Exception as e:
+        log.warning("workflow.lock sidecar failed for %s: %s", output_path, e)
+        result["lock_error"] = str(e)
+    return to_json(result)
 
 
 def _handle_reset() -> str:
