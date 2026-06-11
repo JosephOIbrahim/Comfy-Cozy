@@ -390,4 +390,42 @@ L-MISC     mixed bag:
             (Sibling note, marginal: the REVERSIBLE clear lives inside the GATE_ENABLED block, so a
             mid-session GATE_ENABLED flip could carry one stale validation through; not reachable
             in normal operation.)
+
+[2026-06-10] H2 · Confirmation · C-R3 + C-R4 + C-R11 + C-R13 FIXED — caching wave BUILT; race won
+            by the class-scoped fetch · verified_by V1 (live ComfyUI :8188 throughout) ·
+            branch perf/h2-caching-bundle @ ea7237f (worktree G:\Comfy-Cozy-h2, base master 3a939bc) ·
+            A-CACHE-RESET → holds TRUE (autouse _reset_shared_caches: engine cache + object_info
+            cache + discover memo)
+    baseline  re-measured same-day ×3 with the committed instrument (tooling/harness/latency/
+            bench_h2.py @ f9d1465): cycle 7191/7241/7524 ms (validate1 med 3707, validate2 med
+            3533 — zero reuse), poll warm 158–179 ms, import 433–545 ms. (Absolute numbers below
+            the Jun-09 12.6 s record — different ComfyUI session state; race scored against THIS
+            baseline, same instrument, band ≈4.6%.)
+    race    two legs per §4b, one commit each. Leg A (TTL full-payload cache, 90eebe9):
+            cycle 3562 ms med (re-validate 0.2 ms; validate1 unchanged). Leg B (class-scoped
+            per-class GETs over the same TTL cache, 100fe80): cycle 238.6 ms med. B promoted.
+    champion  final tree ×3 fresh processes: cycle 461–491 ms (−93.4% vs baseline; first
+            validate carries the DEFERRED stage import ~250 ms after C-R13 — honest
+            redistribution, total still −93%), re-validate 0.1–0.2 ms, poll warm 0.29–0.33 ms
+            (−99.8%, C-R4 pooled adapter client), cold import 188–199 ms (−59%, C-R13
+            importer-side lazy stage; agent/stage/** untouched — freeze respected, git diff
+            master -- agent/stage/ EMPTY). discover legs concurrent + 120 s memo (C-R11; live:
+            first 0.44 s both sources, repeat ~0 s). install/uninstall invalidate the cache.
+    eval_signal_fired  reproduce: validate2 ≈ validate1 (no cache, ×3); poll pays fresh-client
+            setup every call. clean: probes above. Output-equivalence probe: validate JSON
+            byte-identical master-vs-branch (sorted), clean template AND injected-missing-node
+            case; invalidation probe cold2/warm+0/invalidate+1.
+    suite   4464 passed / 0 failed ×2 (forge + independent verifier run), ruff clean agent/+tests/.
+            38 tests realigned to the new true edge (comfy_api._get / pooled adapter client) —
+            assertions unchanged; 8 prior accidental-passers now pass for the right reason;
+            seam test still real-producer→real-consumer.
+    targets  doc §5: first-pass validate <7 s → 0.47 s ✓ · re-validate <0.5 s → 0.0002 s ✓ ·
+            per-poll <5 ms → 0.3 ms ✓ · cold import ≈200 ms → ~195 ms ✓.
+    push    NOT pushed — RED tier, awaiting Joe's word. 9 commits f9d1465..ea7237f.
+
+[2026-06-10] H2-DEADEND · DeadEnd · reflexive `git stash` in the FORGE worktree mid-CRUCIBLE
+            stashed the uncommitted test realignments and invalidated an in-flight suite run ·
+            caught same-minute, `git stash pop` restored the identical 7-file diff, realignments
+            committed (ea7237f), suite re-run clean. RULE: in a harness worktree, commit before
+            any state-mutating git side-step; never run bare `git stash` as a scratch no-op.
 ```
