@@ -698,6 +698,55 @@ L-MISC     mixed bag:
             Untracked local scratch (logs, quarantine, RSI/harness working files) deliberately
             NOT committed.
 
+[2026-06-11] MERGE-TRAIN-2 · Confirmation · #69→#70→#71→#72 ALL MERGED by Joe's explicit word ·
+            verified_by V1 · master dbf1349 · combined-tree check (H1-MERGE precedent): the
+            four-wave union was never CI'd as one tree → full suite locally on merged master:
+            4544 passed / 0 failed. Doc §4 items 1-7 ALL ON MASTER.
+
+[2026-06-11] H5 · Confirmation · LEAD-CONVERSION ROUND COMPLETE — every banked lead probed,
+            fixed, or parked with disposition · verified_by V1 · branch fix/h5-lead-conversion
+            @ 85537f2 (base dbf1349) · PR #73 · built SOLO
+    fixed (all reproduced live first)
+      L-PIPESTAT     wrong producer key (C-P0-1 class): producer missing_count=1 while status
+                     said "ready"; key fixed + fabricated mocks realigned. 51 tests green.
+      L-INJECT-VALIDATED  injected graph inherited prior consent (flag True after injection,
+                     live); loader clears unconditionally (sibling GATE-flip hazard closed);
+                     regression pin added.
+      L-MISC-b       three defects reproduced: WAN 2.2 (2.1-only pattern → generalized);
+                     mysd15_style_sdxl→sd15 (boundary check + latest-position-wins replaces
+                     alphabetical first-match); unknown-family silent pass → surfaced via
+                     unknown_models+message. Verdict stays compatible:true for unknowns —
+                     full fail-closed would false-block community models; RATIFIABLE OPTION
+                     left to the board, recorded here.
+      L-SIGKILL-E2E  REFINED: the SIGKILL AttributeError fired INSIDE the teardown finally,
+                     aborting adapter.stop() — that abort WAS the bystander-breaking state
+                     leak. proc.kill() fix; the e2e test now passes ON WINDOWS (1 passed).
+      L-FALSE-COVERAGE  rewritten to drive the REAL CallToolRequest handler (the old version
+                     targeted an attribute that never existed — vacuous from birth);
+                     SDK-side input validation discovered+documented in the test.
+      L-STALE-DISCOVERY  four rotten patch targets + a response-object _get mock (parsed-JSON
+                     since H2) realigned; models-summary hermetic (tmp MODELS_DIR).
+      L-CONFIRM-ENVDEP  hermetic via patched MODELS_DIR.
+      L-VERIFYSHA    orphan deleted + its direct unit test (behavior covered by the seeded-
+                     hasher tests in test_download_resume.py).
+      DIRECTION.md drift (H1.2 residue, :78 + :243 region) → confirm-gated canon text.
+      L-MANUAL-COLLECTED  docstring now states the truth (collected by the default suite).
+    parked (disposition recorded; probe named)
+      L-PANEL        needs a live browser session — its own adversarial run, not half-done
+                     solo; the four named symptoms stand as the probe list.
+      L-COG-WS-FALLBACK  test-pinned contract; change requires ratification.
+      profiles-consult (doc 3.10 second half)  loader is a parameter-profile system keyed by
+                     exact model id, not a filename→family registry — design change, not a
+                     defect; pairs with a future family-registry if wanted.
+      L-MISC-c compaction orphan (self-heals, agent-run only) · L-EXR-CP314 · L-OCIO-STRETCH
+                     · L-METADATA-EXR (stretch/informational).
+    suite   4544 passed / 0 failed ×2 on the freshly merged base; realigned integration tests
+            pass LIVE; ruff clean; freeze diff empty; scan clean; hook silent.
+    DONE    per the science harness §8 finish line: A-SEAM true · A-CACHE-RESET true · caching
+            champion promoted · vision + persistence Confirmations on master · every Lead
+            converted or parked-with-probe. The hardening doc's §4 order: items 1-7 merged,
+            item 8 = PR #73 in review.
+
 [2026-06-10] H2-DEADEND · DeadEnd · reflexive `git stash` in the FORGE worktree mid-CRUCIBLE
             stashed the uncommitted test realignments and invalidated an in-flight suite run ·
             caught same-minute, `git stash pop` restored the identical 7-file diff, realignments
