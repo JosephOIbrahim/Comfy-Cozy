@@ -607,6 +607,20 @@ def _handle_validate_before_execute(tool_input: dict) -> str:
     errors = []
     warnings = []
 
+    # workflow.lock (hardening 3.8): surface "drifted since lock" warnings
+    # for the file being validated (explicit path, else the session's
+    # loaded_path). Drift informs; it never blocks. Best-effort.
+    try:
+        from .workflow_lock import check_lock_drift
+        lock_target = path_str
+        if not lock_target:
+            from .workflow_patch import _get_state
+            lock_target = _get_state().get("loaded_path")
+        if lock_target:
+            warnings.extend(check_lock_drift(lock_target))
+    except Exception as e:
+        log.debug("workflow.lock drift check skipped: %s", e)
+
     # Fetch node schemas from ComfyUI (H2: class-scoped, TTL-cached — a few
     # KB-sized per-class GETs instead of the ~4.6 MB full /object_info, and
     # re-validate after a fix re-pays nothing. A class absent from the

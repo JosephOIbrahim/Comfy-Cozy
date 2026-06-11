@@ -99,6 +99,11 @@ def _reset_shared_caches():
         _reset_discover_memo_for_tests()
     except Exception:
         pass
+    try:
+        from agent.tools.workflow_lock import _hash_cache
+        _hash_cache.clear()
+    except Exception:
+        pass
 
 
 @pytest.fixture(autouse=True)
