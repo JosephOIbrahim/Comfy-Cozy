@@ -10,6 +10,7 @@ Brain tools are lazily imported to avoid circular dependencies
 """
 
 import importlib
+import inspect
 import logging
 import threading
 import time
@@ -75,6 +76,34 @@ log.info(
     "tool dispatch: %d intelligence/stage tools registered (brain lazy)",
     len(_HANDLERS),
 )
+
+# C-R12: per-module cache — does mod.handle() accept a `progress` kwarg?
+# Computed once via inspect.signature. Replaces the try/except-TypeError
+# forwarding, which RE-EXECUTED a handler (without progress) whenever a
+# TypeError surfaced from INSIDE a progress-accepting handler.
+_PROGRESS_AWARE: dict[str, bool] = {}
+
+
+def _handle_accepts_progress(mod) -> bool:
+    """True if `mod.handle` accepts a `progress` keyword (cached per module).
+
+    Test doubles registered as handler modules may lack ``__name__`` —
+    those are computed per call instead of cached (real modules always
+    have a name, so the hot path stays cached).
+    """
+    key = getattr(mod, "__name__", None)
+    cached = _PROGRESS_AWARE.get(key) if key is not None else None
+    if cached is None:
+        try:
+            params = inspect.signature(mod.handle).parameters
+            cached = "progress" in params or any(
+                p.kind is inspect.Parameter.VAR_KEYWORD for p in params.values()
+            )
+        except (TypeError, ValueError, AttributeError):
+            cached = False
+        if key is not None:
+            _PROGRESS_AWARE[key] = cached
+    return cached
 
 # Brain tools are loaded lazily to break the circular import
 _brain_loaded = False
@@ -397,10 +426,21 @@ def handle(
                     log.info("Gate ESCALATE-blocked '%s' (risk %d) — needs confirm",
                              name, gate_result.risk_level)
                     from ..errors import error_json
+                    # C-R12: echo SAFE identifying inputs (url/filename/name) so
+                    # the human approves an IDENTIFIED action, not a blind one.
+                    _ident = ""
+                    if isinstance(tool_input, dict):
+                        _parts = [
+                            f"{_k}={str(tool_input[_k])[:120]}"
+                            for _k in ("url", "filename", "name")
+                            if isinstance(tool_input.get(_k), str) and tool_input.get(_k)
+                        ]
+                        if _parts:
+                            _ident = " Target: " + ", ".join(_parts) + "."
                     return error_json(
                         f"'{name}' is a network/code-executing operation and needs "
                         f"explicit confirmation before it runs — auto-blocked to "
-                        f"prevent unattended download/install.",
+                        f"prevent unattended download/install.{_ident}",
                         hint="A human must approve; re-call with \"confirm\": true "
                              "to proceed.",
                     )
@@ -470,10 +510,12 @@ def handle(
         return error_json(f"Unknown tool: {name}", hint="Check the tool name and try again.")
     _t0 = time.monotonic()
     try:
-        # Forward progress to any module that accepts it; fall back gracefully
-        try:
+        # C-R12: signature-aware progress forwarding — pass progress= only when
+        # the module's handle() accepts it. The old try/except-TypeError fallback
+        # re-ran the handler whenever a TypeError escaped from inside it.
+        if _handle_accepts_progress(mod):
             result = mod.handle(name, tool_input, progress=progress)
-        except TypeError:
+        else:
             result = mod.handle(name, tool_input)
         _observe(name, tool_input, ctx)
         _record_metric(name, "ok", time.monotonic() - _t0)

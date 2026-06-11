@@ -15,6 +15,7 @@ from pathlib import Path
 import httpx
 
 from ..config import CUSTOM_NODES_DIR, MODELS_DIR
+from ..progress import ProgressCallback, ProgressReporter
 from ._util import to_json
 
 log = logging.getLogger(__name__)
@@ -582,7 +583,11 @@ def _handle_install_node_pack(tool_input: dict) -> str:
         install_lock.release()
 
 
-def _handle_download_model(tool_input: dict) -> str:
+def _handle_download_model(
+    tool_input: dict,
+    progress: "ProgressCallback | None" = None,
+) -> str:
+    progress = progress or ProgressReporter.noop()
     url = tool_input.get("url")  # Cycle 47: guard required fields
     raw_model_type = tool_input.get("model_type")
     if not url or not isinstance(url, str):
@@ -663,6 +668,20 @@ def _handle_download_model(tool_input: dict) -> str:
     except (OSError, ValueError):
         return to_json({"error": "Invalid model path."})
 
+    from urllib.parse import urlparse, urljoin
+
+    # C-R12: already-present file answered BEFORE the confirm gate — a pure
+    # local stat needs no network approval. temp_path is the resumable partial
+    # left by an interrupted attempt.
+    temp_path = target.with_suffix(target.suffix + ".download")
+    if target.exists():
+        size_gb = target.stat().st_size / (1024 ** 3)
+        return to_json({
+            "error": f"Model already exists: {target}",
+            "size_gb": round(size_gb, 2),
+            "hint": "Delete it first if you want to re-download.",
+        })
+
     # SECURITY (route-auth audit 4.6): defense-in-depth confirm gate before the
     # network fetch (mirrors install). The keystone gate ESCALATEs download_model
     # (PROVISION); enforce it here too so a gate-bypassing caller can't fetch
@@ -671,27 +690,29 @@ def _handle_download_model(tool_input: dict) -> str:
     _confirmed = (_raw_confirm if isinstance(_raw_confirm, bool)
                   else str(_raw_confirm).lower() in ("true", "1", "yes"))
     if not _confirmed:
-        return to_json({
+        # C-R12 informed confirm — identify the action from LOCAL data only.
+        # Deliberately NO pre-confirm size probe: zero network before consent
+        # is the stronger property; size surfaces via progress after approval.
+        _partial_bytes = temp_path.stat().st_size if temp_path.exists() else 0
+        _payload = {
             "status": "needs_confirmation",
             "url": url,
+            "host": (urlparse(url).hostname or "").lower(),
             "filename": filename,
+            "destination": str(target),
+            "model_type": model_type,
+            "resume_available": _partial_bytes > 0,
             "message": (
                 f"Downloading '{filename}' fetches a file from the network. Re-call "
                 "download_model with \"confirm\": true to proceed."
             ),
-        })
+        }
+        if _partial_bytes:
+            _payload["resume_from_bytes"] = _partial_bytes
+        return to_json(_payload)
 
     # Create directory if needed
     type_dir.mkdir(parents=True, exist_ok=True)
-
-    # Check if already exists
-    if target.exists():
-        size_gb = target.stat().st_size / (1024 ** 3)
-        return to_json({
-            "error": f"Model already exists: {target}",
-            "size_gb": round(size_gb, 2),
-            "hint": "Delete it first if you want to re-download.",
-        })
 
     # Validate extension
     suffix = Path(filename).suffix.lower()
@@ -714,18 +735,29 @@ def _handle_download_model(tool_input: dict) -> str:
     # Download with progress — manual redirect following with per-hop SSRF validation.
     # follow_redirects=False is intentional: we re-validate every redirect target
     # so that an allowlisted CDN that issues a 302 to a private IP is caught.
-    from urllib.parse import urlparse, urljoin
 
-    temp_path = target.with_suffix(target.suffix + ".download")
+    # C-R12 resume: a leftover .download partial from an interrupted attempt is
+    # picked up with an HTTP Range request instead of restarting from zero.
+    resume_offset = temp_path.stat().st_size if temp_path.exists() else 0
+    # Read the expected hash BEFORE the loop so the hasher runs incrementally.
+    expected_sha = (tool_input.get("expected_sha256") or "").strip()
     start_time = time.time()
     log.info("Downloading model '%s' from %s → %s/%s", filename, url, model_type, filename)
 
     try:
+        import hashlib
+
         current_url = url
         downloaded = 0
+        resumed_from = 0
+
+        # The Range header rides along on every hop — redirect responses ignore
+        # it, so the final (re-validated) request is the one that honors it.
+        _req_headers = {"Range": f"bytes={resume_offset}-"} if resume_offset > 0 else None
 
         for _hop in range(_MAX_DOWNLOAD_REDIRECTS + 1):
-            with httpx.stream("GET", current_url, follow_redirects=False, timeout=_DOWNLOAD_STREAM_TIMEOUT) as response:
+            with httpx.stream("GET", current_url, headers=_req_headers,
+                              follow_redirects=False, timeout=_DOWNLOAD_STREAM_TIMEOUT) as response:
                 if response.status_code in (301, 302, 303, 307, 308):
                     if _hop >= _MAX_DOWNLOAD_REDIRECTS:
                         return to_json({"error": "Too many redirects during download (max 10).", "url": url})
@@ -757,7 +789,11 @@ def _handle_download_model(tool_input: dict) -> str:
                 if ip_err:
                     return to_json({"error": f"Download from '{final_host}' blocked: {ip_err}", "url": url})
 
-                if response.status_code != 200:
+                if response.status_code == 206 and resume_offset > 0:
+                    # 206 Partial Content — the server honored our Range header;
+                    # append to the partial (provisioner.py:293-297 pattern).
+                    resumed_from = resume_offset
+                elif response.status_code != 200:
                     sc = response.status_code
                     if sc == 403:
                         msg = "Download blocked — this model may require a CivitAI account or API key."
@@ -768,27 +804,64 @@ def _handle_download_model(tool_input: dict) -> str:
                     else:
                         msg = f"Download failed (server returned {sc}). Try again later."
                     return to_json({"error": msg, "url": url})
+                # else 200: the server ignored the Range header (or none was
+                # sent) — resumed_from stays 0 and "wb" truncates the partial.
+
+                # Content-Length is the REMAINING bytes on a 206; add the
+                # resumed offset for the true total (provisioner.py:292-294).
+                total_bytes = None
+                _cl = response.headers.get("content-length")
+                if _cl:
+                    try:
+                        total_bytes = resumed_from + int(_cl)
+                    except (TypeError, ValueError):
+                        total_bytes = None
+
+                # Incremental SHA-256: on resume, seed the hasher with the
+                # partial's bytes so the final digest covers the WHOLE file —
+                # ported inline from agent/stage/provisioner.py
+                # (_hash_file_partial + the _stream_download seeding at :302-303).
+                hasher = hashlib.sha256() if expected_sha else None
+                if hasher is not None and resumed_from > 0:
+                    remaining = resumed_from
+                    with open(temp_path, "rb") as pf:
+                        while remaining > 0:
+                            piece = pf.read(min(_DOWNLOAD_CHUNK_SIZE, remaining))
+                            if not piece:
+                                break
+                            hasher.update(piece)
+                            remaining -= len(piece)
 
                 # Hard cap — guards against runaway/malicious responses that a CDN
                 # redirect could return after the Content-Length header has already
                 # been consumed. Legitimate model files are rarely above 15 GB;
                 # this limit preserves disk headroom. (Cycle 31 fix; constant Cycle 44)
-                with open(temp_path, "wb") as f:
+                # C-R12: `downloaded` starts at the resumed offset so the cap
+                # counts resumed bytes + new bytes.
+                downloaded = resumed_from
+                with open(temp_path, "ab" if resumed_from > 0 else "wb") as f:
                     for chunk in response.iter_bytes(chunk_size=_DOWNLOAD_CHUNK_SIZE):
                         f.write(chunk)
+                        if hasher is not None:
+                            hasher.update(chunk)
                         downloaded += len(chunk)
                         if downloaded > _MAX_DOWNLOAD_BYTES:
                             raise RuntimeError(
                                 f"Download aborted: file exceeds the 20 GB safety limit "
                                 f"({downloaded / 1024**3:.1f} GB downloaded so far)."
                             )
+                        # ~1 MB chunks — per-chunk reporting is already periodic.
+                        progress.report(
+                            downloaded, total_bytes,
+                            f"Downloading {filename} — {downloaded / 1024**2:.0f} MB",
+                        )
                 elapsed = time.time() - start_time
                 log.info(
                     "Downloaded '%s' — %.1f MB in %.1fs (%.1f MB/s)",
                     filename,
                     downloaded / 1024 / 1024,
                     elapsed,
-                    (downloaded / 1024 / 1024) / max(elapsed, 0.001),
+                    ((downloaded - resumed_from) / 1024 / 1024) / max(elapsed, 0.001),
                 )
                 break  # Download complete
         else:
@@ -806,21 +879,28 @@ def _handle_download_model(tool_input: dict) -> str:
                 "url": url,
             })
 
-        # Optional integrity check before promoting the temp file to its final name.
-        expected_sha = (tool_input.get("expected_sha256") or "").strip()
-        if expected_sha:
-            sha_err = _verify_sha256(temp_path, expected_sha)
-            if sha_err:
+        # Optional integrity check before promoting the temp file to its final
+        # name. The hasher was fed incrementally (seeded from the partial on a
+        # resume), so the digest covers the whole file without a second read.
+        if hasher is not None:
+            actual = hasher.hexdigest().lower()
+            if actual != expected_sha.lower():
                 temp_path.unlink(missing_ok=True)
-                return to_json({"error": sha_err, "url": url})
+                return to_json({
+                    "error": (
+                        f"SHA-256 mismatch: expected {expected_sha}, got {actual} — the "
+                        f"downloaded file does not match the expected hash; discarded."
+                    ),
+                    "url": url,
+                })
 
         # Rename temp to final
         temp_path.rename(target)
         elapsed = time.time() - start_time
         size_gb = downloaded / (1024 ** 3)
-        speed_mbps = (downloaded / (1024 ** 2)) / max(elapsed, 0.1)
+        speed_mbps = ((downloaded - resumed_from) / (1024 ** 2)) / max(elapsed, 0.1)
 
-        return to_json({
+        result = {
             "downloaded": filename,
             "path": str(target),
             "model_type": model_type,
@@ -832,14 +912,23 @@ def _handle_download_model(tool_input: dict) -> str:
                 f"Restart ComfyUI (or refresh its model list) for it to appear in the "
                 f"*_name dropdowns -- newly downloaded files are not picked up automatically."
             ),
-        })
+        }
+        if resumed_from > 0:
+            result["resumed_from_bytes"] = resumed_from
+        return to_json(result)
 
     except httpx.TimeoutException:
-        if temp_path.exists():
-            temp_path.unlink(missing_ok=True)
+        # C-R12: transient failure — KEEP the partial so the next attempt
+        # resumes from it with a Range request instead of restarting.
         return to_json({
             "error": "Download timed out. The file may be very large.",
-            "hint": "Try again or download manually.",
+            "hint": "Re-call download_model — it resumes from the partial file.",
+        })
+    except httpx.ConnectError as e:
+        # C-R12: transient failure — KEEP the partial (resume on retry).
+        return to_json({
+            "error": f"Connection failed during download: {e}",
+            "hint": "Re-call download_model — it resumes from the partial file.",
         })
     except Exception as e:
         if temp_path.exists():
@@ -1196,13 +1285,17 @@ def _handle_reconfigure_workflow(tool_input: dict) -> str:
 # ---------------------------------------------------------------------------
 
 
-def handle(name: str, tool_input: dict) -> str:
+def handle(
+    name: str,
+    tool_input: dict,
+    progress: "ProgressCallback | None" = None,
+) -> str:
     """Execute a provisioning tool call."""
     try:
         if name == "install_node_pack":
             return _handle_install_node_pack(tool_input)
         elif name == "download_model":
-            return _handle_download_model(tool_input)
+            return _handle_download_model(tool_input, progress=progress)
         elif name == "uninstall_node_pack":
             return _handle_uninstall_node_pack(tool_input)
         elif name == "repair_workflow":

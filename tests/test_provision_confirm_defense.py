@@ -39,6 +39,11 @@ def test_download_requires_confirm_at_handler_level():
             )
         )
     assert result.get("status") == "needs_confirmation", result
+    # C-R12 informed confirm: the payload identifies the action from LOCAL
+    # data only (no pre-confirm network probe — stream stays uncalled).
+    assert result.get("host") == "huggingface.co", result
+    assert result.get("destination", "").endswith("example.safetensors"), result
+    assert result.get("model_type") == "checkpoints", result
     stream.assert_not_called()
 
 
