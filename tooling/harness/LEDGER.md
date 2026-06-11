@@ -423,6 +423,62 @@ L-MISC     mixed bag:
             per-poll <5 ms → 0.3 ms ✓ · cold import ≈200 ms → ~195 ms ✓.
     push    NOT pushed — RED tier, awaiting Joe's word. 9 commits f9d1465..ea7237f.
 
+[2026-06-11] H4 · Confirmation · C-R10 + C-R12 FIXED — persistence wave BUILT · verified_by V1 ·
+            branch fix/h4-persistence @ eb798d3 (worktree G:\Comfy-Cozy-h4, base master 3a939bc) ·
+            3 commits: 0060c6e (C-R10a+CANON) · 003fc10 (C-R10b) · eb798d3 (C-R12, incl. the
+            cross-group metrics-test fix: __name__-less test-double tolerance in the dispatcher)
+    C-R10a  experience JSONL: append_to() writes ONE fsync'd line per run (probe: 407 B/run,
+            O(1)) instead of the full-snapshot rewrite (10.9 MB/run); save() gains fsync and
+            doubles as compaction every max_chunks appends (file bounded ~2x max_chunks; load()
+            already truncates). quality.source / is_rule_era / exclude_rule_era round-trip
+            verified. Torn-tail appends are safe (load skips malformed lines — pre-existing).
+    C-R10b  NIM warm-state: _STATE_LOCK spans read-prune-rewrite (probe: 4 threads x 10 writes
+            = 40/40 records, lost-update closed); prune via the existing WARM_MAX_AGE_S
+            predicate, WRITE PATH ONLY (read-purity pin tests/manual/test_nim_lifecycle_unit.py
+            :136-147 green unmodified); flush+fsync before os.replace (session.py:286-288
+            pattern); transient read failure now RAISES instead of silently truncating history
+            (the un-ledgered wipe hazard found by scout). 5 new write-path tests.
+    CANON-EXPFILE  RESOLVED. Real fork was autonomous.py:38 (~/.comfy-cozy) vs config.py:210
+            (~/ComfyUI) — the ledger's "config.py:161 and :210" loci were WRONG (161 is
+            COMFYUI_DATABASE). Canon: agent/config.py EXPERIENCE_FILE is THE constant;
+            cognitive resolves lazily via _default_experience_file() with the fallback ALIGNED
+            to ~/ComfyUI (no agent.* import — boundary held); create_default_pipeline(
+            experience_path=None) + AutonomousPipeline carries the path (save/load asymmetry
+            closed); session_context injects str(EXPERIENCE_FILE); drift-stopper test pins
+            convergence. supersedes [autonomous.py import-time constant ; pipeline/__init__
+            EXPERIENCE_FILE re-export (dropped, zero external importers)].
+            Residual (documented): COMFYUI_DATABASE="" (empty string) still diverges
+            (config Path("") vs resolver or-fallback) — pathological, not scheduled.
+    C-R12   download_model: Range resume from the .download partial (header rides every hop of
+            the re-validated redirect walk; 206 appends with the SHA hasher seeded from the
+            partial — provisioner.py:271-359 pattern ported inline, frozen path untouched; 200
+            restarts; 20 GB cap counts offset+new). Transient failures (Timeout/ConnectError)
+            KEEP the partial; security/integrity failures still unlink. Progress emitted per
+            1 MB chunk via ProgressReporter (schema promise now true). Informed confirm with
+            ZERO pre-consent network: host/destination/model_type/resume state in the payload;
+            exists-check hoisted above the gate. DESIGN TRADEOFF: no pre-confirm size probe —
+            the no-network-before-consent pin (test_provision_confirm_defense
+            stream.assert_not_called) outranks informed-size; size surfaces via progress
+            post-approval. Dispatcher: signature-aware progress forwarding (per-module cache,
+            tolerates __name__-less test doubles) replaces try/except-TypeError — the
+            re-execution hazard (a TypeError from INSIDE a confirmed download would have
+            re-run the full fetch) is gone. ESCALATE auto-block now echoes safe identifying
+            inputs (url/filename/name, 120-char cap); "auto-blocked" pin intact.
+    suite   4492 passed / 0 failed x2 on the identical final tree (master baseline 4464; +28 net
+            new tests incl. 13 download-resume, 5 nim write-path, 5 append_to, 3 canon).
+            Scoped ruff clean. Freeze: git diff master -- agent/stage/ EMPTY.
+    test-pollution fix  the suite previously WROTE THE DEVELOPER'S REAL experience store on
+            every run (~56 pipeline.run() sites, scout finding) — autouse _isolate_experience_file
+            fixture redirects the resolver to tmp_path; canon test opts out via an import-time
+            real-function reference.
+    leads   L-VERIFYSHA (V0, code-read): _verify_sha256 comfy_provision.py:243 orphaned by the
+            incremental hasher — delete or re-point in H5 docs/cleanup pass, probe-first rule
+            applies. L-CONFIRM-ENVDEP (V0): test_provision_confirm_defense destination assert
+            depends on the real MODELS_DIR not containing example.safetensors (pre-existing
+            pattern, now slightly extended; hermetic twins exist in test_download_resume.py).
+    push    NOT pushed — RED tier; H2's "push it" word covered PR #66 only. Awaiting Joe's word
+            for fix/h4-persistence.
+
 [2026-06-10] H2-DEADEND · DeadEnd · reflexive `git stash` in the FORGE worktree mid-CRUCIBLE
             stashed the uncommitted test realignments and invalidated an in-flight suite run ·
             caught same-minute, `git stash pop` restored the identical 7-file diff, realignments
