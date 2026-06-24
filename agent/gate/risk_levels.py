@@ -111,6 +111,9 @@ TOOL_RISK_LEVELS: dict[str, RiskLevel] = {
     "check_subtasks": RiskLevel.READ_ONLY,
     # Ping
     "comfyui_agent_ping": RiskLevel.READ_ONLY,
+    # Model swap (LLM provider/model selection)
+    "list_models_available": RiskLevel.READ_ONLY,
+    "swap_model": RiskLevel.REVERSIBLE,  # changes the reasoning model; reversible via swap_model
     # Calibration / meta reads
     "classify_intent": RiskLevel.READ_ONLY,
     "get_calibration_stats": RiskLevel.READ_ONLY,
