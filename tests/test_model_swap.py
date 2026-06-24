@@ -210,3 +210,29 @@ class TestSwapModelTool:
 
         assert "swap_model" in _HANDLERS
         assert "list_models_available" in _HANDLERS
+
+
+# ---------------------------------------------------------------------------
+# Provider-aware context window (Nemotron's ~1M, opt-in)
+# ---------------------------------------------------------------------------
+
+
+class TestProviderAwareContext:
+    def test_default_unchanged_for_anthropic(self):
+        config.LLM_PROVIDER = "anthropic"
+        assert config.effective_compact_threshold() == config.COMPACT_THRESHOLD
+
+    def test_nvidia_without_window_uses_default(self):
+        with patch.object(config, "NVIDIA_CONTEXT_WINDOW", None):
+            assert config.effective_compact_threshold("nvidia") == config.COMPACT_THRESHOLD
+
+    def test_nvidia_with_window_opts_in(self):
+        with patch.object(config, "NVIDIA_CONTEXT_WINDOW", 900_000):
+            assert config.effective_compact_threshold("nvidia") == 900_000
+            # other providers stay on the default window
+            assert config.effective_compact_threshold("anthropic") == config.COMPACT_THRESHOLD
+
+    def test_reads_provider_dynamically_after_swap(self):
+        with patch.object(config, "NVIDIA_CONTEXT_WINDOW", 500_000):
+            config.LLM_PROVIDER = "nvidia"  # simulate a swap
+            assert config.effective_compact_threshold() == 500_000
