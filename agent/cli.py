@@ -107,7 +107,7 @@ def run(
     if model or provider:
         from .llm.swap import swap
         try:
-            info = swap(model=model, provider=provider)
+            info = swap(model=model, provider=provider, probe=True)
         except Exception as e:
             console.print(f"[red]Model swap failed: {e}[/red]")
             raise typer.Exit(1)
