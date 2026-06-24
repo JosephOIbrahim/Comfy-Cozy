@@ -59,6 +59,7 @@ def handle(name: str, tool_input: dict) -> str:
                 alias=tool_input.get("alias"),
                 provider=tool_input.get("provider"),
                 model=tool_input.get("model"),
+                probe=True,  # live-check the key so a bad one rolls back, not mid-chat
             )
         except Exception as e:
             return to_json({"error": str(e)})

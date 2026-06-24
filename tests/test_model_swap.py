@@ -102,6 +102,41 @@ class TestSwap:
         with pytest.raises(ValueError, match="requires a model"):
             swap()
 
+    def test_probe_rolls_back_on_bad_key(self):
+        """probe=True: a provider whose create() 401s rolls back to the prior model."""
+        from agent.llm._types import LLMAuthError
+
+        config.LLM_PROVIDER = "nvidia"
+        config.AGENT_MODEL = "nvidia/nemotron-3-super-120b-a12b"
+        bad = MagicMock()
+        bad.create.side_effect = LLMAuthError("401 bad key")
+        with patch("agent.llm.swap.get_provider", return_value=bad):
+            with pytest.raises(LLMAuthError):
+                swap(alias="claude", probe=True)
+        # restored to the working provider/model — not left on broken claude
+        assert config.LLM_PROVIDER == "nvidia"
+        assert config.AGENT_MODEL == "nvidia/nemotron-3-super-120b-a12b"
+
+    def test_probe_passes_when_key_works(self):
+        config.LLM_PROVIDER = "nvidia"
+        good = MagicMock()
+        good.create.return_value = LLMResponse(
+            content=[TextBlock(text="hi")], stop_reason="end_turn"
+        )
+        with patch("agent.llm.swap.get_provider", return_value=good):
+            result = swap(alias="claude", probe=True)
+        assert result == {"provider": "anthropic", "model": "claude-opus-4-7"}
+        assert config.LLM_PROVIDER == "anthropic"
+        good.create.assert_called_once()  # the live probe ran
+
+    def test_no_probe_skips_live_call(self):
+        """Default probe=False does NOT make a live call (cheap programmatic swaps)."""
+        config.LLM_PROVIDER = "nvidia"
+        prov = MagicMock()
+        with patch("agent.llm.swap.get_provider", return_value=prov):
+            swap(alias="claude")
+        prov.create.assert_not_called()
+
     def test_rollback_on_unknown_provider(self):
         config.LLM_PROVIDER = "anthropic"
         config.AGENT_MODEL = "claude-opus-4-7"

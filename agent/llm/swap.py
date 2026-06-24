@@ -82,12 +82,18 @@ def swap(
     provider: str | None = None,
     alias: str | None = None,
     also_vision: bool = False,
+    probe: bool = False,
 ) -> dict:
     """Swap the agent-loop model/provider at runtime. Returns {provider, model}.
 
     Atomic: on any failure (bad key, unreachable endpoint, unknown provider) the
     prior config is restored and the error re-raised, so the session is never
     left pointing at a broken provider.
+
+    probe=True does a live 1-token call to confirm the key/endpoint actually
+    work — so a bad key rolls back HERE (restoring the working model) instead of
+    erroring on the user's next message. User-facing swaps (the swap_model tool,
+    `--model`/`--provider` flags) pass probe=True; it costs one tiny call.
     """
     from .. import config
 
@@ -110,7 +116,16 @@ def swap(
                 config.VISION_MODEL = model
             _clear_cache_locked()
             _reset_brain()
-        get_provider(provider)  # eager validation — raises on bad provider/key
+        prov = get_provider(provider)  # construct (catches unknown provider / missing SDK)
+        if probe:
+            # SDKs construct lazily, so construction alone never catches a bad
+            # key. A minimal live call does — and the except below rolls back.
+            prov.create(
+                model=model,
+                max_tokens=4,
+                system="",
+                messages=[{"role": "user", "content": "hi"}],
+            )
     except Exception:
         config.LLM_PROVIDER, config.AGENT_MODEL, config.VISION_MODEL = snapshot
         with _provider_lock:
