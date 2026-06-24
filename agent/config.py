@@ -12,7 +12,7 @@ from dotenv import load_dotenv
 _PROJECT_ROOT = Path(__file__).parent.parent
 load_dotenv(_PROJECT_ROOT / ".env", override=True)
 
-# LLM Provider selection — anthropic (default), openai, gemini, ollama
+# LLM Provider selection — anthropic (default), openai, gemini, ollama, nvidia
 LLM_PROVIDER = os.getenv("LLM_PROVIDER", "anthropic")
 
 # Provider API keys
@@ -20,6 +20,27 @@ ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1")
+
+# NVIDIA / Nemotron (OpenAI-compatible reasoning LLM). Endpoint-agnostic — one
+# provider serves NVIDIA NIM cloud, OpenRouter, Ollama cloud, and self-hosted
+# vLLM/SGLang/NIM. Pick the endpoint via NVIDIA_BASE_URL; the model id selects
+# the backend model. See tooling/harness/PRD_model_swap.md §2.2 (endpoint gate).
+#   NVIDIA NIM cloud:  https://integrate.api.nvidia.com/v1   (NVIDIA_API_KEY=nvapi-...)
+#   OpenRouter:        https://openrouter.ai/api/v1          (NVIDIA_API_KEY=<openrouter key>)
+#   self-hosted:       http://<host>:8000/v1                 (key optional)
+NVIDIA_BASE_URL = os.getenv("NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1")
+NVIDIA_API_KEY = os.getenv("NVIDIA_API_KEY")
+# Nemotron streams <think>...</think> as plain content. Default OFF: inject a
+# 'detailed thinking off' directive + strip any leaked <think> from stream and
+# the returned block. Set true to request reasoning ON and surface it.
+NVIDIA_EMIT_REASONING = os.getenv("NVIDIA_EMIT_REASONING", "false").lower() in ("1", "true", "yes")
+# OpenRouter key (alias for an OpenRouter-hosted NVIDIA_BASE_URL; falls back to NVIDIA_API_KEY).
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+
+# Vision is DECOUPLED from the agent-loop provider: analyze_image / compare_outputs
+# need a MULTIMODAL provider + key even when AGENT_MODEL is a text-only Nemotron.
+# Defaults to anthropic so swapping the agent loop never breaks the brain's vision.
+VISION_PROVIDER = os.getenv("VISION_PROVIDER", "anthropic")
 
 # API-key validation is deferred to a callable (T5 from the 5x review).
 # Pre-fix this printed at import time, leaking the warning into every
@@ -83,12 +104,15 @@ _DEFAULT_AGENT_MODELS = {
     "openai": "gpt-4o",
     "gemini": "gemini-2.5-flash",
     "ollama": "llama3.1",
+    # id verified live via GET /v1/models on integrate.api.nvidia.com (2026-06-24)
+    "nvidia": "nvidia/nemotron-3-super-120b-a12b",
 }
 _DEFAULT_FAST_MODELS = {
     "anthropic": "claude-haiku-4-5-20251001",
     "openai": "gpt-4o-mini",
     "gemini": "gemini-2.5-flash",
     "ollama": "llama3.1",
+    "nvidia": "nvidia/nemotron-3-nano-30b-a3b",
 }
 AGENT_MODEL = os.getenv(
     "AGENT_MODEL",
@@ -120,7 +144,27 @@ VISION_THINKING_BUDGET = int(os.getenv("VISION_THINKING_BUDGET", "2000"))
 THINKING_EFFORT = os.getenv("THINKING_EFFORT", "high")
 
 # Context management
-COMPACT_THRESHOLD = 120_000  # tokens — start compacting at this level
+COMPACT_THRESHOLD = int(os.getenv("COMPACT_THRESHOLD", "120000"))  # tokens — compact at this level
+# Optional larger compaction window for a large-context provider (e.g. Nemotron's
+# ~1M). Unset (0) => the provider uses COMPACT_THRESHOLD, so Claude/others are
+# unchanged. Set this to let a long-context Nemotron use its window instead of
+# being throttled to the small default. Kept opt-in (not auto-1M) because a
+# self-hosted nvidia endpoint may be a small-context model.
+NVIDIA_CONTEXT_WINDOW = int(os.getenv("NVIDIA_CONTEXT_WINDOW", "0")) or None
+
+
+def effective_compact_threshold(provider: str | None = None) -> int:
+    """Compaction threshold for the active (or given) LLM provider.
+
+    Defaults to COMPACT_THRESHOLD for every provider (Claude behavior unchanged).
+    When NVIDIA_CONTEXT_WINDOW is set and the provider is nvidia, returns that
+    larger window. Reads LLM_PROVIDER dynamically so a runtime model swap is
+    honored.
+    """
+    prov = (provider or LLM_PROVIDER).lower().strip()
+    if prov == "nvidia" and NVIDIA_CONTEXT_WINDOW:
+        return NVIDIA_CONTEXT_WINDOW
+    return COMPACT_THRESHOLD
 
 # API resilience
 API_MAX_RETRIES = 3

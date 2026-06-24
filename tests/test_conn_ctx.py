@@ -373,7 +373,7 @@ class TestCLISessionContextvar:
         with patch("agent.cli.session_tools") as mock_session_tools, \
              patch("agent.main.run_interactive", side_effect=_capture_session), \
              patch("agent.main.create_client", return_value=MagicMock()), \
-             patch("agent.cli.ANTHROPIC_API_KEY", "sk-test"), \
+             patch("agent.config.ANTHROPIC_API_KEY", "sk-test"), \
              patch("agent.cli.signal.signal"), \
              patch("agent.cli.atexit.register"):
             mock_session_tools.handle.return_value = '{"saved_at": "now"}'
@@ -404,7 +404,7 @@ class TestCLISessionContextvar:
         runner = CliRunner()
         with patch("agent.main.run_interactive", side_effect=_capture_session), \
              patch("agent.main.create_client", return_value=MagicMock()), \
-             patch("agent.cli.ANTHROPIC_API_KEY", "sk-test"), \
+             patch("agent.config.ANTHROPIC_API_KEY", "sk-test"), \
              patch("agent.cli.signal.signal"), \
              patch("agent.cli.atexit.register"):
             result = runner.invoke(app, ["run"])
@@ -425,7 +425,7 @@ class TestCLISessionContextvar:
         runner = CliRunner()
         with patch("agent.main.run_interactive", return_value=None), \
              patch("agent.main.create_client", return_value=MagicMock()), \
-             patch("agent.cli.ANTHROPIC_API_KEY", "sk-test"), \
+             patch("agent.config.ANTHROPIC_API_KEY", "sk-test"), \
              patch("agent.cli.signal.signal"), \
              patch("agent.cli.atexit.register"):
             runner.invoke(app, ["run", "--session", "cleanup_test"])
@@ -478,7 +478,7 @@ class TestCLISessionContextvar:
         with patch("agent.cli.session_tools") as mock_session_tools, \
              patch("agent.main.run_interactive", return_value=None), \
              patch("agent.main.create_client", return_value=MagicMock()), \
-             patch("agent.cli.ANTHROPIC_API_KEY", "sk-test"), \
+             patch("agent.config.ANTHROPIC_API_KEY", "sk-test"), \
              patch("agent.cli.signal.signal"), \
              patch("agent.cli.atexit.register"):
             mock_session_tools.handle.side_effect = _capture_session_tools_handle
@@ -529,7 +529,7 @@ class TestCLISessionContextvar:
         with patch("agent.cli.session_tools") as mock_session_tools, \
              patch("agent.main.run_interactive", return_value=None), \
              patch("agent.main.create_client", return_value=MagicMock()), \
-             patch("agent.cli.ANTHROPIC_API_KEY", "sk-test"), \
+             patch("agent.config.ANTHROPIC_API_KEY", "sk-test"), \
              patch("agent.cli.signal.signal"), \
              patch("agent.cli.atexit.register"):
             mock_session_tools.handle.side_effect = _capture_handle

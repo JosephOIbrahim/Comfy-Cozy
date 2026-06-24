@@ -13,9 +13,10 @@ import logging
 import threading
 import time
 
+from . import config
 from .config import (
-    AGENT_MODEL, MAX_TOKENS, MAX_AGENT_TURNS,
-    COMPACT_THRESHOLD, API_MAX_RETRIES, API_RETRY_DELAY,
+    MAX_TOKENS, MAX_AGENT_TURNS,
+    API_MAX_RETRIES, API_RETRY_DELAY,
     THINKING_BUDGET,
 )
 from .context import compact, mask_processed_results
@@ -208,13 +209,13 @@ def run_agent_turn(
 
     # Mask processed tool results, then compact if still over budget
     messages = mask_processed_results(messages)
-    messages = compact(messages, COMPACT_THRESHOLD)
+    messages = compact(messages, config.effective_compact_threshold())
 
     t0 = time.monotonic()
 
     response = _stream_with_retry(
         client,
-        model=AGENT_MODEL,
+        model=config.AGENT_MODEL,  # read dynamically so a runtime swap is honored
         max_tokens=MAX_TOKENS,
         system=system,
         tools=ALL_TOOLS,
@@ -353,6 +354,11 @@ def run_interactive(
         turns = 0
         while turns < MAX_AGENT_TURNS:
             turns += 1
+            # Re-resolve the provider each turn so a runtime model swap
+            # (swap_model tool / --model flag) reaches the live stream. Cheap
+            # cache hit when unchanged; returns the new provider after a swap
+            # clears the per-name cache.
+            client = get_provider()
             try:
                 messages, done = run_agent_turn(
                     client,

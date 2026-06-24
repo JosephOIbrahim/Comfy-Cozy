@@ -206,6 +206,9 @@ class TestToolRegistry:
             "nim_preflight",
             "nim_run",
             "nim_state",
+            # Model swap
+            "swap_model",
+            "list_models_available",
         }
         assert expected == names, (
             f"Tool mismatch!\n"
@@ -214,7 +217,7 @@ class TestToolRegistry:
         )
 
     def test_total_tool_count(self):
-        assert len(ALL_TOOLS) == 129, f"Expected 129 tools, got {len(ALL_TOOLS)}"
+        assert len(ALL_TOOLS) == 131, f"Expected 131 tools, got {len(ALL_TOOLS)}"
 
     def test_brain_tool_error_returns_json(self):
         """Brain tool exceptions should be caught and returned as JSON errors."""

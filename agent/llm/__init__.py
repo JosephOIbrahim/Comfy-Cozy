@@ -5,7 +5,7 @@ Usage:
     provider = get_provider()  # Uses LLM_PROVIDER env var
     response = provider.stream(model=..., ...)
 
-Supported providers: anthropic, openai, gemini, ollama.
+Supported providers: anthropic, openai, gemini, ollama, nvidia.
 """
 
 from __future__ import annotations
@@ -36,6 +36,7 @@ log = logging.getLogger(__name__)
 
 __all__ = [
     "get_provider",
+    "clear_provider_cache",
     "DEFAULT_MODELS",
     "LLMProvider",
     "LLMResponse",
@@ -112,8 +113,26 @@ def _create_provider(name: str) -> LLMProvider:
         from ._ollama import OllamaProvider
         return OllamaProvider()
 
+    elif name == "nvidia":
+        from ._nvidia import NvidiaProvider
+        return NvidiaProvider()
+
     else:
         raise ValueError(
             f"Unknown LLM provider: {name!r}. "
-            f"Supported: anthropic, openai, gemini, ollama"
+            f"Supported: anthropic, openai, gemini, ollama, nvidia"
         )
+
+
+def clear_provider_cache(name: str | None = None) -> None:
+    """Drop cached provider instance(s).
+
+    Required after a runtime provider swap: get_provider() caches per provider
+    NAME and never self-invalidates on env/config change, so a swap must clear
+    the cache for the new provider to be constructed on the next call.
+    """
+    with _provider_lock:
+        if name is None:
+            _provider_cache.clear()
+        else:
+            _provider_cache.pop(name.lower().strip(), None)
