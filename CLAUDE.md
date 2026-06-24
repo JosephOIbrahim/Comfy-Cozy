@@ -59,7 +59,7 @@ ruff format agent/ tests/                  # Format
 14. Never generate entire workflows from scratch. Make surgical, validated modifications.
 15. Every patch is validated before application. No exceptions.
 
-## Tool Overview (129 dispatched tools: 80 intelligence + 22 stage (lazy, importer-side) via `_HANDLERS`; 27 brain via `_BRAIN_TOOL_NAMES` (lazy, BrainAgent SDK auto-register))
+## Tool Overview (131 dispatched tools: 82 intelligence + 22 stage (lazy, importer-side) via `_HANDLERS`; 27 brain via `_BRAIN_TOOL_NAMES` (lazy, BrainAgent SDK auto-register))
 
 | Category | Tools |
 |----------|-------|
@@ -85,6 +85,24 @@ ruff format agent/ tests/                  # Format
 | **Intent** | `capture_intent`, `get_current_intent` |
 | **Iteration** | `start_iteration_tracking`, `record_iteration_step`, `finalize_iterations` |
 | **Metadata** | `write_image_metadata`, `read_image_metadata`, `reconstruct_context` |
+| **Models** | `swap_model`, `list_models_available` |
+
+### LLM providers (the reasoning brain)
+
+`LLM_PROVIDER` selects the agent's brain; swap at launch with `agent run --model <alias>`/`--provider`,
+or in conversation via `swap_model`. **NVIDIA Nemotron** is OpenAI-compatible and endpoint-agnostic.
+
+| Provider | Key | Base URL | Tool-calling | Vision |
+|----------|-----|----------|--------------|--------|
+| `anthropic` (default) | `ANTHROPIC_API_KEY` | SDK default | yes | yes |
+| `openai` | `OPENAI_API_KEY` | SDK default | yes | yes |
+| `gemini` | `GEMINI_API_KEY` | SDK default | yes | yes |
+| `ollama` | — | `OLLAMA_BASE_URL` | model-dependent | model-dependent |
+| `nvidia` | `NVIDIA_API_KEY` | `NVIDIA_BASE_URL` (NIM cloud / OpenRouter / self-hosted vLLM) | model-dependent | no (text) |
+
+**Vision is decoupled** (`VISION_PROVIDER`, default `anthropic`): swapping the agent loop to a text-only
+Nemotron never moves `analyze_image`, so `ANTHROPIC_API_KEY` stays required for vision. Under `agent mcp`
+the **host** (Claude Code) owns the chat model; `swap_model` only affects the CLI loop + brain/vision.
 
 ## Artistic Intent Translation
 

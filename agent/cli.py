@@ -12,7 +12,7 @@ from rich.panel import Panel
 from rich.table import Table
 
 from ._conn_ctx import current_conn_session
-from .config import AGENT_MODEL, COMFYUI_URL, COMFYUI_DATABASE, ANTHROPIC_API_KEY, LOG_DIR
+from .config import COMFYUI_URL, COMFYUI_DATABASE, LOG_DIR
 from .logging_config import setup_logging
 from .streaming import NullHandler
 from .tools import comfy_inspect, comfy_discover, session_tools
@@ -79,21 +79,42 @@ def run(
         False, "--verbose", "-v",
         help="Show debug logging (API timing, tool execution, context management)",
     ),
+    model: str = typer.Option(
+        None, "--model",
+        help="Model alias or id to use (e.g. 'nemotron', 'claude'). See list_models_available.",
+    ),
+    provider: str = typer.Option(
+        None, "--provider",
+        help="LLM provider: anthropic|openai|gemini|ollama|nvidia",
+    ),
 ):
     """Start an interactive agent session.
 
     Examples:
       agent run                       # ephemeral session, no memory
       agent run --session portrait    # named session, remembers across calls
+      agent run --model nemotron      # swap the reasoning model at launch
       agent run -v                    # verbose: API timing + tool tracing
     """
+    from . import config
+
     # Configure logging
     setup_logging(
         level=logging.DEBUG if verbose else logging.WARNING,
         log_file=LOG_DIR / "agent.log",
     )
-    # Validate API key
-    if not ANTHROPIC_API_KEY:
+    # Apply a launch-time model/provider swap before validating credentials.
+    if model or provider:
+        from .llm.swap import swap
+        try:
+            info = swap(model=model, provider=provider)
+        except Exception as e:
+            console.print(f"[red]Model swap failed: {e}[/red]")
+            raise typer.Exit(1)
+        console.print(f"[dim]LLM: {info['provider']} / {info['model']}[/dim]")
+
+    # Validate credentials for the EFFECTIVE provider (post-swap).
+    if config.LLM_PROVIDER == "anthropic" and not config.ANTHROPIC_API_KEY:
         console.print(
             "[red]ANTHROPIC_API_KEY not set.[/red]\n"
             "Setup steps:\n"
@@ -102,11 +123,22 @@ def run(
             "  3. Add: ANTHROPIC_API_KEY=sk-ant-...\n"
         )
         raise typer.Exit(1)
+    if (
+        config.LLM_PROVIDER == "nvidia"
+        and not config.NVIDIA_API_KEY
+        and "integrate.api.nvidia.com" in config.NVIDIA_BASE_URL
+    ):
+        console.print(
+            "[red]NVIDIA_API_KEY not set[/red] — required for NVIDIA NIM cloud "
+            f"({config.NVIDIA_BASE_URL}). Set it in .env or use --provider with a "
+            "keyless endpoint."
+        )
+        raise typer.Exit(1)
 
-    # Show header
+    # Show header (read the model dynamically — reflects any swap above)
     console.print(Panel.fit(
         f"[bold blue]ComfyUI Agent[/bold blue]\n"
-        f"Model: {AGENT_MODEL}\n"
+        f"Model: {config.LLM_PROVIDER} / {config.AGENT_MODEL}\n"
         f"ComfyUI: {COMFYUI_URL}\n"
         f"Database: {COMFYUI_DATABASE}",
         title="ComfyUI Agent v0.4",
@@ -1002,6 +1034,8 @@ def mcp():
         }
       }
     """
+    import os
+    os.environ["COMFY_COZY_MCP"] = "1"  # swap_model reports the host owns the chat model
     from .mcp_server import main as mcp_main
     mcp_main()
 

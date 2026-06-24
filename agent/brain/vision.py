@@ -207,7 +207,12 @@ class VisionAgent(BrainAgent):
         vision_budget = getattr(self.cfg, "vision_thinking_budget", 0) or 0
 
         try:
-            provider = get_provider()
+            # Vision is decoupled from the agent-loop provider (INV-5): a swap of
+            # the reasoning model to a text-only Nemotron must not repoint
+            # analyze_image. Vision stays on the multimodal VISION_PROVIDER.
+            from .. import config as _agent_config
+
+            provider = get_provider(_agent_config.VISION_PROVIDER)
             response = provider.create(
                 model=vision_model,
                 max_tokens=_VISION_MAX_TOKENS,
