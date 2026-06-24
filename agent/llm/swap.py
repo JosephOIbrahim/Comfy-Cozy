@@ -30,8 +30,12 @@ _KNOWN = ("anthropic", "openai", "gemini", "ollama", "nvidia")
 MODEL_ALIASES: dict[str, tuple[str, str]] = {
     "claude": ("anthropic", "claude-opus-4-7"),
     "claude-fast": ("anthropic", "claude-haiku-4-5-20251001"),
-    # "nemotron": ("nvidia", "<verified-id>"),         # RATIFY: NVIDIA_BASE_URL endpoint
-    # "nemotron-ultra": ("nvidia", "<verified-ultra-id>"),
+    # NVIDIA Nemotron-3 — ids verified live via GET /v1/models on the NIM cloud
+    # endpoint (integrate.api.nvidia.com), 2026-06-24. 'super' is the agentic /
+    # tool-calling default; ultra = max reasoning; nano = fast tier.
+    "nemotron": ("nvidia", "nvidia/nemotron-3-super-120b-a12b"),
+    "nemotron-ultra": ("nvidia", "nvidia/nemotron-3-ultra-550b-a55b"),
+    "nemotron-nano": ("nvidia", "nvidia/nemotron-3-nano-30b-a3b"),
     "gpt-4o": ("openai", "gpt-4o"),
     "gemini": ("gemini", "gemini-2.5-flash"),
     "llama-local": ("ollama", "llama3.1"),

@@ -104,17 +104,15 @@ _DEFAULT_AGENT_MODELS = {
     "openai": "gpt-4o",
     "gemini": "gemini-2.5-flash",
     "ollama": "llama3.1",
-    # "nvidia": "<verified-id>",   # RATIFY: verify the live id (e.g. against
-    #   build.nvidia.com / openrouter.ai) before uncommenting — never ship a
-    #   model id from memory (CLAUDE.md rule #1). Until then LLM_PROVIDER=nvidia
-    #   requires an explicit AGENT_MODEL.
+    # id verified live via GET /v1/models on integrate.api.nvidia.com (2026-06-24)
+    "nvidia": "nvidia/nemotron-3-super-120b-a12b",
 }
 _DEFAULT_FAST_MODELS = {
     "anthropic": "claude-haiku-4-5-20251001",
     "openai": "gpt-4o-mini",
     "gemini": "gemini-2.5-flash",
     "ollama": "llama3.1",
-    # "nvidia": "<verified-fast-id>",   # RATIFY (see _DEFAULT_AGENT_MODELS)
+    "nvidia": "nvidia/nemotron-3-nano-30b-a3b",
 }
 AGENT_MODEL = os.getenv(
     "AGENT_MODEL",

@@ -80,8 +80,12 @@ class TestDotenvOverride:
 
 class TestConfigDefaults:
     def test_default_model(self):
-        from agent.config import AGENT_MODEL
-        assert "claude" in AGENT_MODEL.lower() or "opus" in AGENT_MODEL.lower()
+        # The out-of-the-box default (provider=anthropic, no AGENT_MODEL override)
+        # is a Claude model. Read the default table directly so the test is robust
+        # to a developer .env that sets AGENT_MODEL to another provider's model.
+        from agent.config import _DEFAULT_AGENT_MODELS
+        default = _DEFAULT_AGENT_MODELS["anthropic"]
+        assert "claude" in default.lower() or "opus" in default.lower()
 
     def test_default_comfyui_host(self):
         from agent.config import COMFYUI_HOST
