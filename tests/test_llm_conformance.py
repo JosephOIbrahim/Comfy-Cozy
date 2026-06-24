@@ -92,11 +92,26 @@ def _make_ollama():
         return OllamaProvider()
 
 
+def _make_nvidia():
+    """Build an NvidiaProvider with mocked SDK (OpenAI-compatible)."""
+    with (
+        patch("agent.llm._nvidia.openai") as mock_openai,
+        patch("agent.config.NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1"),
+        patch("agent.config.NVIDIA_API_KEY", "nvapi-test"),
+        patch("agent.config.NVIDIA_EMIT_REASONING", False),
+    ):
+        mock_openai.OpenAI.return_value = MagicMock()
+        from agent.llm._nvidia import NvidiaProvider
+
+        return NvidiaProvider()
+
+
 PROVIDER_FACTORIES = {
     "anthropic": _make_anthropic,
     "openai": _make_openai,
     "gemini": _make_gemini,
     "ollama": _make_ollama,
+    "nvidia": _make_nvidia,
 }
 
 
