@@ -74,7 +74,8 @@ class TestGetProvider:
         assert "openai" in DEFAULT_MODELS
         assert "gemini" in DEFAULT_MODELS
         assert "ollama" in DEFAULT_MODELS
-        assert len(DEFAULT_MODELS) == 4
+        assert "nvidia" in DEFAULT_MODELS
+        assert len(DEFAULT_MODELS) == 5
 
 
 # ======================================================================

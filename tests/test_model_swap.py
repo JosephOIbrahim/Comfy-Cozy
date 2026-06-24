@@ -59,8 +59,9 @@ class TestResolve:
     def test_list_aliases_shape(self):
         al = list_aliases()
         assert al["claude"] == {"provider": "anthropic", "model": "claude-opus-4-7"}
-        # NVIDIA rows stay commented out until ratified
-        assert "nemotron" not in MODEL_ALIASES
+        # NVIDIA Nemotron ids verified live (2026-06-24); aliases now active
+        assert MODEL_ALIASES["nemotron"] == ("nvidia", "nvidia/nemotron-3-super-120b-a12b")
+        assert al["nemotron"] == {"provider": "nvidia", "model": "nvidia/nemotron-3-super-120b-a12b"}
 
 
 # ---------------------------------------------------------------------------
