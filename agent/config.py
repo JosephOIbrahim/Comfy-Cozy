@@ -146,7 +146,27 @@ VISION_THINKING_BUDGET = int(os.getenv("VISION_THINKING_BUDGET", "2000"))
 THINKING_EFFORT = os.getenv("THINKING_EFFORT", "high")
 
 # Context management
-COMPACT_THRESHOLD = 120_000  # tokens — start compacting at this level
+COMPACT_THRESHOLD = int(os.getenv("COMPACT_THRESHOLD", "120000"))  # tokens — compact at this level
+# Optional larger compaction window for a large-context provider (e.g. Nemotron's
+# ~1M). Unset (0) => the provider uses COMPACT_THRESHOLD, so Claude/others are
+# unchanged. Set this to let a long-context Nemotron use its window instead of
+# being throttled to the small default. Kept opt-in (not auto-1M) because a
+# self-hosted nvidia endpoint may be a small-context model.
+NVIDIA_CONTEXT_WINDOW = int(os.getenv("NVIDIA_CONTEXT_WINDOW", "0")) or None
+
+
+def effective_compact_threshold(provider: str | None = None) -> int:
+    """Compaction threshold for the active (or given) LLM provider.
+
+    Defaults to COMPACT_THRESHOLD for every provider (Claude behavior unchanged).
+    When NVIDIA_CONTEXT_WINDOW is set and the provider is nvidia, returns that
+    larger window. Reads LLM_PROVIDER dynamically so a runtime model swap is
+    honored.
+    """
+    prov = (provider or LLM_PROVIDER).lower().strip()
+    if prov == "nvidia" and NVIDIA_CONTEXT_WINDOW:
+        return NVIDIA_CONTEXT_WINDOW
+    return COMPACT_THRESHOLD
 
 # API resilience
 API_MAX_RETRIES = 3

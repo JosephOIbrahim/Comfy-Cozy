@@ -16,7 +16,7 @@ import time
 from . import config
 from .config import (
     MAX_TOKENS, MAX_AGENT_TURNS,
-    COMPACT_THRESHOLD, API_MAX_RETRIES, API_RETRY_DELAY,
+    API_MAX_RETRIES, API_RETRY_DELAY,
     THINKING_BUDGET,
 )
 from .context import compact, mask_processed_results
@@ -209,7 +209,7 @@ def run_agent_turn(
 
     # Mask processed tool results, then compact if still over budget
     messages = mask_processed_results(messages)
-    messages = compact(messages, COMPACT_THRESHOLD)
+    messages = compact(messages, config.effective_compact_threshold())
 
     t0 = time.monotonic()
 
