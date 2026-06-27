@@ -1,83 +1,115 @@
-# Quick Start — ComfyUI Agent for VFX Artists
+# Quick Start — Comfy Cozy
 
-> **What this is:** An AI co-pilot that talks to your ComfyUI installation.
-> Ask it questions in plain English, and it inspects your workflows, finds models,
-> makes changes, and runs generations for you.
+> **Comfy Cozy** is an AI co-pilot for ComfyUI. You describe what you want in
+> plain English; the agent loads workflows, swaps models, tweaks parameters,
+> installs missing nodes, runs generations, and analyzes outputs — you never
+> touch JSON.
+
+This page gets you running in under 2 minutes. For the full walkthrough —
+native sidebar, the optional canvas bridge, architecture — see the
+[README](README.md).
 
 ---
 
-## Setup (5 minutes)
+## Prerequisites
 
-### 1. Prerequisites
+| | What you need | Where to get it |
+|---|---------------|-----------------|
+| 1 | **Python 3.11+** | [python.org/downloads](https://python.org/downloads) |
+| 2 | **ComfyUI running** | [github.com/comfyanonymous/ComfyUI](https://github.com/comfyanonymous/ComfyUI) |
+| 3 | **One LLM backend** | An API key (Anthropic / OpenAI / Google / [NVIDIA](https://build.nvidia.com)) or [Ollama](https://ollama.com) (free, local, no key) |
 
-You need:
-- **Python 3.10+** — check with `python --version`
-- **ComfyUI** running on your machine (the agent talks to it over HTTP)
-- **An Anthropic API key** — get one at [console.anthropic.com](https://console.anthropic.com/)
+---
+
+## Install — four copy-paste steps
+
+### 1. Clone
+
+```bash
+git clone https://github.com/JosephOIbrahim/Comfy-Cozy.git
+cd Comfy-Cozy
+```
 
 ### 2. Install
 
 ```bash
-git clone https://github.com/JosephOIbrahim/comfyui-agent.git
-cd comfyui-agent
 pip install -e .
 ```
 
-### 3. Configure
+One command — no build step, no Docker, no conda. Want the test suite too?
+`pip install -e ".[dev]"`.
+
+### 3. Add your key
 
 ```bash
-copy .env.example .env
+cp .env.example .env
 ```
 
-Open `.env` in a text editor and set:
+Open `.env` and paste your key on the first line:
 
-```
+```bash
 ANTHROPIC_API_KEY=sk-ant-your-key-here
-COMFYUI_DATABASE=G:/path/to/your/ComfyUI
 ```
 
-> **Where's my ComfyUI database?** It's wherever your `models/`, `Custom_Nodes/`,
-> and `output/` folders live. If you're not sure, check your ComfyUI startup script.
+ComfyUI installed somewhere non-default? Add one more line:
 
-### 4. Start everything
+```bash
+COMFYUI_DATABASE=C:/path/to/your/ComfyUI
+```
 
-**Option A — Startup script (recommended):**
+### 4. Go
 
-Edit the paths in `scripts/comfyui_with_agent.bat` to match your setup, then double-click it.
-It starts ComfyUI, waits for it to be ready, then tells you how to connect.
+```bash
+agent run
+```
 
-**Option B — Manual:**
-
-1. Start ComfyUI however you normally do
-2. In a terminal, from the `comfyui-agent` folder:
-   ```
-   agent run
-   ```
-3. Type what you want. Type `quit` to exit.
+Type what you want. Type `quit` when you're done.
 
 ---
 
-## Using with Claude Code (Best Experience)
+## Pick your LLM
 
-The agent works best as an MCP server inside Claude Code. This means Claude
-can use all 77 ComfyUI tools alongside its normal coding abilities.
+Comfy Cozy is provider-agnostic — same tools, same vision analysis. Swap one
+env var in `.env`. The default is **Anthropic (Opus 4.7)**.
 
-### Setup
+```bash
+# --- Anthropic (default — Opus 4.7) ---
+ANTHROPIC_API_KEY=sk-ant-your-key-here
 
-1. Install [Claude Code](https://docs.anthropic.com/en/docs/claude-code)
-2. Open a terminal in the `comfyui-agent` folder
-3. The MCP server is already configured in `.claude/settings.json`
-4. Run `claude` — the agent tools are automatically available
+# --- OpenAI ---
+LLM_PROVIDER=openai
+OPENAI_API_KEY=sk-your-key-here
+AGENT_MODEL=gpt-4o
+# first time only: pip install openai
+
+# --- Google Gemini ---
+LLM_PROVIDER=gemini
+GEMINI_API_KEY=your-key-here
+AGENT_MODEL=gemini-2.5-flash
+# first time only: pip install google-genai
+
+# --- Ollama (fully local, free, no key) ---
+LLM_PROVIDER=ollama
+AGENT_MODEL=llama3.1
+# first time only: ollama pull llama3.1
+
+# --- NVIDIA Nemotron ---
+LLM_PROVIDER=nvidia
+NVIDIA_BASE_URL=https://integrate.api.nvidia.com/v1
+NVIDIA_API_KEY=nvapi-your-key-here
+AGENT_MODEL=nvidia/nemotron-3-super-120b-a12b
+# first time only: pip install openai
+```
+
+Switch models mid-session with the `swap_model` tool, or per launch with
+`agent run --model <alias>`.
 
 ---
 
-## Using with Claude Desktop
+## Use it inside Claude Code or Desktop (MCP)
 
-If you prefer Claude Desktop over Claude Code:
-
-### Setup
-
-Add this to your Claude Desktop MCP config (`%APPDATA%\Claude\claude_desktop_config.json`):
+Comfy Cozy runs as an MCP server, so the assistant drives ComfyUI alongside its
+normal abilities. Add this to your MCP config:
 
 ```json
 {
@@ -85,70 +117,29 @@ Add this to your Claude Desktop MCP config (`%APPDATA%\Claude\claude_desktop_con
     "comfyui-agent": {
       "command": "agent",
       "args": ["mcp"],
-      "cwd": "C:\\Users\\YourName\\comfyui-agent"
+      "cwd": "G:/Comfy-Cozy"
     }
   }
 }
 ```
 
-Change the `cwd` path to wherever you cloned comfyui-agent. Restart Claude Desktop.
-The 77 tools will appear automatically.
+Point `cwd` at wherever you cloned Comfy-Cozy, then restart the host.
 
-### What you can say
+---
 
-Just talk normally. Examples:
+## What you can ask for
+
+The tools cover the whole workflow lifecycle — **discovery** (find models and
+node packs), **editing** (patch parameters, swap models, build nodes),
+**execution** (validate and run with live progress), **vision** (analyze and
+compare outputs), and **provisioning** (install packs, download models). You
+just talk:
 
 - "What models do I have installed?"
-- "Load this workflow and show me the editable fields"
+- "Load my portrait workflow and make it dreamier"
 - "Change the sampler to DPM++ 2M Karras and run it"
-- "Make it dreamier" (lowers CFG, adjusts sampler)
 - "Find me a good LoRA for anime style"
-- "What node pack do I need for IPAdapter?"
 - "Why does this output look oversaturated?"
 
----
-
-## Offline Tools (no API key needed)
-
-Some commands work without an Anthropic key or running ComfyUI:
-
-```bash
-agent inspect              # See what models and nodes you have
-agent parse workflow.json  # Analyze a workflow file
-agent sessions             # See saved sessions
-agent search "controlnet" --nodes   # Search node registry
-```
-
----
-
-## Troubleshooting
-
-| Problem | Fix |
-|---------|-----|
-| "ANTHROPIC_API_KEY not set" | Check your `.env` file exists and has the key |
-| "Could not connect to ComfyUI" | Start ComfyUI first, then the agent |
-| "Node type not found" | Ask: "find missing nodes in this workflow" |
-| Agent is slow | Default model is Sonnet (fast + cheap). Set `AGENT_MODEL=claude-opus-4-6-20250929` in `.env` for higher quality |
-| Wrong ComfyUI path | Set `COMFYUI_DATABASE` in `.env` to your actual ComfyUI folder |
-
----
-
-## What It Won't Do
-
-- **No full workflow generation.** It modifies existing workflows, not creates from scratch.
-- **No replacing ComfyUI's GUI.** It augments your existing workflow.
-- **No model training.** It helps you find and use models, not create them.
-
----
-
-## Folder Structure
-
-```
-comfyui-agent/
-├── agent/          # The AI co-pilot code
-├── sessions/       # Your saved workflow sessions (auto-created)
-├── workflows/      # Starter workflow templates
-├── scripts/        # Utility scripts (startup, validation)
-├── .env            # Your config (API key, paths)
-└── CLAUDE.md       # Full project documentation
-```
+For everything else — the native sidebar panel, the optional canvas bridge, and
+the full provider and architecture notes — see the [README](README.md).

@@ -82,6 +82,8 @@ A separate Pro tier with additional offerings is planned. Details when it's read
 
 ---
 
+> **In a hurry?** The **[Quick Start](QUICKSTART.md)** gets you running in under 2 minutes — install, key, first command, provider options. The full walkthrough is below.
+
 ## Get Running
 
 ```mermaid
