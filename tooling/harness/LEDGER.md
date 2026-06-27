@@ -847,4 +847,65 @@ L-MISC     mixed bag:
             caught same-minute, `git stash pop` restored the identical 7-file diff, realignments
             committed (ea7237f), suite re-run clean. RULE: in a harness worktree, commit before
             any state-mutating git side-step; never run bare `git stash` as a scratch no-op.
+
+[2026-06-27] HARNESS-BOOT · Confirmation · cozy-improve self-improvement harness scaffolded ·
+            verified_by V1 · .claude/workflows/cozy-improve.workflow.js
+    what    A Workflow-tool epoch script that ports SYNAPSE-derived architectural improvements
+            into Comfy-Cozy, one ratcheted human-mergeable branch per item. Fuses SYNAPSE's
+            FORGE 6-phase cycle (Cartographer→Architect→Forge→Crucible→3×Skeptic→Scribe, with
+            builder≠breaker tool boundaries: read-only roles run agentType Explore) with this
+            harness's LEDGER + champion ratchet + cozy_loop durability semantics.
+    ratchet pure JS predicate (sole accept authority): tests≥baseline AND no new failures AND
+            failed≤baseline_failed; ruff clean; bench null→neutral else delta_median AND
+            delta_p95 ≤ NOISE; determinism_ok AND within_blast_radius AND ¬frozen_zone_touch;
+            <2 of 3 skeptics refute. Bench-driven ACCEPTs replicate before champion promotion.
+    safety  agents have NO push/reset/rebase capability; Scribe git verbs = add|commit|tag on
+            forge/<id> only. .githooks/pre-rebase added (COZY_HARNESS-gated); the pre-existing
+            brightline pre-push guard is untouched. Frozen agent/stage/** → RFC-only, surface not halt.
+    note    WAVE=1 epochs run in-tree on a dedicated branch (no worktree) to dodge the
+            editable-install resolution pitfall; worktree isolation engages only at WAVE>1.
+
+[2026-06-27] CANON-CHAMPION · Canonical · single source of champion truth · supersedes: [fork]
+    question  two champion artifacts exist: harness/champion.json (latency baselines, warm-BGE
+              ~50× first-recall win) and tooling/harness/CHAMPION.md (per-track narrative). A
+              third, tooling/harness/champion.json, did NOT exist — risking a silent fork.
+    answer    harness/champion.json is the READ-ONLY latency baseline ORACLE. Architectural-
+              improvement champions live in tooling/harness/champion.json (created this epoch,
+              baseline tests_passed=4540 / tests_baseline_failed=1). The Scribe stage writes
+              ONLY the latter. The CHAMPION.md narrative remains human-readable commentary.
+
+[2026-06-27] L-RECIPE-SYSTEM · Lead · zero-LLM Recipe layer (SYNAPSE routing/recipes port) ·
+            forge-FORBIDDEN until the Cartographer probes it to a Confirmation
+    claim   Comfy-Cozy has no deterministic pre-LLM macro layer. The CLAUDE.md "Artistic Intent
+            Translation" table (8 rows) and agent/knowledge/common_recipes.md (~6 graphs) are
+            de-facto recipe specs the LLM re-derives every turn. SYNAPSE routing/recipes/base.py
+            (Recipe/RecipeStep + $var dataflow) is the missing deterministic producer of the
+            EXISTING agent/schemas/intent/default.yaml IntentSpecification.
+    grounding (V1 seams, this session) set_input(node_id, input_name, value);
+            connect_nodes(from_node, from_output:int, to_node, to_input); add_node(class_type,
+            inputs)→node_id; CLI insertion after agent/main.py:351; @find source =
+            workflow_patch._get_state()["current_workflow"]. Every recipe step routes through
+            tools.handle() so the existing pre_dispatch_check gate vets it — no second gate path.
+    probe   the Cartographer reads these loci + SYNAPSE routing/recipes/base.py and flips this
+            Lead to a Confirmation; epoch-1 then forges agent/recipes/ + apply_recipe + the wire.
+
+[2026-06-27] C-RECIPE-SYSTEM · Confirmation · L-RECIPE-SYSTEM forged + verified · verified_by V1
+            supersedes: [L-RECIPE-SYSTEM] · branch forge/recipe-system-epoch1 (commit pending)
+    built   agent/recipes/{base,builtin,__init__}.py (engine: ParamMutation/ToolStep/$var/@find,
+            never-hard-fail fall-through), agent/tools/recipes_tool.py (apply_recipe + list_recipes
+            MCP tools), registered in agent/tools/__init__.py, classified READ_ONLY in
+            agent/gate/risk_levels.py (dispatcher — inner steps re-enter handle() and self-gate),
+            CLI pre-check wired in agent/main.py behind config.RECIPES_ENABLED (default OFF —
+            purely additive). 7 built-in recipes from the CLAUDE.md intent table + common_recipes.md.
+    gate    reproduce→clean V1: 16 new tests in tests/test_recipes.py (engine + gated MCP surface)
+            all green; FULL suite `pytest -m "not integration"` = 4568 passed / 0 failed / 2 skipped
+            (the one known Windows SIGKILL baseline test did not fire this run); ruff clean on
+            touched files. Tool count 131→133: both assertions updated (test_tools_registry,
+            test_mcp_server) + CLAUDE.md count/table. bench=null (feature port) → ratchet neutral.
+    safety  every recipe step dispatches through tools.handle() so the EXISTING pre_dispatch gate
+            vets it — no second gate path, no bypass. Every change reversible (undo_workflow_patch).
+            Frozen agent/stage/** untouched; moe_dispatcher untouched.
+    ratchet ACCEPT (testsGreen ✓ lintClean ✓ benchOk ✓[null] noRegress ✓ notRefuted ✓). champion
+            track recipe-system promoted (deterministic feature → no replicate needed). PR body at
+            tooling/harness/forge/PR_recipe-system.md. awaiting_human_merge — harness never pushes.
 ```

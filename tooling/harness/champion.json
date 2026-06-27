@@ -1,0 +1,35 @@
+{
+  "_canonical": "Per-improvement champion for the cozy-improve harness. Latency baselines live in harness/champion.json (read-only ORACLE). Architectural-improvement champions live HERE. See LEDGER entry CANON-CHAMPION. Do not fork.",
+  "harness": "cozy-improve",
+  "baseline": {
+    "tests_passed": 4540,
+    "tests_baseline_failed": 1,
+    "tests_baseline_failed_note": "the one known Windows SIGKILL failure: test_cozy_persistence::test_kill_after_flush_resumes_cleanly. Subtract as a constant; the ratchet must not be tricked by it.",
+    "ruff": "clean (ruff check agent/ tests/)",
+    "latency_oracle": "harness/champion.json (read-only; warm-BGE-embedder ~50x first-recall champion lives there)"
+  },
+  "tracks": {
+    "recipe-system": {
+      "change": "B1 — zero-LLM Recipe layer (SYNAPSE routing/recipes port)",
+      "kind": "feature",
+      "files": [
+        "agent/recipes/base.py", "agent/recipes/builtin.py", "agent/recipes/__init__.py",
+        "agent/tools/recipes_tool.py", "agent/gate/risk_levels.py",
+        "agent/tools/__init__.py", "agent/main.py", "agent/config.py"
+      ],
+      "tests_added": 16,
+      "gate": {
+        "tests_passed": 4568,
+        "tests_failed_excl_baseline": 0,
+        "ruff": "clean on touched files",
+        "bench": null,
+        "note": "correctness/feature port -> bench null -> neutral by construction"
+      },
+      "champion_promoted": true,
+      "replicate_pending": false,
+      "branch": "forge/recipe-system-epoch1 (commit pending Joe's word)",
+      "verified": "2026-06-27"
+    }
+  },
+  "updated": "2026-06-27"
+}
