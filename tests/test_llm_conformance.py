@@ -11,9 +11,10 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from agent.llm._base import LLMProvider
+from agent.llm._base import LLMProvider, flatten_system
 from agent.llm._types import (
     TextBlock,
+    ThinkingBlock,
 )
 
 
@@ -271,3 +272,112 @@ class TestTextBlockConversion:
             assert "Hello from block" in content
         else:
             pytest.fail(f"Unexpected content format: {content}")
+
+
+# ---------------------------------------------------------------------------
+# Shared helpers for tolerance assertions
+# ---------------------------------------------------------------------------
+
+
+def _contains_instance(obj, target_type) -> bool:
+    """True if a target_type instance survives anywhere in a converted result."""
+    if isinstance(obj, target_type):
+        return True
+    if isinstance(obj, dict):
+        return any(_contains_instance(v, target_type) for v in obj.values())
+    if isinstance(obj, (list, tuple)):
+        return any(_contains_instance(item, target_type) for item in obj)
+    return False
+
+
+def _gather_text(obj) -> str:
+    """Recursively collect human-readable text from a converted message structure.
+
+    Handles plain strings, dict text fields, nested lists, and Gemini Part-like
+    objects that expose a `.text` attribute.
+    """
+    if isinstance(obj, str):
+        return obj
+    if isinstance(obj, dict):
+        return " ".join(_gather_text(v) for v in obj.values())
+    if isinstance(obj, (list, tuple)):
+        return " ".join(_gather_text(item) for item in obj)
+    text_attr = getattr(obj, "text", None)
+    if isinstance(text_attr, str):
+        return text_attr
+    return ""
+
+
+# ---------------------------------------------------------------------------
+# ThinkingBlock Tolerance
+# ---------------------------------------------------------------------------
+
+
+class TestThinkingBlockTolerance:
+    """Every provider tolerates a ThinkingBlock in message content.
+
+    Extended-thinking models emit type="thinking" content blocks. Non-Anthropic
+    providers have no such concept; each must convert messages without error and
+    without leaking the raw block (or its repr) into the request. Anthropic keeps
+    only signed thinking blocks and drops unsigned ones — both are tolerant.
+    """
+
+    def test_thinking_block_in_assistant_message(self, provider):
+        """A lone ThinkingBlock converts without error and never survives raw."""
+        msgs = [{"role": "assistant", "content": [ThinkingBlock(thinking="private reasoning")]}]
+        result = provider.convert_messages(msgs)
+
+        assert isinstance(result, list)
+        # The raw ThinkingBlock object must not leak into the provider payload.
+        assert not _contains_instance(result, ThinkingBlock)
+
+    def test_thinking_block_with_other_content(self, provider):
+        """A ThinkingBlock alongside a TextBlock never clobbers the visible text."""
+        msgs = [
+            {
+                "role": "assistant",
+                "content": [
+                    ThinkingBlock(thinking="hidden reasoning"),
+                    TextBlock(text="Visible answer"),
+                ],
+            }
+        ]
+        result = provider.convert_messages(msgs)
+
+        assert isinstance(result, list)
+        assert not _contains_instance(result, ThinkingBlock)
+        # The accompanying visible text survives the conversion for every provider.
+        assert "Visible answer" in _gather_text(result)
+
+
+# ---------------------------------------------------------------------------
+# System Cache-Control Tolerance
+# ---------------------------------------------------------------------------
+
+
+class TestSystemCacheControlTolerance:
+    """Non-Anthropic providers tolerate cache_control system blocks.
+
+    Anthropic accepts a list of structured system blocks carrying cache_control
+    breakpoints. flatten_system is the shared helper every other provider uses to
+    collapse that list into a plain string, dropping cache_control transparently.
+    """
+
+    def test_flatten_system_with_cache_control(self):
+        """A cache_control breakpoint is ignored; only the text survives."""
+        system = [
+            {
+                "type": "text",
+                "text": "You are a helpful assistant.",
+                "cache_control": {"type": "ephemeral"},
+            }
+        ]
+        assert flatten_system(system) == "You are a helpful assistant."
+
+    def test_flatten_system_preserves_text_across_blocks(self):
+        """Text from every block is concatenated in order, cache_control aside."""
+        system = [
+            {"type": "text", "text": "Block one. ", "cache_control": {"type": "ephemeral"}},
+            {"type": "text", "text": "Block two."},
+        ]
+        assert flatten_system(system) == "Block one. Block two."
