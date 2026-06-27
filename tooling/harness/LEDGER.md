@@ -908,4 +908,26 @@ L-MISC     mixed bag:
     ratchet ACCEPT (testsGreen ✓ lintClean ✓ benchOk ✓[null] noRegress ✓ notRefuted ✓). champion
             track recipe-system promoted (deterministic feature → no replicate needed). PR body at
             tooling/harness/forge/PR_recipe-system.md. awaiting_human_merge — harness never pushes.
+
+[2026-06-27] C-R7-DEADEND · DeadEnd · forge/C-R7 fix for C-R7 (install into ComfyUI
+            python_embedded, not the agent venv) REFUTED despite an all-green suite — the ratchet
+            notRefuted gate FAILED · verified_by V1 (Crucible measured a62dd66; ratchet input) ·
+            C-R7 stays OPEN, fix PENDING (supersedes nothing)
+    direction  C-R7 = install_node_pack runs bare `pip` from PATH → agent venv, not ComfyUI
+            python_embeded (comfy_provision.py:552-567). Forge a62dd66 [FORGE C-R7] routed the
+            install into ComfyUI's python_embedded on Windows ([python,-m,pip,...] pattern).
+            Touched ONLY agent/tools/comfy_provision.py + tests/test_comfy_provision.py
+            (+155/-11, 2 files — git show --stat a62dd66).
+    measured  Crucible on a62dd66: pytest -m "not integration" → 4571 passed / 0 failed / 2 skipped
+            (baseline 4568 @ recipe-system; +3 new tests, NO regression); ruff clean on both
+            touched files; determinism_ok; within_blast_radius; frozen_zone_touch=false; bench=null.
+    ratchet   REJECT — testsGreen ✓ lintClean ✓ benchOk ✓[null] noRegress ✓ but notRefuted ✗.
+            Per the ratchet predicate (HARNESS-BOOT entry, this log: "<2 of 3 skeptics refute" to
+            pass), notRefuted=false ⇒ ≥2 of 3 skeptics refuted. Refutation class = ADVERSARIAL
+            (skeptic) refutation, NOT a mechanical gate — green on tests/lint/bench yet refuted on
+            the merits.
+    disposition  build DISCARDED. Branch forge/C-R7 @ a62dd66 LEFT IN PLACE for human inspection
+            (not deleted; master @ 183a611 not reset). Champion NOT promoted —
+            tooling/harness/champion.json UNTOUCHED. C-R7 remains an OPEN finding; THIS approach is
+            closed. awaiting_human_merge=false.
 ```
