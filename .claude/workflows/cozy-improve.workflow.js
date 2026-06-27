@@ -121,6 +121,7 @@ const MeasureSchema = {
   properties: {
     item_id:             { type: 'string' },
     branch:              { type: 'string' },
+    commit_sha:          { type: 'string' },
     tests_passed:        { type: 'integer' },
     tests_failed:        { type: 'integer' },
     new_failures:        { type: 'array', items: { type: 'string' } },
@@ -256,7 +257,7 @@ On branch ${build.branch} from G:/Comfy-Cozy:
 1. Run: python -m pytest tests/ -m "not integration" -q  -> parse the final summary into tests_passed and tests_failed. List any test ids that fail which are NOT the known baseline failure (new_failures).
 2. Run: ruff check agent/ tests/  -> ruff_clean = (exit 0).
 3. If the spec named a targeted_benchmark, run it on baseline (origin) and on this branch; report bench={name, median, p95, baseline_median, baseline_p95, delta_median, delta_p95}. Else bench=null.
-4. determinism_ok: confirm no new non-sorted JSON / random-seed / wallclock-in-output was introduced (grep the diff). within_blast_radius: every changed file is in the design's files_to_touch. frozen_zone_touch: any changed file under agent/stage/** or an owner-gated proprietary file.
+4. SCOPE — judge ONLY by what the Forge's OWN commit changed, never the cumulative branch. Echo build.commit_sha into commit_sha, then run \`git show --stat ${build.commit_sha}\` (equivalently \`git diff ${build.commit_sha}~1..${build.commit_sha} --stat\`). within_blast_radius = every file in THAT commit is in the design's files_to_touch. frozen_zone_touch = any file in THAT commit under agent/stage/** or an owner-gated proprietary file. Do NOT use \`git diff origin...branch\` — the branch may stack on unrelated base commits, which would FALSELY inflate the file set. determinism_ok: confirm THAT commit introduced no non-sorted JSON / random-seed / wallclock-in-output.
 5. Do NOT fix anything. Report numbers only.
 
 Return MeasureSchema.`;
@@ -270,7 +271,7 @@ ROLE: Skeptic (adversarial verifier). READ-ONLY. Your job is to REFUTE this chan
 LENS: ${lens}
 MEASUREMENT: ${JSON.stringify(measure)}
 
-Inspect the diff on branch ${measure.branch} (git diff origin...${measure.branch} or against the base). Through your lens, look for: a weakened/deleted test assertion to force green (false_verified); a regression the suite didn't catch; scope creep beyond the spec; a determinism break; a frozen-zone touch. If you find one, refuted=true with the class and concrete file:line reasons. If the change is honest and within scope, refuted=false, class="none".
+Inspect ONLY the Forge's OWN commit: run \`git show ${measure.commit_sha}\` (equivalently \`git diff ${measure.commit_sha}~1..${measure.commit_sha}\`). Do NOT use \`git diff origin...${measure.branch}\` — the branch may be stacked on unrelated prior work, so the cumulative diff is a FALSE scope_creep signal; judge scope ONLY by what THIS commit touches. Through your lens, look for: a weakened/deleted test assertion to force green (false_verified); a regression the suite didn't catch; scope creep beyond the spec (a file in THIS commit outside files_to_touch); a determinism break; a frozen-zone touch. If you find one, refuted=true with the class and concrete file:line reasons. If the change is honest and within scope, refuted=false, class="none".
 
 Return RefuteSchema.`;
 }
