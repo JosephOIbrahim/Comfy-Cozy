@@ -47,9 +47,15 @@ const FLOOR = [
   '- The frozen zone (agent/stage/**, agent/stage/moe_dispatcher.py, and any owner-gated proprietary files the brightline guard flags) is READ-ONLY. A write there is a TERMINAL violation — surface it, never force it.',
 ].join('\n');
 
-const WAVE  = (typeof args === 'object' && args && args.wave)  ? args.wave  : 1;
-const EPOCH = (typeof args === 'object' && args && args.epoch) ? args.epoch : 1;
-const SEED  = (typeof args === 'object' && args && Array.isArray(args.items)) ? args.items : [];
+// `args` may arrive as a parsed object OR a JSON string (runtime-dependent) — handle both,
+// so a seeded backlog actually carries instead of silently falling back to LEDGER selection.
+let _A = args;
+if (typeof _A === 'string') { try { _A = JSON.parse(_A); } catch (_e) { _A = null; } }
+_A = (_A && typeof _A === 'object') ? _A : {};
+const WAVE  = _A.wave  || 1;
+const EPOCH = _A.epoch || 1;
+const SEED  = Array.isArray(_A.items) ? _A.items : [];
+log(`harness args: raw type=${typeof args}; resolved seed=[${SEED.map((i) => i.id).join(', ') || 'none'}] wave=${WAVE} epoch=${EPOCH}`);
 const NOISE = 0.0; // bench tolerance band; raise only for stochastic benches
 
 // ---------------------------------------------------------------------------
