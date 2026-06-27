@@ -195,6 +195,9 @@ BRAIN_ENABLED = os.getenv("BRAIN_ENABLED", "1") == "1"
 OBSERVATION_ENABLED = os.getenv("OBSERVATION_ENABLED", "1") == "1"
 DAG_ENABLED = os.getenv("DAG_ENABLED", "1") == "1"
 GATE_ENABLED = os.getenv("GATE_ENABLED", "1") == "1"
+# Zero-LLM recipe pre-check in the CLI loop. Default OFF — purely additive, opt-in.
+# (The apply_recipe / list_recipes MCP tools are always available regardless.)
+RECIPES_ENABLED = os.getenv("RECIPES_ENABLED", "0") == "1"
 
 # Paths — cross-platform defaults for ComfyUI database location
 def _default_comfyui_database() -> str:

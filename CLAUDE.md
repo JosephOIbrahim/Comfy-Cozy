@@ -59,7 +59,7 @@ ruff format agent/ tests/                  # Format
 14. Never generate entire workflows from scratch. Make surgical, validated modifications.
 15. Every patch is validated before application. No exceptions.
 
-## Tool Overview (131 dispatched tools: 82 intelligence + 22 stage (lazy, importer-side) via `_HANDLERS`; 27 brain via `_BRAIN_TOOL_NAMES` (lazy, BrainAgent SDK auto-register))
+## Tool Overview (133 dispatched tools: 84 intelligence + 22 stage (lazy, importer-side) via `_HANDLERS`; 27 brain via `_BRAIN_TOOL_NAMES` (lazy, BrainAgent SDK auto-register))
 
 | Category | Tools |
 |----------|-------|
@@ -86,6 +86,7 @@ ruff format agent/ tests/                  # Format
 | **Iteration** | `start_iteration_tracking`, `record_iteration_step`, `finalize_iterations` |
 | **Metadata** | `write_image_metadata`, `read_image_metadata`, `reconstruct_context` |
 | **Models** | `swap_model`, `list_models_available` |
+| **Recipes** | `apply_recipe`, `list_recipes` |
 
 ### LLM providers (the reasoning brain)
 

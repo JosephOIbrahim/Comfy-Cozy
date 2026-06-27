@@ -114,6 +114,11 @@ TOOL_RISK_LEVELS: dict[str, RiskLevel] = {
     # Model swap (LLM provider/model selection)
     "list_models_available": RiskLevel.READ_ONLY,
     "swap_model": RiskLevel.REVERSIBLE,  # changes the reasoning model; reversible via swap_model
+    # Recipes (zero-LLM macros): the entry is a dispatcher — each expanded step
+    # (set_input/add_node/connect_nodes) re-enters handle() and is independently
+    # gated, so the dispatcher itself has no direct side-effect (READ_ONLY).
+    "list_recipes": RiskLevel.READ_ONLY,
+    "apply_recipe": RiskLevel.READ_ONLY,
     # Calibration / meta reads
     "classify_intent": RiskLevel.READ_ONLY,
     "get_calibration_stats": RiskLevel.READ_ONLY,

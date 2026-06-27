@@ -26,7 +26,7 @@ _INTELLIGENCE_MODULE_NAMES = [
     "pipeline", "image_metadata", "node_replacement", "comfy_provision",
     "auto_wire", "provision_pipeline", "canvas_bridge", "vision_cache",
     "local_assets", "proactive_memory", "ui_api_parser", "exec_profile",
-    "output_watcher", "nim_lifecycle", "model_swap",
+    "output_watcher", "nim_lifecycle", "model_swap", "recipes_tool",
 ]
 _STAGE_MODULE_NAMES = [
     "provision_tools", "stage_tools", "foresight_tools",
