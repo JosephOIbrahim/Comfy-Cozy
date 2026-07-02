@@ -931,3 +931,43 @@ L-MISC     mixed bag:
             tooling/harness/champion.json UNTOUCHED. C-R7 remains an OPEN finding; THIS approach is
             closed. awaiting_human_merge=false.
 ```
+
+[2026-07-02] V2-E0A · Confirmation · E0a closed: permission scrub + PR #76 merged @ a74b4c1
+            after TWO H4 union rounds · verified_by V1 (local suites + merged CI 9/9)
+    scope   v2 program green-lit 2026-07-01 (plan + budget defaults + mechanical auto-merge
+            grant; plan file external — see v2/STATE.json plan_file). E0a: owner scrubbed
+            .claude/settings.local.json (egress allows removed; deny layer added for
+            push/remote/reset/rebase/release/api/auth/curl/wget) — deny layer live-verified.
+            Untracked triage: 20 flagged + 7 noise -> .git/info/exclude (never commit, never
+            delete; deletions queued as owner gate). Stale v2/main archive-tagged @ 93a94af.
+    unions  master moved TWICE mid-flight. Round 1: v5.3.1 merged @ 61fe043 (1 conflict —
+            CLAUDE.md count headline -> measured union 133 = 84+22+27; suite 4686/0).
+            Round 2: v5.4.0 Brain Swap (PR #75) merged @ a0c3b25 (5 conflicts, all the
+            same-content-different-commits class; suite 4686/0). Both push ranges scan-clean;
+            CI 9/9 green; PR #76 merged on owner word.
+    process per-commit + pre-push guard fired silently throughout; scan-clean recorded per
+            standing rule; owner executed all pushes.
+
+[2026-07-02] V2-E0B · Confirmation · E0b runway artifacts complete on v6/e0b-runway
+            (base a74b4c1) · verified_by V1 (measured locally; CI recomputes on the PR)
+    scope   verify_ratchet.py — 7-check mechanical accept authority; known-flake tolerance
+            BY NAME (subset check), never by count; baseline decreases only via
+            baseline_deltas.jsonl rows citing LEDGER IDs. Hooks hardened: pre-push
+            default-deny remote classifier (spoof-tested: lookalike-named public repos still
+            scanned); pre-commit fail-closed on absent scanner; bypass advice removed from
+            hook text. Strict partition census (v2/census.json BINDING; make_census.py
+            asserts it): 133 = 69 keep + 21 merge-away + 25 delete + 11 provisioning +
+            4 scene + 3 nim -> 75 core (+ping), 28 aliases, 25 tombstones, 2 new names.
+            ORCHESTRATOR_v2.md constitution §1-§10 incl. §10 recursion contract (Utility
+            Track: Tier A/B/C — recursion stops at the judge). v2/ state files seeded.
+            .claude/settings.local.json UNTRACKED from index + gitignored (machine-personal
+            permission state; its pre-scrub history remains public — accepted, documented).
+    measured baselines re-pinned @ a74b4c1: floor 4685 (4686 measured − 1 named-flake
+            allowance) / collected 4687 / import 334.0 ms median-of-3 / registry 133.
+            Identical content measured twice: 4686/0 (union-2 run) + 4686/0 (--baseline run).
+    leads   L-IMPORT-DELTA partially resolved: pre-union branch 553.5 ms (lacked the H2 perf
+            wave); union restored lazy-stage registration -> 334.0 ms; residual vs the
+            188-199 ms champion methodology stays open. Collected-vs-executed off-by-one
+            (4687 vs 4688) consistent across trees — parked.
+    disposition PR_E0b teed; standing push grant recorded 2026-07-02 (owner pre-approved
+            "push it"; the keystroke stays owner's via the deny layer — by design).

@@ -1,0 +1,14 @@
+# v2 Tool Census — strict partition (binding; v2 plan 4.4)
+
+**133 = 69 keep + 21 merge-away + 25 delete + 11 provisioning + 4 scene + 3 nim; core = 69 + 4 kept-provisioning + 2 new = 75 (+ping)**
+
+Aliases: 28 · Tombstones: 25 · Gated packs: +4 scene (HAS_USD), +3 nim (podman)
+
+| Bucket | Count | Names |
+|---|---|---|
+| keep | 69 | add_node, add_note, analyze_image, apply_optimization, apply_recipe, apply_workflow_patch, check_model_compatibility, check_node_updates, check_tensorrt_status, check_workflow_deprecations, classify_workflow, compare_outputs, connect_nodes, delete_node, discover, execute_workflow, find_missing_nodes, get_all_nodes, get_canvas_state, get_editable_fields, get_execution_status, get_experience_stats, get_history, get_install_instructions, get_learned_patterns, get_node_info, get_node_replacements, get_queue_status, get_recommendations, get_system_stats, get_workflow_diff, get_workflow_template, identify_model_family, iterative_refine, list_custom_nodes, list_models, list_recipes, list_sessions, list_workflow_templates, load_session, load_workflow, migrate_deprecated_nodes, predict_experiment, profile_workflow, push_workflow_to_canvas, read_image_metadata, read_node_source, reconstruct_context, record_experience, record_outcome, replace_node, reset_workflow, rewire_around, run_pipeline, save_session, save_workflow, set_input, suggest_improvements, suggest_optimizations, surface_relevant_memory, swap_model, undo_workflow_patch, validate_before_execute, validate_workflow, verify_execution, watch_outputs_begin, watch_outputs_diff, wire_model, write_image_metadata |
+| merge_away | 21 | analyze_image_cached, check_registry_freshness, create_pipeline, execute_with_progress, get_civitai_model, get_execution_profile, get_models_summary, get_output_path, get_pipeline_status, get_prediction_accuracy, get_repo_releases, get_trending_models, hash_compare_images, is_comfyui_running, list_assets, list_counterfactuals, list_models_available, parse_ui_workflow, preview_workflow_patch, refresh_model_registry, suggest_wiring |
+| delete | 25 | capture_intent, check_evolution_tier, check_subtasks, classify_intent, complete_step, demo_checkpoint, detect_implicit_feedback, finalize_iterations, get_calibration_stats, get_current_intent, get_meta_history, get_plan, plan_goal, propose_improvement, record_iteration_step, replan, spawn_subtask, stage_add_delta, stage_list_deltas, stage_read, stage_reconstruct_clean, stage_rollback, stage_write, start_demo, start_iteration_tracking |
+| provisioning | 11 | download_model, install_node_pack, provision_download, provision_model, provision_pipeline_status, provision_pipeline_verify, provision_status, provision_verify, reconfigure_workflow, repair_workflow, uninstall_node_pack |
+| scene_pack | 4 | compose_scene, export_scene, extract_conditioning, validate_scene |
+| nim_pack | 3 | nim_preflight, nim_run, nim_state |

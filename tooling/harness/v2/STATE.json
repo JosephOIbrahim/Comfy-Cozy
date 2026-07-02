@@ -1,0 +1,35 @@
+{
+  "program": "comfy-cozy-v2",
+  "green_lit": "2026-07-01",
+  "plan_file": "C:/Users/User/.claude/plans/ultrathink-review-this-codebase-frolicking-eich.md",
+  "budget": {
+    "per_epoch_invocations": 30,
+    "per_epoch_wall_hours": 6,
+    "unattended_epochs_per_run": 2,
+    "monthly_cap": null
+  },
+  "grants": {
+    "auto_merge_mechanical": true,
+    "note": "CI-green + unanimous-skeptic mechanical epochs (E2, E3c, E4a, hygiene lanes) merge on standing word; push always per-call"
+  },
+  "epochs": [
+    {"id": "E0a", "title": "Permission scrub + recipe merge + triage", "status": "merged", "notes": "CLOSED 2026-07-02: scrub live · triage done · archive tag laid · TWO H4 union rounds (master moved mid-union: v5.3.1 then v5.4.0/PR#75) @ 61fe043+a0c3b25 · CI 9/9 · PR #76 merged @ a74b4c1"},
+    {"id": "E0b", "title": "Ratchet + hooks + census + baselines", "status": "gated", "branch": "v6/e0b-runway", "base_sha": "a74b4c1", "pending_gate": "push (standing grant — fire on sight) + PR + merge", "notes": "COMPLETE 2026-07-02: baselines pinned @ a74b4c1 (4685/4687/334ms/133); LEDGER V2-E0A+V2-E0B; PR body at forge/PR_E0b.md; 2 authored-prose scan hits fixed pre-stage"},
+    {"id": "E0c", "title": "Epoch workflow + acceptance tests", "status": "ready", "depends": ["E0b"]},
+    {"id": "E1", "title": "Provision -> comfy-cli (de-registration only)", "status": "ready", "depends": ["E0c"], "parallel_ok": ["E2"]},
+    {"id": "E2", "title": "Mechanical consolidation (agent/ minus stage/)", "status": "ready", "depends": ["E0c"], "parallel_ok": ["E1"], "mechanical": true},
+    {"id": "E3a", "title": "Single-store step 1 + isolation test", "status": "blocked", "depends": ["E1", "E2"]},
+    {"id": "E3b", "title": "Gate policy extraction + ImportError fail-closed", "status": "blocked", "depends": ["E3a"]},
+    {"id": "E3c", "title": "ctx threading sweep", "status": "blocked", "depends": ["E3b"], "mechanical": true},
+    {"id": "E3d", "title": "recipes+pipeline chain_runner", "status": "blocked", "depends": ["E3c"]},
+    {"id": "E4a", "title": "Doc-truth strict + tombstones + aliases", "status": "blocked", "depends": ["E3d"], "mechanical": true},
+    {"id": "E4b", "title": "Bulk merges per census", "status": "blocked", "depends": ["E4a"]},
+    {"id": "E4c", "title": "De-register stage tools + cozy:// resources", "status": "blocked", "depends": ["E4b"]},
+    {"id": "E4d", "title": "Subgraph awareness + prompts spike", "status": "blocked", "depends": ["E4b"]},
+    {"id": "E5a", "title": "cognitive/ dissolve + shims", "status": "blocked", "depends": ["E3d"]},
+    {"id": "E5b", "title": "Stage shrink (G8 UNFREEZE) + scene pack", "status": "blocked", "depends": ["E5a"], "pending_gate": "G8: Joe line-approves FLOOR diff"},
+    {"id": "E6", "title": "Autonomy honesty (vision->ratchet, budget, resume)", "status": "blocked", "depends": ["E3d", "E5b"], "pending_gate": "G9: V1 window at close"},
+    {"id": "E7", "title": "Ecosystem: backend seam + CLOUD_BURST + node_pack publish", "status": "blocked", "depends": ["E0c"], "pending_gate": "G4/G5: registry publish"},
+    {"id": "E8", "title": "UX/docs/release 6.0.0", "status": "blocked", "depends": ["ALL"], "pending_gate": "G9 V1 + Joe tag&push"}
+  ]
+}

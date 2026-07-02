@@ -1,0 +1,20 @@
+{
+  "measured_at": {
+    "commit": "a74b4c1",
+    "utc": "2026-07-02T14:16:34Z"
+  },
+  "tests_passed": 4685,
+  "known_flakes": [
+    "tests/test_cozy_persistence.py::test_kill_after_flush_resumes_cleanly"
+  ],
+  "skipped": 2,
+  "collected": 4687,
+  "import_ms": 334.0,
+  "registry_count": 133,
+  "coverage_pct": null,
+  "coverage_leg": "windows-latest/py3.12",
+  "original": {
+    "tests_passed": 4685,
+    "collected": 4687
+  }
+}
