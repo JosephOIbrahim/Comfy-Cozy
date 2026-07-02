@@ -23,6 +23,18 @@ raises unattended duty cycle from ~30% to ~60-70%) and parked leads.
 - [ ] U2 (M, after E4a alias metrics or earlier on JSONL+DEADENDS): explore_signals miner → auto-ranked BACKLOG candidates with evidence · first MINED epoch end-to-end = the recursion existence proof
 - [ ] U3 (ongoing): mined cycle becomes default /loop behavior · Tier-B self-tuning begins
 
+## R-track: tiered routing cascade (harness-architect design, 2026-07-02)
+
+SYNAPSE's latency cascade × our 5-provider brain: pre-LLM tiers (cache → recipe →
+regex parser → knowledge-answer) then FAST/DEEP model tiers through agent/llm —
+frontier-agnostic, per-session (no SYNAPSE singleton), every tier hit gated, Tier 2
+speaks restricted tool-calls not JSON blobs. MCP-host path explicitly out of scope.
+- [ ] R0 (S, ∥ E1/E2): agent/routing/cascade.py behind ROUTING_ENABLED=0; recipe tier pre-LLM + Tier-3 fallthrough; sidebar+CLI wiring
+- [ ] R1 (M, after E3a): Tier-0 comfy parser + Tier-1 knowledge-answer + tier pins + per-tier metrics
+- [ ] R2 (M): Tier-2 fast-model via provider layer, restricted toolset, thresholds/timeouts
+- [ ] R3 (S): response cache + async Tier-3 sidebar handle · EpochAdapter deferred to Tier-B recursion
+- Acceptance: dreamier <50ms via recipe tier (ratchet check #8 gates it) · tier-pin determinism ×100 · forced Tier-2 failure falls through · swap_model re-points atomically · gate parity · zero new MCP tools R0–R2
+
 ## Parked leads
 
 - L-IMPORT-DELTA: cold-import 553.5ms pre-union → 334.0ms post-union (H2 perf wave restored); residual vs the 188-199ms recorded champion methodology — reconcile via the local latency lead's instruments (local-only; see exclude-list triage record) if it ever matters
