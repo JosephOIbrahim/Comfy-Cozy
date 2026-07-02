@@ -931,3 +931,106 @@ L-MISC     mixed bag:
             tooling/harness/champion.json UNTOUCHED. C-R7 remains an OPEN finding; THIS approach is
             closed. awaiting_human_merge=false.
 ```
+
+[2026-07-02] V2-E0A · Confirmation · E0a closed: permission scrub + PR #76 merged @ a74b4c1
+            after TWO H4 union rounds · verified_by V1 (local suites + merged CI 9/9)
+    scope   v2 program green-lit 2026-07-01 (plan + budget defaults + mechanical auto-merge
+            grant; plan file external — see v2/STATE.json plan_file). E0a: owner scrubbed
+            .claude/settings.local.json (egress allows removed; deny layer added for
+            push/remote/reset/rebase/release/api/auth/curl/wget) — deny layer live-verified.
+            Untracked triage: 20 flagged + 7 noise -> .git/info/exclude (never commit, never
+            delete; deletions queued as owner gate). Stale v2/main archive-tagged @ 93a94af.
+    unions  master moved TWICE mid-flight. Round 1: v5.3.1 merged @ 61fe043 (1 conflict —
+            CLAUDE.md count headline -> measured union 133 = 84+22+27; suite 4686/0).
+            Round 2: v5.4.0 Brain Swap (PR #75) merged @ a0c3b25 (5 conflicts, all the
+            same-content-different-commits class; suite 4686/0). Both push ranges scan-clean;
+            CI 9/9 green; PR #76 merged on owner word.
+    process per-commit + pre-push guard fired silently throughout; scan-clean recorded per
+            standing rule; owner executed all pushes.
+
+[2026-07-02] V2-E0B · Confirmation · E0b runway artifacts complete on v6/e0b-runway
+            (base a74b4c1) · verified_by V1 (measured locally; CI recomputes on the PR)
+    scope   verify_ratchet.py — 7-check mechanical accept authority; known-flake tolerance
+            BY NAME (subset check), never by count; baseline decreases only via
+            baseline_deltas.jsonl rows citing LEDGER IDs. Hooks hardened: pre-push
+            default-deny remote classifier (spoof-tested: lookalike-named public repos still
+            scanned); pre-commit fail-closed on absent scanner; bypass advice removed from
+            hook text. Strict partition census (v2/census.json BINDING; make_census.py
+            asserts it): 133 = 69 keep + 21 merge-away + 25 delete + 11 provisioning +
+            4 scene + 3 nim -> 75 core (+ping), 28 aliases, 25 tombstones, 2 new names.
+            ORCHESTRATOR_v2.md constitution §1-§10 incl. §10 recursion contract (Utility
+            Track: Tier A/B/C — recursion stops at the judge). v2/ state files seeded.
+            .claude/settings.local.json UNTRACKED from index + gitignored (machine-personal
+            permission state; its pre-scrub history remains public — accepted, documented).
+    measured baselines re-pinned @ a74b4c1: floor 4685 (4686 measured − 1 named-flake
+            allowance) / collected 4687 / import 334.0 ms median-of-3 / registry 133.
+            Identical content measured twice: 4686/0 (union-2 run) + 4686/0 (--baseline run).
+    leads   L-IMPORT-DELTA partially resolved: pre-union branch 553.5 ms (lacked the H2 perf
+            wave); union restored lazy-stage registration -> 334.0 ms; residual vs the
+            188-199 ms champion methodology stays open. Collected-vs-executed off-by-one
+            (4687 vs 4688) consistent across trees — parked.
+    disposition PR_E0b teed; standing push grant recorded 2026-07-02 (owner pre-approved
+            "push it"; the keystroke stays owner's via the deny layer — by design).
+
+[2026-07-02] V2-E0B-R1 · Confirmation · E0b skeptic round 1 REFUTED 3/3 (proper function
+            of the panel: it refused the accept authority's own birth certificate);
+            re-plan bounce executed per §7 · verified_by V1 (all fixes measured locally)
+    refutations (18 findings: 2 BLOCKER, 6 MAJOR, 10 MINOR — highlights)
+            B1 judge lens: thresholds were branch-writable — verify_ratchet ran from
+            master's copy but read baselines/known-flakes from the CANDIDATE tree;
+            check_deltas failed open when 'original' absent; --baseline reset the
+            reconciliation anchor (self-laundering). B2 correctness lens: the pinned
+            flake node id was WRONG (missing ::TestCrashResume::) — the name-based
+            tolerance could never fire; every flake day would have halted the program.
+            M: disclosure scan silently SKIPPED=ok on plain --check while the
+            constitution prescribed plain --check; pytest ERRORS never checked;
+            counts parsed from injectable stdout; standing push grant recorded in
+            agent-readable files contradicting the constitution's own no-grants-from-
+            files rule, with three files disagreeing about G2.
+    fixes   ratchet v2: thresholds read from origin/master's baselines copy with
+            byte-integrity check (divergence must reconcile via delta rows, else
+            refuse; bootstrap labeled); flake authority = in-script constant with
+            collect-time existence assertion; counts from pytest junit XML (uuid
+            scratch path) — errors==0 required, error/failure node ids matched
+            against flakes; scan range auto-derived origin/master..HEAD, fail-closed;
+            --brightline skip reserved for CI with disclosure_certified=false in the
+            verdict; --baseline preserves 'original' (re-seed = --reset-original,
+            Joe-reviewed); sentinel-guard refuses writing garbage baselines; ruff via
+            interpreter module; import budget enforced same-node only (reported
+            elsewhere). Constitution §4 rewritten (authority model; baselines.json
+            added to frozen set; hooks untracked-by-design honesty; CI-green-does-
+            not-certify-disclosure), §6 G2/G3 defined precisely (executor always
+            owner's keystroke; grants-in-files descriptive never operative; auto-merge
+            pinned to enumerated ids; threshold-touching commits disqualified).
+            STATE.json: statuses derived honestly (E1/E2 blocked on E0c), E8 depends
+            enumerated, plan referenced by sha256 not machine path. Filename-level
+            disclosure hygiene in GATES/BACKLOG prose per the composition rule.
+    process the panel consumed ~240k tokens and returned in 12 minutes; the two
+            BLOCKERs were real, mechanically verified, and pre-merge — the cost of
+            NOT running it would have been an autonomous program governed by a
+            gameable gate with an inert flake tolerance.
+
+[2026-07-02] V2-E0B-R2 · Confirmation · Skeptic round 2 on be97cbd: NOT refuted, round-1
+            findings confirmed dead — WITH AN ASTERISK recorded honestly · verified_by V1
+    status  round 2 completed 1 OF 3 lenses: two skeptic agents died on the account
+            session limit (resets 12pm ET). The completed lens (authority — round 1's
+            harshest refuter) verified every round-1 finding dead under its lens AND
+            covered most judge-lens territory: refuted=false, round1_fixed=true,
+            5 residual findings (4 MINOR, 1 NIT). Per the SPEND-LIMIT precedent the
+            Floor does not bend: for THIS Tier-C PR the constitutional gate is the
+            owner's file-by-file review (ORCHESTRATOR §4), with the panel advisory;
+            the 2 missing lenses are queued to re-run post-reset if the owner wants
+            them before his review. CI on be97cbd: green, zero failures.
+    fixes(R2, this commit)  _flake_match: substring -> exact canonical segment match
+            (superstring-named tests refused; [param] variants of the named flake
+            tolerated; 6/6 probe cases). check_baseline_integrity: compares the
+            COMMITTED candidate copy (git show HEAD:) so the §4 copy procedure cannot
+            blind it; §4 copy text corrected. §2 accept predicate now requires
+            disclosure_certified (CI --brightline skip can never accept an epoch);
+            epoch workflow accept() enforces it in code. assert_flakes_collect derives
+            targets from KNOWN_FLAKES. Header plan_file -> plan dangler fixed.
+    decision  SQUASH-MERGE PR #77 (authority-lens recommendation): c8bd17f's history
+            carries a flagged-file description its successor only rewrote at the tip;
+            squash keeps it off master permanently. Post-merge: remote branch deletion
+            queued (owner), #78 + E0c re-cut from master via cherry-pick (no rebase —
+            authority map).

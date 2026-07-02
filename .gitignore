@@ -23,6 +23,10 @@ htmlcov/
 
 # Environment
 .env
+.env.bak
+
+# Logs (root-level scratch logs from harness runs)
+*.log
 
 # Sessions (user data, not code)
 sessions/*.json
@@ -44,12 +48,15 @@ logs/
 # Windows artifacts
 nul
 
-# Claude Code session state (transient; settings + commands stay tracked)
+# Claude Code session state (transient; commands stay tracked).
+# settings.local.json is machine-personal PERMISSION state — never tracked
+# (untracked 2026-07-02, v2 E0b: permission configs don't belong in history).
 .claude/sessions/
 .claude/cache/
 .claude/projects/
 .claude/worktrees/
 .claude/*.lock
+.claude/settings.local.json
 
 # Node / JS verifier stack (write-back v1 — Vitest)
 node_modules/
