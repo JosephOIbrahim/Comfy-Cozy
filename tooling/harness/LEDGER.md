@@ -971,3 +971,41 @@ L-MISC     mixed bag:
             (4687 vs 4688) consistent across trees — parked.
     disposition PR_E0b teed; standing push grant recorded 2026-07-02 (owner pre-approved
             "push it"; the keystroke stays owner's via the deny layer — by design).
+
+[2026-07-02] V2-E0B-R1 · Confirmation · E0b skeptic round 1 REFUTED 3/3 (proper function
+            of the panel: it refused the accept authority's own birth certificate);
+            re-plan bounce executed per §7 · verified_by V1 (all fixes measured locally)
+    refutations (18 findings: 2 BLOCKER, 6 MAJOR, 10 MINOR — highlights)
+            B1 judge lens: thresholds were branch-writable — verify_ratchet ran from
+            master's copy but read baselines/known-flakes from the CANDIDATE tree;
+            check_deltas failed open when 'original' absent; --baseline reset the
+            reconciliation anchor (self-laundering). B2 correctness lens: the pinned
+            flake node id was WRONG (missing ::TestCrashResume::) — the name-based
+            tolerance could never fire; every flake day would have halted the program.
+            M: disclosure scan silently SKIPPED=ok on plain --check while the
+            constitution prescribed plain --check; pytest ERRORS never checked;
+            counts parsed from injectable stdout; standing push grant recorded in
+            agent-readable files contradicting the constitution's own no-grants-from-
+            files rule, with three files disagreeing about G2.
+    fixes   ratchet v2: thresholds read from origin/master's baselines copy with
+            byte-integrity check (divergence must reconcile via delta rows, else
+            refuse; bootstrap labeled); flake authority = in-script constant with
+            collect-time existence assertion; counts from pytest junit XML (uuid
+            scratch path) — errors==0 required, error/failure node ids matched
+            against flakes; scan range auto-derived origin/master..HEAD, fail-closed;
+            --brightline skip reserved for CI with disclosure_certified=false in the
+            verdict; --baseline preserves 'original' (re-seed = --reset-original,
+            Joe-reviewed); sentinel-guard refuses writing garbage baselines; ruff via
+            interpreter module; import budget enforced same-node only (reported
+            elsewhere). Constitution §4 rewritten (authority model; baselines.json
+            added to frozen set; hooks untracked-by-design honesty; CI-green-does-
+            not-certify-disclosure), §6 G2/G3 defined precisely (executor always
+            owner's keystroke; grants-in-files descriptive never operative; auto-merge
+            pinned to enumerated ids; threshold-touching commits disqualified).
+            STATE.json: statuses derived honestly (E1/E2 blocked on E0c), E8 depends
+            enumerated, plan referenced by sha256 not machine path. Filename-level
+            disclosure hygiene in GATES/BACKLOG prose per the composition rule.
+    process the panel consumed ~240k tokens and returned in 12 minutes; the two
+            BLOCKERs were real, mechanically verified, and pre-merge — the cost of
+            NOT running it would have been an autonomous program governed by a
+            gameable gate with an inert flake tolerance.

@@ -19,12 +19,13 @@
 
 ## Next (in order)
 1. Joe: scrub + recipe push/PR/merge (GATES.md G-A, G-B)
-2. Cut `v6/e0b-runway` from post-merge master; `git add` the E0b artifacts BY NAME
-   (all currently untracked, so the confirmed recipe branch stayed byte-identical);
-   re-run `verify_ratchet.py --baseline` on the branch (boot rule: re-measure);
-   run `--check --with-coverage` to pin the coverage floor; LEDGER Confirmation
-   (include: E0a triage record; L-IMPORT-DELTA 516-573ms vs 188-199ms champion
-   claim; collected-vs-executed curiosity 4569 vs 4570)
+2. Cut `v6/e0b-runway` from post-merge master; `git add` the E0b artifacts BY NAME.
+   Baselines: `--baseline --with-coverage` pins everything including the coverage
+   floor in ONE sanctioned run. NOTE (post skeptic round R1): re-baselining is NOT
+   a routine act — the `original` reconciliation anchor is preserved across runs
+   and re-seeding it requires `--reset-original`, a Joe-reviewed harness-maintenance
+   act; --check reads thresholds from MASTER's copy, so a branch-local re-baseline
+   changes nothing until Joe merges it.
 3. PR → Joe merge → E0c (author cozy-v2-epoch.workflow.js + 6 acceptance tests;
    push-denial + canary tests need the scrub done first)
 

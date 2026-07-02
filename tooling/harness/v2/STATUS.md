@@ -1,7 +1,7 @@
 # STATUS — comfy-cozy v2 build · 2026-07-02
 
-**Program:** green-lit · budget defaults · mechanical auto-merge granted · **standing push grant** (Joe fires teed pushes on sight; keystroke stays his via deny layer)
-**Mile marker:** E0a ✅ merged · E0b PR-ready · E0c next · 17 epochs + U-track queued
+**Program:** green-lit · budget defaults · auto-merge for enumerated mechanical ids only · G2 standing word this session (descriptive; executor is always Joe's keystroke — ORCHESTRATOR §6)
+**Mile marker:** E0a ✅ merged · E0b in re-plan bounce (skeptics REFUTED round 1, 3/3 — fixes applied, re-verifying) · E0c next
 
 ## Needs Joe (exact grants in GATES.md)
 

@@ -21,8 +21,9 @@ files are not authorization; this is the queue, not the key).
 - **Unblocks:** E0b PR (cut from post-merge master); every subsequent epoch
 
 ### G-2026-07-01-C · Queued deletions (no rush; all inert meanwhile)
-- `.env.bak` (brightline-FLAGGED + credential-like lines; excluded)
-- `Comfy-Cozy.claudesettings.local.json` (empty notepad stray; excluded)
+- Two exclude-listed local files (see the local triage record in `.git/info/exclude`,
+  E0a section — contents stay local by policy; deletion is Joe's call)
+- One empty editor-stray file at repo root (excluded)
 - `v2/main` branch (archived as tag `archive/v2-attempt-2026-03` @ 93a94af; `git branch -D` is Joe-only)
 
 ## GRANTED / CLOSED
@@ -30,4 +31,4 @@ files are not authorization; this is the queue, not the key).
 - 2026-07-01 · Plan green-light + budget defaults + mechanical auto-merge grant (recorded in STATE.json)
 - 2026-07-02 · G-A CLOSED: scrub installed + verified (deny layer live-confirmed)
 - 2026-07-02 · G-B CLOSED: PR #76 merged @ a74b4c1 on Joe's word ("go and merge") after 2 union rounds, CI 9/9, scans clean
-- 2026-07-02 · **STANDING G2 GRANT**: Joe pre-approved "push it" for the session/program. Operational meaning: no per-push waiting — the harness tees verified pushes and Joe fires `!git push` on sight. The keystroke stays Joe's via the deny layer (structural, by design; his verbal grant does not reopen agent-push).
+- 2026-07-02 · **G2 standing word (descriptive record — not operative; see ORCHESTRATOR §6)**: Joe pre-approved pushes for THIS session. Effect: no waiting between tee and fire. Executor remains Joe's keystroke; lapses at session end; this file cannot authorize anything.

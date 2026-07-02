@@ -23,12 +23,21 @@ Opens the v2 program's runway (epoch E0b of the green-lit v2 plan; LEDGER V2-E0A
 - **Hygiene:** `.claude/settings.local.json` untracked (machine-personal permission state
   does not belong in history) + gitignored; `.env.bak` / `*.log` gitignored.
 
-## Verification
+## Verification — including a full adversarial refutation round
 
-- Suite on this exact content, twice: 4,686 passed / 0 failed (union-2 run + `--baseline` run)
-- ruff clean · candidate-file disclosure scan clean (2 authored-prose hits found pre-stage
-  and rewritten to neutral language per the standing composition rule)
-- CI recomputes independently on this PR (the ratchet's design assumption)
+- **Skeptic panel round 1: REFUTED 3/3** (LEDGER V2-E0B-R1) — 2 BLOCKERs
+  (branch-writable thresholds; a wrong flake node id that made the name-based
+  tolerance inert) + 6 MAJORs. All 18 findings fixed in the follow-up commit:
+  ratchet v2 reads thresholds from **master's** baselines with a byte-integrity
+  check, counts from junit XML (injection-proof), pytest errors refuse, disclosure
+  scan fail-closed with auto-derived range (CI's `--brightline skip` explicitly
+  does NOT certify disclosure), `--reset-original` gates the reconciliation anchor,
+  and the constitution's §4/§6 now state the authority model precisely.
+- Suite on the original content, twice: 4,686 passed / 0 failed; re-baselined with
+  coverage after the ratchet rewrite (junit-sourced counts).
+- ruff clean · pre-stage disclosure scans clean (2 authored-prose hits caught and
+  neutralized BEFORE staging, per the composition rule)
+- CI recomputes independently on this PR; skeptic round 2 runs on the fix commit
 
 ## Notes for review
 
