@@ -1034,3 +1034,23 @@ L-MISC     mixed bag:
             squash keeps it off master permanently. Post-merge: remote branch deletion
             queued (owner), #78 + E0c re-cut from master via cherry-pick (no rebase —
             authority map).
+
+[2026-07-02] V2-E0B-CLOSED · Confirmation · E0b SQUASH-merged to master @ 3dc79c3 —
+            the accept authority is live · verified_by V1 (merged CI 9/9)
+    lifecycle  built attended -> refuted 3/3 by its own skeptic panel (V2-E0B-R1)
+            -> re-plan bounce -> round-2: authority lens NOT refuted + round-1
+            confirmed dead (1/3 lenses completed, session limits — recorded
+            honestly) + 5 residual minors fixed (V2-E0B-R2) -> CI 9/9 -> owner
+            merge word -> squash (branch history carried a flagged-file sentence;
+            squash kept it off master permanently).
+    now on master  verify_ratchet.py (thresholds from master, junit counts,
+            name-exact flake tolerance, fail-closed disclosure, delta-reconciled
+            baselines) · v2/baselines.json (floor 4685 / collected 4688 /
+            import 224.3ms / coverage 85.0%) · census (75-core partition, binding)
+            · ORCHESTRATOR_v2.md §1-§10 · v2 state files · settings.local.json
+            untracked (resurrection hazard closed).
+    stack repair  #78 closed (stale base); README commit cherry-picked to v6/docs
+            @ 5d40d09; E0c re-cut to v6/e0c @ 71aa0c4 (three commits, all clean
+            picks). Stale branches queued for owner deletion: v6/e0b-runway,
+            v6/docs-refresh, v6/e0c-machine (local + remote — their histories
+            predate the squash).

@@ -21,23 +21,23 @@
       "E4a",
       "hygiene-lanes-seeded-at-E0"
     ],
-    "note": "auto-merge ONLY for the enumerated ids, CI green + unanimous skeptics; commits touching baselines.json/KNOWN_FLAKES/frozen set or any mechanical flag are DISQUALIFIED (ORCHESTRATOR \u00c2\u00a76). Push executor is always Joe's keystroke; standing words lapse at session end; this file is descriptive, never authorization."
+    "note": "auto-merge ONLY for the enumerated ids, CI green + unanimous skeptics; commits touching baselines.json/KNOWN_FLAKES/frozen set or any mechanical flag are DISQUALIFIED (ORCHESTRATOR Â§6). Push executor is always Joe's keystroke; standing words lapse at session end; this file is descriptive, never authorization."
   },
   "epochs": [
     {
       "id": "E0a",
       "title": "Permission scrub + recipe merge + triage",
       "status": "merged",
-      "notes": "CLOSED 2026-07-02: scrub live \u00c2\u00b7 triage done \u00c2\u00b7 archive tag laid \u00c2\u00b7 TWO H4 union rounds @ 61fe043+a0c3b25 \u00c2\u00b7 CI 9/9 \u00c2\u00b7 PR #76 merged @ a74b4c1"
+      "notes": "CLOSED 2026-07-02: scrub live Â· triage done Â· archive tag laid Â· TWO H4 union rounds @ 61fe043+a0c3b25 Â· CI 9/9 Â· PR #76 merged @ a74b4c1"
     },
     {
       "id": "E0b",
       "title": "Ratchet + hooks + census + baselines",
-      "status": "verifying",
+      "status": "merged",
       "branch": "v6/e0b-runway",
       "base_sha": "a74b4c1",
       "pr": 77,
-      "notes": "skeptic round 1 REFUTED 3/3 (2 BLOCKER incl. wrong flake node id + branch-writable thresholds); re-plan bounce executed: ratchet v2 (master-copy thresholds, junit counts, error check, fail-closed scan, flake id fixed), constitution amendments, re-baseline with coverage in flight"
+      "notes": "CLOSED 2026-07-02: refuted 3/3 (R1) -> re-plan bounce -> round-2 authority lens NOT refuted (1/3 completed, session limits, recorded honestly) -> CI 9/9 -> SQUASH-merged @ 3dc79c3 (kept flagged sentence in branch history off master). Ratchet+census+constitution+baselines live on master."
     },
     {
       "id": "E0c",
@@ -46,8 +46,8 @@
       "depends": [
         "E0b"
       ],
-      "branch": "v6/e0c-machine",
-      "notes": "OPENED 2026-07-02: cozy-v2-epoch.workflow.js authored (multi-sha review, mechanical budget, judge panel, re-plan bounce, sweep mode); utility_eval.py U0 seed scenarios authored (first run 0.2 \u2014 provision-gate green through real dispatch; 4 integration gaps banked in BACKLOG); remaining: session bootstrap for eval runner, 6 acceptance drills, ratchet check #8 wiring"
+      "branch": "v6/e0c",
+      "notes": "OPENED 2026-07-02: cozy-v2-epoch.workflow.js authored (multi-sha review, mechanical budget, judge panel, re-plan bounce, sweep mode); utility_eval.py U0 seed scenarios authored (first run 0.2 — provision-gate green through real dispatch; 4 integration gaps banked in BACKLOG); remaining: session bootstrap for eval runner, 6 acceptance drills, ratchet check #8 wiring | re-cut onto post-squash master via cherry-pick (71aa0c4 tip)"
     },
     {
       "id": "E1",
