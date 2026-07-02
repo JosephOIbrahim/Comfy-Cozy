@@ -1009,3 +1009,28 @@ L-MISC     mixed bag:
             BLOCKERs were real, mechanically verified, and pre-merge — the cost of
             NOT running it would have been an autonomous program governed by a
             gameable gate with an inert flake tolerance.
+
+[2026-07-02] V2-E0B-R2 · Confirmation · Skeptic round 2 on be97cbd: NOT refuted, round-1
+            findings confirmed dead — WITH AN ASTERISK recorded honestly · verified_by V1
+    status  round 2 completed 1 OF 3 lenses: two skeptic agents died on the account
+            session limit (resets 12pm ET). The completed lens (authority — round 1's
+            harshest refuter) verified every round-1 finding dead under its lens AND
+            covered most judge-lens territory: refuted=false, round1_fixed=true,
+            5 residual findings (4 MINOR, 1 NIT). Per the SPEND-LIMIT precedent the
+            Floor does not bend: for THIS Tier-C PR the constitutional gate is the
+            owner's file-by-file review (ORCHESTRATOR §4), with the panel advisory;
+            the 2 missing lenses are queued to re-run post-reset if the owner wants
+            them before his review. CI on be97cbd: green, zero failures.
+    fixes(R2, this commit)  _flake_match: substring -> exact canonical segment match
+            (superstring-named tests refused; [param] variants of the named flake
+            tolerated; 6/6 probe cases). check_baseline_integrity: compares the
+            COMMITTED candidate copy (git show HEAD:) so the §4 copy procedure cannot
+            blind it; §4 copy text corrected. §2 accept predicate now requires
+            disclosure_certified (CI --brightline skip can never accept an epoch);
+            epoch workflow accept() enforces it in code. assert_flakes_collect derives
+            targets from KNOWN_FLAKES. Header plan_file -> plan dangler fixed.
+    decision  SQUASH-MERGE PR #77 (authority-lens recommendation): c8bd17f's history
+            carries a flagged-file description its successor only rewrote at the tip;
+            squash keeps it off master permanently. Post-merge: remote branch deletion
+            queued (owner), #78 + E0c re-cut from master via cherry-pick (no rebase —
+            authority map).

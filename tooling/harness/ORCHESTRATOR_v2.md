@@ -2,7 +2,7 @@
 
 > The BUILD harness: Claude Code agent teams editing this repo. Distinct from the
 > PRODUCT harness (`agent/harness/cozy_loop.py`) — ideas are borrowed, code never is.
-> Authoritative plan: Joe's plan file (see `v2/STATE.json:plan_file`), whose §13
+> Authoritative plan: Joe's plan file (see `v2/STATE.json:plan` — name/sha256), whose §13
 > supersession map OVERRIDES the design annexes wherever they disagree.
 > Green-lit 2026-07-01. Grants recorded in `v2/STATE.json`.
 
@@ -30,7 +30,10 @@ Print mile markers ("E2 · forge 3/6").
 | Skeptics ×3 | adversarial review of **EVERY** `[FORGE]` commit in `base_sha..HEAD` (lenses: weakened-tests · silent-regression/scope-creep · determinism/frozen-zone); majority (≥2) refutes | build | read | strong |
 | Scribe | sole writer of durable harness state (LEDGER, STATE, STATUS, GATES, RESUME, PR body); lightweight tags | push, annotated tags, branch deletion | add/commit/tag | mid |
 
-Accept predicate: `ratchet.all_green AND refutations < 2`. No agent ever pushes,
+Accept predicate: `ratchet.all_green AND verdict.disclosure_certified AND
+refutations < 2` (R2: CI verdicts run `--brightline skip` and NEVER certify
+disclosure — the local Crucible run must; an epoch cannot accept on a CI verdict
+alone). No agent ever pushes,
 touches remotes, deletes branches, or resets — structurally denied (settings deny
 list) and constitutionally forbidden (CLAUDE.md authority map).
 
@@ -85,8 +88,10 @@ carry guarded vocabulary); their integrity is enforced by fail-closed behavior
 (absent scanner blocks commits/pushes) + the E0c acceptance drills, not by
 version control. Until E0c wires the ratchet into CI, the "CI recomputes"
 property is realized by Joe's PR review of CI logs; the master's-copy procedure
-for Crucible is: copy master's `verify_ratchet.py` AND `baselines.json` into the
-candidate tree's paths before running (or run post-merge-to-local-master).
+for Crucible is: copy master's `verify_ratchet.py` into the candidate tree's
+path before running (thresholds come from `git show origin/master` inside the
+script; baseline integrity compares the COMMITTED candidate copy at HEAD, so
+working-tree copies cannot blind it — R2 fix).
 
 ## §5 · Frozen zone & unfreeze
 

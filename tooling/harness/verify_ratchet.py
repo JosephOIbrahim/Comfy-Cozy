@@ -113,13 +113,17 @@ def measure_tests(tag: str) -> dict:
 
 
 def _flake_match(bad_name: str) -> bool:
-    """junit classnames lose the .py suffix and use dots — match on the stable
-    tail (Class::test) plus module stem so both spellings of a node id hit."""
+    """EXACT canonical match (R2 fix: substring containment tolerated superstring-
+    named tests). Both spellings — pytest node ids and junit-reconstructed names —
+    canonicalize to path/class/test segments; a flake matches only when the
+    trailing segments are EQUAL. A [param] suffix on the failure is stripped, so
+    parametrized variants of the named flake match; nothing else does."""
+    base = re.sub(r"\[.*\]$", "", bad_name)
+    bad_parts = [p[:-3] if p.endswith(".py") else p for p in re.split(r"::|/", base)]
     for flake in KNOWN_FLAKES:
-        parts = flake.split("::")
-        stem = Path(parts[0]).stem
-        tail = "::".join(parts[1:])
-        if tail and tail in bad_name and stem in bad_name:
+        fparts = flake.split("::")
+        fcanon = [Path(fparts[0]).stem] + fparts[1:]
+        if bad_parts[-len(fcanon):] == fcanon:
             return True
     return False
 
@@ -215,7 +219,14 @@ def check_baseline_integrity(master_base: dict | None) -> dict:
     if master_base is None:
         return {"status": "BOOTSTRAP", "ok": True,
                 "detail": "master has no baselines yet; local file is provisional"}
-    local = json.loads(BASELINES.read_text(encoding="utf-8")) if BASELINES.exists() else None
+    # R2 fix: compare the COMMITTED candidate copy (HEAD), not the working tree —
+    # the §4 copy-master's-files procedure overwrites the working tree, which
+    # would blind this check exactly when the constitution's procedure is followed.
+    head_p = _run(["git", "show", f"HEAD:{BASELINES_REPO_PATH}"])
+    try:
+        local = json.loads(head_p.stdout) if head_p.returncode == 0 else None
+    except json.JSONDecodeError:
+        local = None
     if local == master_base:
         return {"status": "MATCHES_MASTER", "ok": True}
     rows = []
@@ -236,9 +247,10 @@ def git_head() -> str:
 
 
 def assert_flakes_collect() -> list[str]:
-    """Each known flake must actually exist — a renamed flake fails loudly."""
-    p = _run([sys.executable, "-m", "pytest", "tests/test_cozy_persistence.py",
-              "--collect-only", "-q"])
+    """Each known flake must actually exist — a renamed flake fails loudly.
+    Target files derive from KNOWN_FLAKES (R2: no hardcoded module)."""
+    files = sorted({f.split("::")[0] for f in KNOWN_FLAKES})
+    p = _run([sys.executable, "-m", "pytest", *files, "--collect-only", "-q"])
     missing = []
     for flake in KNOWN_FLAKES:
         tail = flake.split("::", 1)[1] if "::" in flake else flake
