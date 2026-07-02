@@ -1,0 +1,3 @@
+# cozy-improve harness output dir.
+# Holds per-item PR bodies (PR_<id>.md), epoch summaries (morning_report_<epoch>.md),
+# and BLOCKER.md on a TERMINAL halt. Written by the Scribe stage of the epoch script.

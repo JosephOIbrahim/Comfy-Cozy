@@ -1,0 +1,31 @@
+{"T_exec_wall_ms": 9421.55, "T_execute_s": null, "T_first_node_s": null, "T_queue_s": null, "T_resolve_ms": 0.0, "T_retrieve_ms": 6786.95, "T_total_ms": 16208.5, "cold": true, "exec_status": "complete", "recall_hits": 2, "run": 0}
+{"T_exec_wall_ms": 181647.95, "T_floor_ksampler_s": null, "T_resolve_ms": 0.0, "T_retrieve_ms": 7056.76, "T_total_ms": 188704.72, "cold": true, "comfy_total_s": 181.11, "exec_status": "complete", "recall_hits": 2, "run": 0, "slowest_node": null, "slowest_s": null}
+{"T_exec_wall_ms": 1014.53, "T_floor_ksampler_s": null, "T_resolve_ms": 0.01, "T_retrieve_ms": 12.5, "T_total_ms": 1027.04, "cold": false, "comfy_total_s": 0.53, "exec_status": "complete", "recall_hits": 2, "run": 1, "slowest_node": null, "slowest_s": null}
+{"T_exec_wall_ms": 181025.27, "T_floor_ksampler_s": null, "T_resolve_ms": 0.01, "T_retrieve_ms": 16.67, "T_total_ms": 181041.95, "cold": false, "comfy_total_s": 180.59, "exec_status": "complete", "recall_hits": 2, "run": 2, "slowest_node": null, "slowest_s": null}
+{"T_exec_wall_ms": 181594.2, "T_floor_ksampler_s": null, "T_resolve_ms": 0.0, "T_retrieve_ms": 10.82, "T_total_ms": 181605.03, "cold": false, "comfy_total_s": 181.12, "exec_status": "complete", "recall_hits": 2, "run": 3, "slowest_node": null, "slowest_s": null}
+{"T_exec_wall_ms": 1033.63, "T_floor_ksampler_s": null, "T_resolve_ms": 0.01, "T_retrieve_ms": 12.52, "T_total_ms": 1046.16, "cold": false, "comfy_total_s": 0.5, "exec_status": "complete", "recall_hits": 2, "run": 4, "slowest_node": null, "slowest_s": null}
+{"T_resolve_ms": 0.008, "T_retrieve_ms": 6475.62, "cold": true, "hits": 2, "phase": "local", "run": 0, "v": 2}
+{"T_resolve_ms": 0.012, "T_retrieve_ms": 12.05, "cold": false, "hits": 2, "phase": "local", "run": 1, "v": 2}
+{"T_resolve_ms": 0.011, "T_retrieve_ms": 11.46, "cold": false, "hits": 2, "phase": "local", "run": 2, "v": 2}
+{"T_resolve_ms": 0.01, "T_retrieve_ms": 11.14, "cold": false, "hits": 2, "phase": "local", "run": 3, "v": 2}
+{"T_resolve_ms": 0.011, "T_retrieve_ms": 10.83, "cold": false, "hits": 2, "phase": "local", "run": 4, "v": 2}
+{"T_resolve_ms": 0.01, "T_retrieve_ms": 10.66, "cold": false, "hits": 2, "phase": "local", "run": 5, "v": 2}
+{"T_resolve_ms": 0.01, "T_retrieve_ms": 11.08, "cold": false, "hits": 2, "phase": "local", "run": 6, "v": 2}
+{"T_resolve_ms": 0.011, "T_retrieve_ms": 10.83, "cold": false, "hits": 2, "phase": "local", "run": 7, "v": 2}
+{"T_resolve_ms": 0.011, "T_retrieve_ms": 11.85, "cold": false, "hits": 2, "phase": "local", "run": 8, "v": 2}
+{"T_resolve_ms": 0.011, "T_retrieve_ms": 11.47, "cold": false, "hits": 2, "phase": "local", "run": 9, "v": 2}
+{"T_resolve_ms": 0.011, "T_retrieve_ms": 10.7, "cold": false, "hits": 2, "phase": "local", "run": 10, "v": 2}
+{"T_resolve_ms": 0.01, "T_retrieve_ms": 10.49, "cold": false, "hits": 2, "phase": "local", "run": 11, "v": 2}
+{"T_resolve_ms": 0.01, "T_retrieve_ms": 10.67, "cold": false, "hits": 2, "phase": "local", "run": 12, "v": 2}
+{"T_resolve_ms": 0.01, "T_retrieve_ms": 10.54, "cold": false, "hits": 2, "phase": "local", "run": 13, "v": 2}
+{"T_resolve_ms": 0.011, "T_retrieve_ms": 10.66, "cold": false, "hits": 2, "phase": "local", "run": 14, "v": 2}
+{"T_resolve_ms": 0.01, "T_retrieve_ms": 11.43, "cold": false, "hits": 2, "phase": "local", "run": 15, "v": 2}
+{"T_resolve_ms": 0.011, "T_retrieve_ms": 10.45, "cold": false, "hits": 2, "phase": "local", "run": 16, "v": 2}
+{"T_resolve_ms": 0.011, "T_retrieve_ms": 10.94, "cold": false, "hits": 2, "phase": "local", "run": 17, "v": 2}
+{"T_resolve_ms": 0.011, "T_retrieve_ms": 10.86, "cold": false, "hits": 2, "phase": "local", "run": 18, "v": 2}
+{"T_resolve_ms": 0.009, "T_retrieve_ms": 10.84, "cold": false, "hits": 2, "phase": "local", "run": 19, "v": 2}
+{"T_floor_wall_s": 3.7, "T_ipc_post_ms": 41.21, "phase": "floor", "prompt_id": "e9d6dd8a-4696-498e-85f0-61a74710a372", "run": 0, "seed": 1000, "v": 2}
+{"T_floor_wall_s": 3.074, "T_ipc_post_ms": 20.0, "phase": "floor", "prompt_id": "25ecfc84-b9f2-45df-8d7c-90f0eeec4e9c", "run": 1, "seed": 1001, "v": 2}
+{"T_floor_wall_s": 2.878, "T_ipc_post_ms": 15.6, "phase": "floor", "prompt_id": "a6e25821-37e5-4093-b6ab-4ecf6a4f614c", "run": 2, "seed": 1002, "v": 2}
+{"T_floor_wall_s": 2.973, "T_ipc_post_ms": 14.58, "phase": "floor", "prompt_id": "4e90cc05-8764-409c-bfa9-1e49319eebb1", "run": 3, "seed": 1003, "v": 2}
+{"T_floor_wall_s": 3.375, "T_ipc_post_ms": 16.36, "phase": "floor", "prompt_id": "100a0f09-9beb-4f5a-b766-557d56b73f7a", "run": 4, "seed": 1004, "v": 2}

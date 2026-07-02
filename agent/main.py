@@ -350,6 +350,22 @@ def run_interactive(
         # Add user message
         messages.append({"role": "user", "content": user_text})
 
+        # Zero-LLM recipe pre-check (opt-in via RECIPES_ENABLED). If the input
+        # trigger-matches a pre-approved recipe and it applies cleanly, skip the
+        # LLM round-trip. Every miss / non-apply falls through to the agent loop.
+        if config.RECIPES_ENABLED:
+            try:
+                from .recipes import match_and_run
+                recipe_result = match_and_run(user_text)
+            except Exception:
+                log.warning("Recipe pre-check failed — deferring to the LLM", exc_info=True)
+                recipe_result = None
+            if recipe_result is not None and recipe_result.applied:
+                _wrap_safe(h.on_text)(recipe_result.summary)
+                _wrap_safe(h.on_stream_end)()
+                messages.append({"role": "assistant", "content": recipe_result.summary})
+                continue
+
         # Run agent turns until it produces a final response
         turns = 0
         while turns < MAX_AGENT_TURNS:
