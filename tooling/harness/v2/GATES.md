@@ -23,8 +23,26 @@ files are not authorization; this is the queue, not the key).
 ### G-2026-07-01-C · Queued deletions (no rush; all inert meanwhile)
 - Two exclude-listed local files (see the local triage record in `.git/info/exclude`,
   E0a section — contents stay local by policy; deletion is Joe's call)
-- One empty editor-stray file at repo root (excluded)
+- One empty editor-stray file at repo root (excluded) · one local system-prompt
+  capture at repo root (excluded, E0c disposition)
 - `v2/main` branch (archived as tag `archive/v2-attempt-2026-03` @ 93a94af; `git branch -D` is Joe-only)
+- ~~v6/e0b-runway, v6/docs-refresh, v6/e0c-machine~~ **DELETED by Joe 2026-07-02** (local + remote — pre-squash histories unreachable)
+
+### G-2026-07-02-D · Release 5.5.0 ceremony (all Joe keystrokes; commands teed in-session)
+1. `git push -u origin v6/release-5.5.0` → agent opens the PR
+2. Merge #79 (README) — CI pending; agent merges on green under the owner's
+   2026-07-02 close-the-loop word (recorded here as the per-call G3 word)
+3. Merge the release PR
+4. `git fetch origin master && git tag v5.5.0 origin/master && git push origin v5.5.0`
+5. `gh release create v5.5.0 ...` (deny-listed for agents by design; notes teed in-session)
+
+## CLOSED (recent)
+
+- 2026-07-02 · Round-2 skeptic lenses 2/3 (judge, correctness — died on session limit):
+  **superseded** by the owner's Tier-C file-by-file review and squash-merge of #77.
+  The completed authority lens (NOT refuted, round-1 confirmed dead) + CI 9/9 +
+  owner review = the constitutional gate for accept-authority PRs. Not re-run
+  against merged code by decision (assurance spend without a decision to inform).
 
 ## GRANTED / CLOSED
 

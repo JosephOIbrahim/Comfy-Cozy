@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.5.0] - 2026-07-02 — Zero-LLM Recipes
+
+"Dreamier", "sharper", "faster" now land in milliseconds: the most common artist
+intents apply as deterministic parameter macros with **no LLM round-trip** — and
+the machinery that will build the 6.0 line moved into the repo, adversarially
+verified by its own skeptic panel.
+
+### Added
+- **Zero-LLM recipe layer** (`agent/recipes/`) — 14+ built-in recipes: intent
+  macros (dreamier, sharper, faster, ...) plus build recipes for common workflow
+  assemblies. Every expanded step re-enters the dispatcher, so the existing
+  safety gate vets each one; every change is one `undo_workflow_patch` away.
+  Tools: `apply_recipe`, `list_recipes`.
+- **v2 build-harness runway** (`tooling/harness/`, dev-infra) — the mechanical
+  accept gate `verify_ratchet.py` (junit-sourced counts, name-exact flake
+  tolerance, master-pinned thresholds, delta-reconciled baselines, fail-closed
+  disclosure scan), the binding 75-core tool census, and the ORCHESTRATOR_v2
+  constitution governing how the 6.0 line gets built. Its first commit was
+  refuted 3/3 by its own adversarial panel, rebuilt, and re-judged — the gate
+  earned its job before getting it.
+
+### Changed
+- Tool count 131 → **133** (`apply_recipe`, `list_recipes` — READ_ONLY
+  dispatchers; the steps they expand are individually gated).
+- README: ADHD-friendly pass — scannable intro, one-fact-per-line TL;DR,
+  jump-to navigation, a new Zero-LLM Recipes section, and counts trued against
+  the live registry across four mermaid diagrams. Repo description refreshed.
+- `.claude/settings.local.json` untracked and gitignored — machine-personal
+  permission state no longer ships in history; `.env.bak` / `*.log` gitignored.
+
+### Verified
+- 4,686 passed / 0 failed across three independent full-suite runs on the merged
+  content; CI 9/9 per merge (Ubuntu + Windows × Python 3.10–3.13). Coverage
+  floor measured and pinned at 85.0% (windows/py3.12 canonical leg).
+
 ## [5.4.0] - 2026-06-24 — Brain Swap
 
 NVIDIA Nemotron joins the lineup as a fifth LLM provider, and you can now swap the
