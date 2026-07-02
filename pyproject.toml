@@ -1,7 +1,7 @@
 [project]
 name = "comfyui-agent"
-version = "5.4.0"
-description = "AI co-pilot for ComfyUI — 129 MCP tools, sub-second re-validate, EXR-aware vision loop, workflow.lock provenance, multi-endpoint floors, durable cross-session learning"
+version = "5.5.0"
+description = "AI co-pilot for ComfyUI — 133 MCP tools, zero-LLM artist recipes, sub-second re-validate, EXR-aware vision loop, workflow.lock provenance, multi-endpoint floors, durable cross-session learning"
 readme = "README.md"
 license = {text = "MIT"}
 authors = [{name = "Joseph Ibrahim"}]
