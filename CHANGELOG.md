@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.4.0] - 2026-06-24 — Brain Swap
+
+NVIDIA Nemotron joins the lineup as a fifth LLM provider, and you can now swap the
+reasoning model at launch or mid-conversation — no restart.
+
+### Added
+- **NVIDIA Nemotron provider** (`agent/llm/_nvidia.py`) — endpoint-agnostic,
+  OpenAI-compatible, serving NVIDIA NIM cloud, OpenRouter, and self-hosted
+  vLLM/SGLang from one provider. Nemotron's `<think>` reasoning is stripped from
+  the visible stream **and** the replayed history (off by default); tool-call
+  errors are translated to plain language; streaming usage feeds context
+  compaction. Aliases `nemotron` (super-120b), `nemotron-ultra` (550b),
+  `nemotron-nano` (30b) — model ids verified live against NVIDIA's `/v1/models`.
+- **Runtime model swap** — `agent run --model <alias>` / `--provider`, plus the
+  `swap_model` / `list_models_available` MCP/CLI tools. Atomic (rolls back on a
+  bad key via a 1-token live probe), reaches the live loop per-turn, and never
+  moves vision off a multimodal provider (`VISION_PROVIDER`, default `anthropic`).
+- **Provider-aware context window** — `NVIDIA_CONTEXT_WINDOW` opt-in lets a
+  long-context Nemotron use its window instead of the default compaction floor.
+
+### Changed
+- Tool count 129 → **131** (the two model-swap tools, risk-classified in the gate).
+  The provider abstraction now spans **five** providers with full conformance parity.
+- CLI key gate is provider-aware; `agent/brain/vision.py` reads `VISION_PROVIDER`
+  so swapping the loop to a text-only model never breaks `analyze_image`.
+
+### Verified
+- Full mocked suite green (4,600+ tests); CI 8/8 (Ubuntu + Windows × Python
+  3.10–3.13). Live end-to-end against NVIDIA NIM cloud — completion + tool-calling
+  + reasoning filter, across the super and nano tiers.
+
 ## [5.3.1] - 2026-06-11 — Panel Hardening
 
 The L-PANEL adversarial pass — the cap-killed UI dimension probed against live

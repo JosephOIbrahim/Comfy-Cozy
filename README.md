@@ -30,7 +30,7 @@ graph LR
 
 > **TL;DR**
 > - Plain-English co-pilot for ComfyUI. You describe the change; the agent loads workflows, swaps models, patches parameters, runs generations, evaluates output.
-> - **129 MCP tools** across **4 LLM providers** — Claude, GPT-4o, Gemini, Ollama. Swap providers with one env var.
+> - **131 MCP tools** across **5 LLM providers** — Claude, GPT-4o, Gemini, Ollama, and NVIDIA Nemotron. Swap providers (or models) with one env var or a flag.
 > - Every mutation is a **reversible delta layer** (LIVRPS). Full undo stack. Nothing destructive lands without your say-so.
 > - **Experience persists.** Session 1 ships with built-in knowledge. After ~30 runs the agent starts biasing toward what's actually worked for you. Every run appends one fsync'd line — never a rewrite, never silent loss.
 > - **The edit loop is fast.** Validate → fix → re-validate dropped from ~7 s to ~0.5 s (measured): node schemas are fetched class-scoped and cached, so a re-validate after a fix costs ~1 ms. Interrupted model downloads resume from the byte they died at, with live progress. Long jobs get real per-tool time budgets — a 15-minute video render is no longer killed at 2 minutes.
@@ -66,7 +66,7 @@ graph LR
 
 ## Sponsor This Project
 
-Comfy Cozy is production software. 4,550+ tests (all mocked, runnable in minutes) cover the 129 MCP tools that drive the workflow lifecycle end-to-end. CI runs the full advertised matrix — Python 3.10–3.13 on Ubuntu and Windows — with the USD stage layer actually installed and tested, not skipped. Four LLM providers — Anthropic, OpenAI, Gemini, Ollama — sit behind a single abstraction with parity across all four. The [CHANGELOG](CHANGELOG.md) tracks active hardening and new work.
+Comfy Cozy is production software. 4,600+ tests (all mocked, runnable in minutes) cover the 131 MCP tools that drive the workflow lifecycle end-to-end. CI runs the full advertised matrix — Python 3.10–3.13 on Ubuntu and Windows — with the USD stage layer actually installed and tested, not skipped. Five LLM providers — Anthropic, OpenAI, Gemini, Ollama, and NVIDIA Nemotron — sit behind a single abstraction with parity across all five. The [CHANGELOG](CHANGELOG.md) tracks active hardening and new work.
 
 If Comfy Cozy saves you time inside ComfyUI, sponsorship is the most direct way to keep it moving.
 
@@ -102,7 +102,7 @@ flowchart LR
 |---|------|-----------------|------|
 | 1 | **Python 3.11+** | [python.org/downloads](https://python.org/downloads) | already have it? skip |
 | 2 | **ComfyUI running** | [github.com/comfyanonymous/ComfyUI](https://github.com/comfyanonymous/ComfyUI) | already have it? skip |
-| 3 | **One LLM backend** | API key (Anthropic / OpenAI / Google) OR [Ollama](https://ollama.com) (free, local, no key) | 1 min to grab a key |
+| 3 | **One LLM backend** | API key (Anthropic / OpenAI / Google / [NVIDIA](https://build.nvidia.com)) OR [Ollama](https://ollama.com) (free, local, no key) | 1 min to grab a key |
 
 **Already have all three? Copy-paste these four blocks. That's it.**
 
@@ -125,7 +125,7 @@ One command. No build step. No Docker. No conda. Just pip.
 <summary>Want the test suite too? (optional, click to expand)</summary>
 
 ```bash
-pip install -e ".[dev]"           # + 4,550+ passing tests
+pip install -e ".[dev]"           # + 4,600+ passing tests
 pip install -e ".[dev,stage]"     # + USD stage subsystem (~200MB, most users skip)
 ```
 
@@ -280,7 +280,7 @@ Restart ComfyUI. You'll see `comfy_agent_bridge: routes registered` in the log -
 
 ## Pick Your LLM
 
-Comfy Cozy is **provider-agnostic**. Same 129 tools, same streaming, same vision analysis -- swap one env var.
+Comfy Cozy is **provider-agnostic**. Same 131 tools, same streaming, same vision analysis -- swap one env var, or swap models mid-session.
 
 ### Anthropic (default)
 
@@ -355,25 +355,56 @@ agent run
 
 Uses Ollama's OpenAI-compatible endpoint at `localhost:11434`. Override with `OLLAMA_BASE_URL` if running remotely. **No data leaves your machine.**
 
+### NVIDIA Nemotron (NIM cloud / OpenRouter / self-hosted)
+
+```bash
+# Install the SDK (one time)
+pip install openai
+
+# .env
+LLM_PROVIDER=nvidia
+NVIDIA_BASE_URL=https://integrate.api.nvidia.com/v1   # or OpenRouter / self-hosted vLLM
+NVIDIA_API_KEY=nvapi-your-key-here
+AGENT_MODEL=nvidia/nemotron-3-super-120b-a12b         # super (default) / ultra / nano
+
+# Run
+agent run --model nemotron
+```
+
+Endpoint-agnostic, OpenAI-compatible provider for NVIDIA's **Nemotron-3** reasoning models — grab a key + free credits at [build.nvidia.com](https://build.nvidia.com). The same provider serves NVIDIA NIM cloud, OpenRouter, and a self-hosted vLLM/SGLang endpoint; the model id picks the backend. Nemotron streams `<think>` reasoning, which the provider strips from both the visible output **and** the replayed history by default (reasoning is off unless you set `NVIDIA_EMIT_REASONING=true`). Vision stays on a multimodal provider (`VISION_PROVIDER`, default `anthropic`), so swapping the loop to a text-only Nemotron never breaks `analyze_image`.
+
+### Swap models on the fly
+
+Beyond the `LLM_PROVIDER` env var, switch the reasoning model per launch or mid-conversation — no restart, atomic (rolls back on a bad key), and it reaches the live loop immediately:
+
+```bash
+agent run --model nemotron        # alias -> nvidia/nemotron-3-super-120b-a12b
+agent run --model claude          # back to the default
+agent run --provider openai --model gpt-4o
+```
+
+In conversation, the `swap_model` and `list_models_available` tools do the same thing.
+
 ### Architecture
 
-All four providers share the same abstraction layer (`agent/llm/`):
+All five providers share the same abstraction layer (`agent/llm/`):
 
 ```mermaid
 graph LR
-    Agent[Agent Loop<br/>129 tools] --> LLM{LLM_PROVIDER}
+    Agent[Agent Loop<br/>131 tools] --> LLM{LLM_PROVIDER}
     LLM -->|anthropic| A["Claude<br/>Streaming + Cache"]
     LLM -->|openai| B["GPT-4o<br/>Tool Calls"]
     LLM -->|gemini| C["Gemini<br/>Function Decl."]
     LLM -->|ollama| D["Ollama<br/>Local + Private"]
+    LLM -->|nvidia| E["Nemotron<br/>NIM / OpenRouter"]
 
     classDef orange fill:#d99458,color:#1a1a1a,stroke:#1a1a1a
     classDef yellow fill:#d9c958,color:#1a1a1a,stroke:#1a1a1a
     class B,D orange
-    class Agent,A,C,LLM yellow
+    class Agent,A,C,E,LLM yellow
 ```
 
-Common types (`TextBlock`, `ToolUseBlock`, `LLMResponse`), unified error hierarchy, provider-specific format conversion handled internally. Switch providers with one env var -- no code changes. All 4 providers have dedicated test suites (132 tests) plus a parameterized conformance suite that verifies protocol compliance across providers. Every `stream()` and `create()` call is instrumented with `llm_call_total` and `llm_call_duration_seconds` metrics (per-provider labels).
+Common types (`TextBlock`, `ToolUseBlock`, `LLMResponse`), unified error hierarchy, provider-specific format conversion handled internally. Switch providers with one env var -- no code changes. All 5 providers have dedicated test suites (180+ tests) plus a parameterized conformance suite that verifies protocol compliance across providers. Every `stream()` and `create()` call is instrumented with `llm_call_total` and `llm_call_duration_seconds` metrics (per-provider labels).
 
 ### Reasoning + caching (Opus 4.7)
 
@@ -442,7 +473,7 @@ API accepts the next request.
 
 ### A. Inside Claude Code / Claude Desktop (recommended)
 
-The agent runs as an MCP server -- Claude can use all 129 tools directly.
+The agent runs as an MCP server -- Claude can use all 131 tools directly.
 
 Add this to your Claude Code or Claude Desktop MCP config:
 
@@ -529,7 +560,7 @@ graph TB
     end
     subgraph Backend ["Agent Backend (Python)"]
         Routes["49 REST Routes<br/>+ WebSocket"]
-        Tools["129 Tools<br/>workflow -- models -- vision -- session -- provision"]
+        Tools["131 Tools<br/>workflow -- models -- vision -- session -- provision"]
         Cache["object_info cache<br/>TTL + invalidate<br/>re-validate ~1 ms"]
         Engine["IAIEngine<br/>ComfyUIAdapter -- EndpointPool<br/>pooled client -- per-host breakers -- job affinity"]
         Cog["Cognitive Engine<br/>LIVRPS delta stack -- CWM -- experience"]
@@ -569,7 +600,7 @@ graph TB
 
 ```mermaid
 graph LR
-    You([You]) --> Agent[129 Tools]
+    You([You]) --> Agent[131 Tools]
     Agent --> Understand[UNDERSTAND<br/>What do you have?]
     Understand --> Discover[DISCOVER<br/>What do you need?]
     Discover --> Pilot[PILOT<br/>Make the changes]
@@ -959,7 +990,7 @@ graph TB
     subgraph Foundation ["Foundation Layer"]
         DAG["Workflow Intelligence DAG<br/>6 pure computation nodes"]
         OBS["Time-Sampled State<br/>Monotonic step index"]
-        CAP["Capability Registry<br/>129 tools indexed"]
+        CAP["Capability Registry<br/>131 tools indexed"]
     end
 
     subgraph Safety ["Safety Layer"]
@@ -1004,7 +1035,7 @@ graph LR
 
 Every tool call passes through a default-deny gate. Read-only tools bypass it (zero overhead). Destructive tools are always locked. The gate auto-detects loaded workflows AND USD stages: if either kind of workspace state exists for the current connection, mutation tools are allowed without explicit session context. Stage tools (`stage_write`, `stage_add_delta`) are recognized separately from workflow tools — a USD stage can exist independently of any loaded workflow.
 
-The gate runs on live state, not defaults. The real ComfyUI circuit-breaker state feeds the system-health check, and a per-session action history (the last 50 dispatched calls) feeds the constitution checks. Every one of the 129 dispatched tools carries an **explicit** risk classification — a completeness test (`tests/test_gate_completeness.py`) pins the registry so a new tool can't ship unclassified. And the gate **fails closed**: if the gate package itself can't import, every tool is denied until it can (it used to degrade silently, which meant ungated dispatch). One more consent rule rides on the same checks: after any workflow mutation, `execute_workflow` / `execute_with_progress` on the session workflow are denied until a `validate_before_execute` passes — validate, then run, enforced by the gate itself. (Executing an explicit file path is exempt; the session flag says nothing about an external file.)
+The gate runs on live state, not defaults. The real ComfyUI circuit-breaker state feeds the system-health check, and a per-session action history (the last 50 dispatched calls) feeds the constitution checks. Every one of the 131 dispatched tools carries an **explicit** risk classification — a completeness test (`tests/test_gate_completeness.py`) pins the registry so a new tool can't ship unclassified. And the gate **fails closed**: if the gate package itself can't import, every tool is denied until it can (it used to degrade silently, which meant ungated dispatch). One more consent rule rides on the same checks: after any workflow mutation, `execute_workflow` / `execute_with_progress` on the session workflow are denied until a `validate_before_execute` passes — validate, then run, enforced by the gate itself. (Executing an explicit file path is exempt; the session flag says nothing about an external file.)
 
 ```mermaid
 flowchart LR
@@ -1257,12 +1288,12 @@ The acceptance test (`tests/embedder/test_minilm_clustering.py`) verifies the co
 
 ### Tool Inventory
 
-**129 tools reachable via the central dispatcher** (`agent/tools/__init__.py:handle()`). The dispatcher routes through TWO maps:
+**131 tools reachable via the central dispatcher** (`agent/tools/__init__.py:handle()`). The dispatcher routes through TWO maps:
 
-- `_HANDLERS` (102 entries) — tools registered via module-level `TOOLS:` lists. Loaded eagerly at import time for the intelligence + stage layers.
+- `_HANDLERS` (104 entries) — tools registered via module-level `TOOLS:` lists. Loaded eagerly at import time for the intelligence + stage layers.
 - `_BRAIN_TOOL_NAMES` (27 entries) — tools registered via `BrainAgent` SDK subclasses (`__init_subclass__` auto-registration in `agent/brain/_sdk.py`). Loaded lazily on first call when `BRAIN_ENABLED=true` to break import cycles.
 
-Sum: 102 + 27 = 129. Verify the live count with:
+Sum: 104 + 27 = 131. Verify the live count with:
 ```python
 from agent.tools import _HANDLERS, _BRAIN_TOOL_NAMES, _ensure_brain
 _ensure_brain()  # forces lazy brain registration
@@ -1271,10 +1302,10 @@ print(len(_HANDLERS) + len(_BRAIN_TOOL_NAMES))
 
 | Layer | Count | Dispatch | Highlights |
 |-------|-------|----------|------------|
-| **Intelligence** (`agent/tools/`) | 80 | TOOLS list → `_HANDLERS` | Workflow parsing, model search (CivitAI + HF + 31k nodes), delta patching, graph surgery, canvas bridge, UI→API parsing, execution profiling, auto-wire, provisioning, execution, NIM lifecycle |
+| **Intelligence** (`agent/tools/`) | 82 | TOOLS list → `_HANDLERS` | Workflow parsing, model search (CivitAI + HF + 31k nodes), delta patching, graph surgery, canvas bridge, UI→API parsing, execution profiling, auto-wire, provisioning, execution, NIM lifecycle, model swap |
 | **Stage** (`agent/stage/`) | 22 | TOOLS list → `_HANDLERS` | USD cognitive state, LIVRPS composition, predictive experiments, scene composition |
 | **Brain** (`agent/brain/`) | 27 | BrainAgent SDK → `_BRAIN_TOOL_NAMES` | Vision analysis, goal planning, pattern memory, GPU optimization, artistic intent capture, iteration tracking |
-| **Total** | **129** | | |
+| **Total** | **131** | | |
 
 ### Workflow Lifecycle
 
@@ -1351,7 +1382,7 @@ panel/
     superduperPanel.js    Headless canvas↔agent bridge entry point
     agentClient.js        HTTP client incl. getWorkflowApiWithTouched / ackPush
     graphMode.js          GRAPH-mode panel + delta-failure status bar + modal
-tests/                4,550+ pytest + 87 Vitest, all mocked, ~3min + ~250ms
+tests/                4,600+ pytest + 87 Vitest, all mocked, ~3min + ~250ms
   panel/                  Vitest suite for write-back v1 (sample, deltaFailures,
                           pushApplyTouched, pushControl, pushOrchestrator,
                           integration, stress + LiteGraph stubs)
@@ -1438,7 +1469,7 @@ All settings live in your `.env` file:
 No ComfyUI needed -- everything is mocked:
 
 ```bash
-python -m pytest tests/ -v        # 4,550+ passing tests, ~3min
+python -m pytest tests/ -v        # 4,600+ passing tests, ~3min
 
 # Skip tests that require a real ComfyUI server or API keys
 python -m pytest tests/ -v -m "not integration"
