@@ -40,10 +40,75 @@ def _reset_circuit_breakers():
     """
     yield
     try:
-        from agent.circuit_breaker import COMFYUI_BREAKER
+        from agent.circuit_breaker import COMFYUI_BREAKER, _breakers, _registry_lock
         breaker = COMFYUI_BREAKER()
         breaker._state = "closed"
         breaker._failure_count = 0
+        # Per-endpoint breakers (hardening 3.5) reset in place — identity
+        # preserved for any test holding a reference.
+        with _registry_lock:
+            for name, b in _breakers.items():
+                if name.startswith("comfyui:"):
+                    b._state = "closed"
+                    b._failure_count = 0
+    except Exception:
+        pass
+
+
+@pytest.fixture(autouse=True)
+def _isolate_experience_file(tmp_path, monkeypatch):
+    """Redirect the cognitive experience JSONL to a per-test temp file.
+
+    Without this, every ``pipeline.run()`` in the suite (~56 call sites)
+    persists test chunks into the developer's REAL experience store
+    (``COMFYUI_DATABASE/comfy-cozy-experience.jsonl``) — real-store
+    pollution. Patching the call-time resolver keeps every
+    AutonomousPipeline constructed inside a test pointed at tmp_path.
+
+    The CANON-EXPFILE drift-stopper test in test_cognitive_pipeline.py
+    opts out by holding an import-time reference to the real resolver,
+    which this setattr does not touch.
+    """
+    try:
+        import cognitive.pipeline.autonomous as _auto
+    except ImportError:
+        yield
+        return
+    monkeypatch.setattr(
+        _auto,
+        "_default_experience_file",
+        lambda: str(tmp_path / "experience.jsonl"),
+    )
+    yield
+
+
+@pytest.fixture(autouse=True)
+def _reset_shared_caches():
+    """Reset cross-call cached state between tests (ledger A-CACHE-RESET).
+
+    The engine adapter singleton and the /object_info TTL cache are
+    module-level state; a warm entry leaking across the mocked suite would
+    mask regressions (H0.2 named this the Wave-2 merge blocker).
+    """
+    yield
+    try:
+        from agent.engine import _reset_cache_for_tests
+        _reset_cache_for_tests()
+    except Exception:
+        pass
+    try:
+        from agent.tools.comfy_api import invalidate_object_info_cache
+        invalidate_object_info_cache()
+    except Exception:
+        pass
+    try:
+        from agent.tools.comfy_discover import _reset_discover_memo_for_tests
+        _reset_discover_memo_for_tests()
+    except Exception:
+        pass
+    try:
+        from agent.tools.workflow_lock import _hash_cache
+        _hash_cache.clear()
     except Exception:
         pass
 

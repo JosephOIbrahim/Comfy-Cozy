@@ -9,6 +9,7 @@ A/B regression testing without API calls.
 """
 
 import base64
+import io
 import json
 import logging
 from pathlib import Path
@@ -28,7 +29,14 @@ except ImportError:
 
 # Vision analysis uses a smaller max_tokens since responses are structured
 _VISION_MAX_TOKENS = 4096
-_VISION_TIMEOUT = 120  # seconds — max wait for Vision API response
+# C-R5: inner timeout must undercut the MCP server's 120 s hard kill so this
+# tool's own timeout error can surface (at 120 the MCP kill always wins).
+_VISION_TIMEOUT = 90  # seconds — max wait for Vision API response
+# C-R8a: the Vision API's optimal max — larger images are resized server-side
+# anyway, so full resolution only burns bandwidth and tokens.
+_VISION_MAX_DIM = 1568  # px, longest side
+# C-R8b: the API's documented per-image limit on encoded image data.
+_MAX_ENCODED_IMAGE_BYTES = 5 * 1024 * 1024  # 5 MB
 
 
 class VisionAgent(BrainAgent):
@@ -169,25 +177,47 @@ class VisionAgent(BrainAgent):
             ".gif": "image/gif",
             ".webp": "image/webp",
         }
-        media_type = media_types.get(suffix, "image/png")
-        # Guard against OOM on very large images before base64 encoding. (Cycle 33 fix)
-        _MAX_IMAGE_BYTES = 50 * 1024 * 1024  # 50 MB
+        # 3.7: unknown suffixes used to silently claim image/png and fail
+        # opaquely at the API — reject them up front instead.
+        if suffix not in media_types and suffix != ".exr":
+            raise ValueError(
+                f"Unsupported image format '{suffix}' — "
+                "supported: .png .jpg .jpeg .gif .webp .exr"
+            )
         file_size = p.stat().st_size
         if file_size == 0:  # Cycle 53: empty file sends blank base64 to Vision API
             raise ValueError(f"Image file is empty (0 bytes): {path}")
-        if file_size > _MAX_IMAGE_BYTES:
-            raise ValueError(
-                f"Image too large for Vision API: {file_size / (1024 * 1024):.1f} MB "
-                f"(limit: {_MAX_IMAGE_BYTES // (1024 * 1024)} MB). "
-                "Resize the image before analyzing."
-            )
-        # Guard against TOCTOU: file could be deleted/replaced between stat() and
-        # read_bytes(). Translate OSError into FileNotFoundError with context. (Cycle 34 fix)
-        try:
-            raw = p.read_bytes()
-        except (FileNotFoundError, OSError) as e:
-            raise FileNotFoundError(f"Image file unavailable (removed after size check?): {e}") from e
+        if suffix == ".exr":
+            # 3.7: linear EXR -> display-referred sRGB PNG; the converted
+            # bytes flow through the normal downscale + size guard below.
+            from .exr_ingest import exr_to_display_png
+
+            raw = exr_to_display_png(str(p))
+            media_type = "image/png"
+        else:
+            media_type = media_types[suffix]
+            # Guard against TOCTOU: file could be deleted/replaced between stat() and
+            # read_bytes(). Translate OSError into FileNotFoundError with context. (Cycle 34 fix)
+            try:
+                raw = p.read_bytes()
+            except (FileNotFoundError, OSError) as e:
+                raise FileNotFoundError(
+                    f"Image file unavailable (removed after size check?): {e}"
+                ) from e
+        # C-R8a: downscale to the Vision API's optimal max before encoding.
+        # The original file on disk is never touched.
+        raw = _downscale_for_vision(raw, media_type)
         data = base64.b64encode(raw).decode("ascii")
+        # C-R8b: guard the POST-downscale encoded payload against the API's
+        # real per-image limit (5 MB of encoded image data) — the old 50 MB
+        # file-size guard let doomed payloads sail into the API call.
+        if len(data) > _MAX_ENCODED_IMAGE_BYTES:
+            raise ValueError(
+                f"Image is still too large for the Vision API after downscaling: "
+                f"{len(data) / (1024 * 1024):.1f} MB encoded "
+                f"(limit: {_MAX_ENCODED_IMAGE_BYTES // (1024 * 1024)} MB). "
+                "Reduce the image dimensions or analyze a smaller crop."
+            )
         return data, media_type
 
     def _call_vision(self, system_prompt: str, user_content: list) -> str:
@@ -477,8 +507,8 @@ class VisionAgent(BrainAgent):
             return self.to_json({"error": f"Image not found: {image_b}"})
 
         try:
-            img_a = Image.open(path_a)
-            img_b = Image.open(path_b)
+            img_a = _open_image_for_hash(path_a)
+            img_b = _open_image_for_hash(path_b)
         except Exception as e:
             return self.to_json({"error": f"Failed to open images: {e}"})
 
@@ -526,6 +556,55 @@ class VisionAgent(BrainAgent):
 # ---------------------------------------------------------------------------
 # Stateless helpers (shared)
 # ---------------------------------------------------------------------------
+
+def _open_image_for_hash(path: Path):
+    """Open an image for perceptual hashing.
+
+    3.7: EXR converts to display-referred PNG first (Pillow has no EXR
+    codec); everything else opens directly.
+    """
+    if path.suffix.lower() == ".exr":
+        from .exr_ingest import exr_to_display_png
+
+        return Image.open(io.BytesIO(exr_to_display_png(str(path))))
+    return Image.open(path)
+
+
+def _downscale_for_vision(raw: bytes, media_type: str) -> bytes:
+    """Downscale encoded image bytes so the longest side is <= _VISION_MAX_DIM.
+
+    C-R8a: the Vision API resizes anything larger server-side, so sending
+    full resolution only burns bandwidth and tokens. Aspect ratio is
+    preserved and images are never upscaled. PNG sources re-encode as PNG,
+    JPEG as JPEG (quality 90). Returns the original bytes unchanged when
+    PIL is unavailable, the format is not PNG/JPEG, the image is already
+    small enough, or decoding fails.
+    """
+    if not _HAS_PIL or media_type not in ("image/png", "image/jpeg"):
+        return raw
+    try:
+        with Image.open(io.BytesIO(raw)) as img:
+            longest = max(img.width, img.height)
+            if longest <= _VISION_MAX_DIM:
+                return raw  # never upscale
+            scale = _VISION_MAX_DIM / longest
+            new_size = (
+                max(1, round(img.width * scale)),
+                max(1, round(img.height * scale)),
+            )
+            resized = img.resize(new_size, Image.LANCZOS)
+            buf = io.BytesIO()
+            if media_type == "image/jpeg":
+                if resized.mode not in ("RGB", "L"):
+                    resized = resized.convert("RGB")
+                resized.save(buf, format="JPEG", quality=90)
+            else:
+                resized.save(buf, format="PNG")
+            return buf.getvalue()
+    except Exception as e:
+        log.warning("Vision downscale failed (%s); sending original bytes", e)
+        return raw
+
 
 def _compute_average_hash(img, hash_size: int = 8) -> int:
     """Compute average hash (aHash) — resize to hash_size, compare to mean."""

@@ -19,6 +19,7 @@ import json
 import os
 import socket
 import tempfile
+import threading
 import time
 from dataclasses import dataclass, field
 from enum import Enum
@@ -40,6 +41,11 @@ _STATE_PATH = Path(
         str(Path.home() / ".comfy_cozy" / "nim_warm_state.jsonl"),
     )
 )
+
+# Guards the read-prune-rewrite window in record_warm_state against in-process
+# lost updates. Cross-process races remain possible; atomic os.replace bounds
+# the damage to one lost record, never a corrupt file.
+_STATE_LOCK = threading.Lock()
 
 
 def _host_id() -> str:
@@ -77,6 +83,11 @@ class RunResult:
     warmup_seconds: float = 0.0
     cook_seconds: float = 0.0
     reason: str = ""
+    # C-R6: mirrors comfy_execute's degraded-monitoring fields —
+    # "polling_fallback" + the original transport error when the WS died
+    # mid-run and the run was finished via history polling.
+    monitoring: str = "websocket"
+    ws_error: str = ""
 
 
 # --- Warm-state persistence (FR-3) -----------------------------------------
@@ -127,10 +138,13 @@ def record_warm_state(
     precision: str = "fp8",
     **extra: Any,
 ) -> dict:
-    """Atomically append a warm-state record (write-tmp + os.replace).
+    """Rewrite the warm-state file with the new record appended.
 
-    Matches the experience.jsonl durability convention; os.replace is the
-    Windows-atomic call (commit 2322a42).
+    Not an in-place append: the whole file is read under _STATE_LOCK, pruned
+    of records older than WARM_MAX_AGE_S, and atomically replaced (write-tmp
+    + flush + fsync + os.replace, the agent/memory/session.py:286-288 house
+    pattern). os.replace is the Windows-atomic call (commit 2322a42). A read
+    failure raises rather than wiping history.
     """
     record = {
         "model": model,
@@ -141,25 +155,45 @@ def record_warm_state(
         **extra,
     }
     _STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    existing: list[str] = []
-    if _STATE_PATH.exists():
-        try:
+    with _STATE_LOCK:
+        existing: list[str] = []
+        if _STATE_PATH.exists():
+            # A transient read error must NOT wipe history — raise instead of
+            # resetting to empty. nim_run() already swallows record_warm_state
+            # exceptions at its call site (try/except in the clean-completion
+            # block), so callers degrade gracefully.
             with _STATE_PATH.open("r", encoding="utf-8") as fh:
                 existing = [ln.rstrip("\n") for ln in fh if ln.strip()]
-        except Exception:
-            existing = []
-    existing.append(json.dumps(record, sort_keys=True))
-    fd, tmp = tempfile.mkstemp(dir=str(_STATE_PATH.parent), suffix=".tmp")
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as fh:
-            fh.write("\n".join(existing) + "\n")
-        os.replace(tmp, _STATE_PATH)
-    except Exception:
+        now = record["ts"]
+        kept: list[str] = []
+        for ln in existing:
+            # Prune on the write path only (read path stays pure — INV-2).
+            # Unparseable lines are dropped: they are invisible to
+            # _lookup_warm anyway, as are records with a non-numeric ts.
+            try:
+                rec = json.loads(ln)
+            except json.JSONDecodeError:
+                continue
+            ts = rec.get("ts", 0)
+            if not isinstance(ts, (int, float)) or (now - ts) > WARM_MAX_AGE_S:
+                continue
+            kept.append(ln)
+        kept.append(json.dumps(record, sort_keys=True))
+        fd, tmp = tempfile.mkstemp(dir=str(_STATE_PATH.parent), suffix=".tmp")
         try:
-            os.unlink(tmp)
-        except OSError:
-            pass
-        raise
+            with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                fh.write("\n".join(kept) + "\n")
+                # flush + fsync before the rename so a crash leaves a complete
+                # file (house pattern: agent/memory/session.py:286-288).
+                fh.flush()
+                os.fsync(fh.fileno())
+            os.replace(tmp, _STATE_PATH)
+        except Exception:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+            raise
     _advise_outcome(record)
     return record
 
@@ -183,11 +217,12 @@ def nim_preflight(model: str = "flux-dev") -> PreflightResult:
     try:
         with httpx.Client(timeout=5.0) as client:
             try:
-                resp = client.get(f"{COMFYUI_URL}/object_info")
-                resp.raise_for_status()
-                keys = set(resp.json().keys())
+                # H2: class-scoped TTL cache — only the NIM classes are
+                # fetched (~KB) instead of the full ~4.6 MB /object_info.
+                from .comfy_api import get_object_info_classes
+                found = set(get_object_info_classes(sorted(required), timeout=5.0).keys())
                 comfy_alive = True
-                missing = sorted(k for k in required if k not in keys)
+                missing = sorted(k for k in required if k not in found)
                 node_pack_present = not missing
             except Exception:
                 missing = sorted(required)
@@ -226,6 +261,127 @@ def _select_warmup_budget(pre: PreflightResult, override: Optional[float]) -> fl
     if override is not None:
         return override
     return WARMUP_TIMEOUT_WARM if pre.warm else WARMUP_TIMEOUT_COLD
+
+
+def _poll_history_fallback(
+    engine: Any,
+    *,
+    prompt_id: str,
+    model: str,
+    precision: str,
+    ws_error: str,
+    t_submit: float,
+    t_cook_start: Optional[float],
+    warmup_budget: float,
+    cook_timeout: float,
+    saw_any_event: bool,
+    poll_interval: float = 2.0,
+) -> RunResult:
+    """Degraded monitoring: poll /history after the WS died mid-run (C-R6).
+
+    Mirrors comfy_execute._execute_with_websocket's polling fallback — the
+    job is still queued under a valid prompt_id, so losing the socket must
+    not fail the run. Respects the SAME deadline the event loop was under:
+    the cook deadline when the WARMUP->COOKING flip was observed, the
+    warmup budget otherwise (phase flips are invisible without events).
+    """
+    from ..engine import EngineConnectionError, EngineError
+
+    deadline = (
+        t_cook_start + cook_timeout
+        if t_cook_start is not None
+        else t_submit + warmup_budget
+    )
+    while time.monotonic() <= deadline:
+        try:
+            hist = engine.get_history(prompt_id=prompt_id)
+        except (EngineConnectionError, EngineError):
+            hist = {}
+        entry = (hist or {}).get(prompt_id) or {}
+        status = entry.get("status") or {}
+        status_str = status.get("status_str", "")
+        if status_str == "error":
+            detail = ""
+            for m in status.get("messages") or []:
+                if isinstance(m, (list, tuple)) and len(m) == 2 and m[0] == "execution_error":
+                    d = m[1] or {}
+                    detail = f"{d.get('node_type', '?')}: {d.get('exception_message', '')}"
+                    break
+            return RunResult(
+                ok=False,
+                phase=Phase.FAILED,
+                prompt_id=prompt_id,
+                reason=detail or "execution error (from history)",
+                monitoring="polling_fallback",
+                ws_error=ws_error,
+            )
+        if status.get("completed") or status_str == "success" or entry.get("outputs"):
+            images: list = []
+            for node_out in (entry.get("outputs") or {}).values():
+                for img in node_out.get("images", []) or []:
+                    name = img.get("filename") if isinstance(img, dict) else None
+                    if name:
+                        images.append(name)
+            warmup_seconds = 0.0
+            cook_seconds = 0.0
+            if t_cook_start is not None:
+                # The WARMUP->COOKING flip was observed before the WS died,
+                # so warmup timing is real — record it (INV-6 stays honest).
+                warmup_seconds = round(t_cook_start - t_submit, 1)
+                cook_seconds = round(time.monotonic() - t_cook_start, 1)
+                try:
+                    record_warm_state(
+                        model,
+                        host=_host_id(),
+                        warmup_seconds=warmup_seconds,
+                        precision=precision,
+                    )
+                except Exception:
+                    pass
+            # else: the WS died during WARMUP — warmup timing is unknowable
+            # in polling mode, so NO warm record is written. A fabricated
+            # time would let the next run pick the 180 s warm budget and
+            # false-fail a genuinely cold pull; skipping costs one cold
+            # budget, which never false-fails.
+            return RunResult(
+                ok=True,
+                phase=Phase.DONE,
+                prompt_id=prompt_id,
+                images=images,
+                warmup_seconds=warmup_seconds,
+                cook_seconds=cook_seconds,
+                reason="WebSocket lost mid-stream; monitoring degraded to polling",
+                monitoring="polling_fallback",
+                ws_error=ws_error,
+            )
+        time.sleep(poll_interval)
+
+    # Budget exhausted — same timeout failure paths as the event loop.
+    if t_cook_start is not None:
+        return RunResult(
+            ok=False,
+            phase=Phase.FAILED,
+            prompt_id=prompt_id,
+            reason="cook timed out",
+            monitoring="polling_fallback",
+            ws_error=ws_error,
+        )
+    comfy_alive = nim_preflight(model).comfy_alive
+    if not saw_any_event or not comfy_alive:
+        reason = "warmup timed out with no events / ComfyUI unreachable — container stalled"
+    else:
+        reason = (
+            "container still loading past warmup_timeout; "
+            "raise warmup_timeout or pre-pull the image"
+        )
+    return RunResult(
+        ok=False,
+        phase=Phase.FAILED,
+        prompt_id=prompt_id,
+        reason=reason,
+        monitoring="polling_fallback",
+        ws_error=ws_error,
+    )
 
 
 # --- Run (FR-2, PRD §5 — two-deadline poll) --------------------------------
@@ -344,8 +500,21 @@ def nim_run(
                 ):
                     break
     except (EngineConnectionError, EngineError) as e:
-        return RunResult(
-            ok=False, phase=Phase.FAILED, prompt_id=prompt_id, reason=str(e)
+        # C-R6: the WS died mid-stream, but the job is still queued under a
+        # valid prompt_id (queue_prompt succeeded above) — degrade to history
+        # polling within the remaining phase budget instead of returning
+        # FAILED for a run ComfyUI may still complete.
+        return _poll_history_fallback(
+            engine,
+            prompt_id=prompt_id,
+            model=model,
+            precision=pre.recommended_precision,
+            ws_error=str(e),
+            t_submit=t_submit,
+            t_cook_start=t_cook_start,
+            warmup_budget=warmup_budget,
+            cook_timeout=cook_timeout,
+            saw_any_event=saw_any_event,
         )
 
     # --- clean completion: collect images + record warm-state -------------

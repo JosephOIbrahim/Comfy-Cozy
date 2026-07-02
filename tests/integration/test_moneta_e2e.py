@@ -13,8 +13,6 @@ within a single process.
 
 from __future__ import annotations
 
-import os
-import signal
 import subprocess
 import sys
 import time
@@ -158,10 +156,14 @@ while True:
     finally:
         # Cleanup — kill the subprocess and stop the adapter.
         if proc.poll() is None:
-            os.kill(proc.pid, signal.SIGKILL)
+            # proc.kill() is cross-platform; signal.SIGKILL does not exist on
+            # Windows and the AttributeError it raised HERE aborted the rest
+            # of this finally block — leaking the armed adapter into later
+            # tests (ledger L-SIGKILL-E2E, reproduced on the CI windows legs).
+            proc.kill()
             try:
                 proc.wait(timeout=5.0)
             except subprocess.TimeoutExpired:
-                proc.kill()
+                pass
         adapter.stop()
         cws.close_subscribers()

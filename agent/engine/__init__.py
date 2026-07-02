@@ -83,6 +83,13 @@ def get_engine(name: str | None = None) -> IAIEngine:
 def _create_engine(name: str) -> IAIEngine:
     """Lazy-import and instantiate an engine adapter."""
     if name == "comfyui":
+        # Multi-endpoint floors (hardening 3.5): COMFYUI_ENDPOINTS routes
+        # through the failover pool; empty (default) keeps the single
+        # adapter byte-identical to before the pool existed.
+        from ..config import COMFYUI_ENDPOINTS
+        if COMFYUI_ENDPOINTS:
+            from .pool import EndpointPool
+            return EndpointPool(COMFYUI_ENDPOINTS)
         from .comfyui_adapter import ComfyUIAdapter
         return ComfyUIAdapter()
 
@@ -95,7 +102,15 @@ def _reset_cache_for_tests() -> None:
     """Test-only: clear the engine cache.
 
     Test fixtures can call this to force a fresh adapter (e.g. when
-    swapping env vars or mocking the adapter class).
+    swapping env vars or mocking the adapter class). Closes each cached
+    adapter's pooled HTTP client (H2) so resets don't leak sockets.
     """
     with _engine_lock:
+        for _eng in _engine_cache.values():
+            _close = getattr(_eng, "close", None)
+            if callable(_close):
+                try:
+                    _close()
+                except Exception:
+                    pass
         _engine_cache.clear()

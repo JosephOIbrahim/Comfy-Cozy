@@ -99,28 +99,62 @@ class TestUIAPIParser:
 # #9 — Vision cache (P4.2)
 # --------------------------------------------------------------------------- #
 class TestVisionCache:
+    """C-R8c: the cache key is SHA-256 over (image bytes || prompt). The old
+    aHash key ignored the prompt, so asking a DIFFERENT question about the
+    same image served the stale previous answer."""
+
     def setup_method(self):
         vision_cache._cache.clear()
 
-    def test_identical_hash_hits(self):
-        vision_cache._store(0, "ANALYSIS_A")
-        assert vision_cache._lookup(0) == "ANALYSIS_A"
+    def test_same_image_same_prompt_hits(self):
+        key = vision_cache._cache_key(b"img-bytes", "prompt A")
+        vision_cache._store(key, "ANALYSIS_A")
+        assert vision_cache._lookup(key) == "ANALYSIS_A"
 
-    def test_near_identical_within_threshold_hits(self):
-        vision_cache._store(0, "ANALYSIS_A")
-        assert vision_cache._lookup(0b1) == "ANALYSIS_A"  # 1-bit diff <= 2
+    def test_same_image_different_prompt_misses(self):
+        """C-R8c: prompt is part of the key — no stale answers."""
+        vision_cache._store(vision_cache._cache_key(b"img-bytes", "prompt A"), "ANALYSIS_A")
+        assert vision_cache._lookup(vision_cache._cache_key(b"img-bytes", "prompt B")) is None
 
-    def test_boundary_distance_does_not_false_dedup(self):
-        vision_cache._store(0, "ANALYSIS_A")
-        assert vision_cache._lookup(0b11111) is None  # 5-bit diff > 2
+    def test_different_image_same_prompt_misses(self):
+        vision_cache._store(vision_cache._cache_key(b"img-1", "prompt"), "ANALYSIS_A")
+        assert vision_cache._lookup(vision_cache._cache_key(b"img-2", "prompt")) is None
 
     def test_empty_path_errors(self):
         assert "error" in _call("analyze_image_cached", image_path="")
 
     def test_cache_evicts_over_max(self):
         for i in range(vision_cache._CACHE_MAX + 10):
-            vision_cache._store(1 << (i % 60), f"a{i}")
+            vision_cache._store(f"key{i}", f"a{i}")
         assert len(vision_cache._cache) <= vision_cache._CACHE_MAX
+
+    def test_prompt_sensitivity_end_to_end(self, fake_image):
+        """C-R8c: through the real handler — prompt A then prompt B both
+        dispatch a real analysis; repeating prompt A hits the cache with
+        prompt A's (not B's) answer."""
+        def fake_dispatch(name, ti):
+            return json.dumps({"answer_for": ti.get("prompt_used", "")})
+
+        with patch("agent.tools.handle", side_effect=fake_dispatch):
+            r1 = json.loads(vision_cache.handle(
+                "analyze_image_cached",
+                {"image_path": fake_image, "prompt_used": "A"}))
+            r2 = json.loads(vision_cache.handle(
+                "analyze_image_cached",
+                {"image_path": fake_image, "prompt_used": "B"}))
+            r3 = json.loads(vision_cache.handle(
+                "analyze_image_cached",
+                {"image_path": fake_image, "prompt_used": "A"}))
+
+        assert r1["cached"] is False and r1["analysis"]["answer_for"] == "A"
+        assert r2["cached"] is False and r2["analysis"]["answer_for"] == "B"
+        assert r3["cached"] is True and r3["analysis"]["answer_for"] == "A"
+
+    def test_missing_image_errors(self, tmp_path):
+        result = json.loads(vision_cache.handle(
+            "analyze_image_cached",
+            {"image_path": str(tmp_path / "nope.png")}))
+        assert "error" in result
 
 
 # --------------------------------------------------------------------------- #

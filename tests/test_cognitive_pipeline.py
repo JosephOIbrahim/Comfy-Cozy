@@ -8,6 +8,11 @@ import pytest
 
 import cognitive.pipeline.autonomous as _auto_mod
 from cognitive.pipeline import create_default_pipeline
+
+# Import-time reference to the REAL resolver — taken before the autouse
+# _isolate_experience_file fixture (conftest.py) patches the module attribute,
+# so the CANON-EXPFILE drift-stopper below sees the unpatched default.
+_real_default_experience_file = _auto_mod._default_experience_file
 from cognitive.pipeline.autonomous import (
     AutonomousPipeline,
     PipelineConfig,
@@ -317,6 +322,45 @@ class TestCreateDefaultPipeline:
         p = create_default_pipeline()
         result = p.run(PipelineConfig(intent="test intent"))
         assert result.stage == PipelineStage.COMPLETE
+
+
+# ---------------------------------------------------------------------------
+# CANON-EXPFILE: default experience path convergence + LEARN append wiring
+# ---------------------------------------------------------------------------
+
+class TestExperienceFileCanon:
+
+    def test_default_converges_with_agent_config(self):
+        """Drift-stopper: the cognitive resolver and agent.config must point
+        at the same default file. agent.config import runs load_dotenv first,
+        so both sides see the same env in this process. Uses the import-time
+        _real_default_experience_file reference to opt out of the autouse
+        isolation fixture."""
+        import agent.config as agent_config
+        assert _real_default_experience_file() == str(agent_config.EXPERIENCE_FILE)
+
+    def test_learn_appends_to_experience_path(self, tmp_path):
+        """LEARN persists via append_to() to the injected experience_path —
+        one line per run, no full rewrite of unrelated chunks."""
+        path = tmp_path / "exp.jsonl"
+        pipeline = AutonomousPipeline(experience_path=str(path))
+
+        pipeline.run(PipelineConfig(intent="first run"))
+        assert len(path.read_text(encoding="utf-8").splitlines()) == 1
+
+        pipeline.run(PipelineConfig(intent="second run"))
+        assert len(path.read_text(encoding="utf-8").splitlines()) == 2
+
+    def test_create_default_pipeline_uses_explicit_path(self, tmp_path):
+        """create_default_pipeline(experience_path=...) loads from and saves
+        to the same file (fixes the save/load asymmetry)."""
+        path = tmp_path / "exp.jsonl"
+        p1 = create_default_pipeline(experience_path=str(path))
+        p1.run(PipelineConfig(intent="seed run"))
+
+        p2 = create_default_pipeline(experience_path=str(path))
+        assert p2._accumulator.generation_count == 1
+        assert p2._experience_path == str(path)
 
 
 # ---------------------------------------------------------------------------

@@ -306,7 +306,9 @@ def _handle_provision_pipeline_status(tool_input: dict) -> str:
     has_wiring_error = isinstance(report["wiring"], dict) and "error" in report["wiring"]
     has_missing = (
         isinstance(report["missing_nodes"], dict)
-        and len(report["missing_nodes"].get("missing", [])) > 0
+        # The live find_missing_nodes producer emits "missing_nodes" (the
+        # same wrong-key class as C-P0-1; reproduced live — ledger L-PIPESTAT).
+        and len(report["missing_nodes"].get("missing_nodes", [])) > 0
     )
     is_compatible = (
         isinstance(report["compatibility"], dict)

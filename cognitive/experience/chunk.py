@@ -34,6 +34,16 @@ class QualityScore:
     def is_scored(self) -> bool:
         return self.overall > 0.0
 
+    @property
+    def is_rule_era(self) -> bool:
+        """True for scores that predate the vision evaluator (C-R5/C-R8 prep).
+
+        Rule-era = ``source`` missing, empty, or ``"rule"``. Consumers can
+        filter these out once a vision evaluator starts producing real
+        scores, so legacy 0.7/0.1 placeholders don't pollute learning.
+        """
+        return self.source in (None, "", "rule")
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "overall": self.overall, "technical": self.technical,

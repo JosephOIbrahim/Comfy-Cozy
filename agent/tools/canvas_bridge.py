@@ -16,6 +16,18 @@ import httpx
 from ..config import COMFYUI_URL
 from ._util import to_json, validate_path
 
+
+def bridge_auth_headers() -> dict:
+    """Bearer header for /agent/* calls when MCP_AUTH_TOKEN is configured.
+
+    The bridge routes Origin-gate browser callers and Bearer-gate non-browser
+    callers (the agent's own httpx carries no Origin), so the agent must
+    present the token when one is set or its own push/read calls would 401.
+    """
+    from ..config import MCP_AUTH_TOKEN
+    return {"Authorization": f"Bearer {MCP_AUTH_TOKEN}"} if MCP_AUTH_TOKEN else {}
+
+
 TOOLS: list[dict] = [
     {
         "name": "push_workflow_to_canvas",
@@ -88,7 +100,8 @@ def _handle_push_workflow_to_canvas(tool_input: dict) -> str:
 
     try:
         resp = httpx.post(
-            f"{COMFYUI_URL}/agent/push_workflow", json=envelope, timeout=10.0
+            f"{COMFYUI_URL}/agent/push_workflow", json=envelope, timeout=10.0,
+            headers=bridge_auth_headers(),
         )
     except httpx.ConnectError:
         return to_json({
@@ -119,7 +132,10 @@ def _handle_push_workflow_to_canvas(tool_input: dict) -> str:
 
 def _handle_get_canvas_state(tool_input: dict) -> str:
     try:
-        resp = httpx.get(f"{COMFYUI_URL}/agent/canvas_state", timeout=10.0)
+        resp = httpx.get(
+            f"{COMFYUI_URL}/agent/canvas_state", timeout=10.0,
+            headers=bridge_auth_headers(),
+        )
     except httpx.ConnectError:
         return to_json({"error": "ComfyUI is not reachable. Start ComfyUI, then try again."})
     except httpx.TimeoutException:

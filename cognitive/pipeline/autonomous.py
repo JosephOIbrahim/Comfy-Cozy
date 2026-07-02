@@ -35,10 +35,16 @@ from ..tools.compose import compose_workflow
 from ..tools.execute import execute_workflow as _execute_workflow_default
 import os
 
-EXPERIENCE_FILE = (
-    Path(os.getenv("COMFYUI_DATABASE") or str(Path.home() / ".comfy-cozy"))
-    / "comfy-cozy-experience.jsonl"
-)
+def _default_experience_file() -> str:
+    """Resolve the default experience JSONL path at call time (CANON-EXPFILE).
+
+    Fallback aligns with agent.config's COMFYUI_DATABASE default (~/ComfyUI)
+    without importing agent.* — cognitive/ never imports agent (hard
+    boundary). Call-time resolution means env changes (and test isolation
+    patches) take effect per pipeline, not per process.
+    """
+    base = os.getenv("COMFYUI_DATABASE") or str(Path.home() / "ComfyUI")
+    return str(Path(base) / "comfy-cozy-experience.jsonl")
 
 log = logging.getLogger(__name__)
 
@@ -261,8 +267,12 @@ class AutonomousPipeline:
         cwm: CognitiveWorldModel | None = None,
         arbiter: SimulationArbiter | None = None,
         counterfactual_gen: CounterfactualGenerator | None = None,
+        experience_path: str | None = None,
     ):
         self._accumulator = accumulator or ExperienceAccumulator()
+        # CANON-EXPFILE: LEARN persists here; callers who load() from a custom
+        # path must pass the same path so save and load never diverge.
+        self._experience_path = experience_path or _default_experience_file()
         self._cwm = cwm or CognitiveWorldModel()
         self._arbiter = arbiter or SimulationArbiter()
         self._cf_gen = counterfactual_gen or CounterfactualGenerator()
@@ -499,7 +509,13 @@ class AutonomousPipeline:
                 if isinstance(quality, QualityScore):
                     result.quality = quality
                 elif isinstance(quality, (int, float)):
-                    result.quality = QualityScore(overall=float(quality))
+                    # Evaluator-swap prep (C-R5/C-R8 review): a bare float
+                    # carries no provenance — tag it "rule" so rule-era
+                    # records stay distinguishable from (future) vision-based
+                    # scores. See QualityScore.is_rule_era.
+                    result.quality = QualityScore(
+                        overall=float(quality), source="rule",
+                    )
                 result.log(f"Quality: {result.quality.overall:.1%}")
             except Exception as e:
                 result.log(f"Evaluation failed: {e}")
@@ -556,10 +572,14 @@ class AutonomousPipeline:
             log.warning("Experience record failed (non-fatal): %s", e)
             result.log(f"Experience record failed (non-fatal): {e}")
 
-        # Persist accumulated experience so it survives between sessions
+        # Persist accumulated experience so it survives between sessions.
+        # C-R10a: append the single new chunk (fsync'd) instead of rewriting
+        # the whole snapshot; append_to compacts every max_chunks appends.
         try:
-            saved = self._accumulator.save(str(EXPERIENCE_FILE))
-            result.log(f"Experience persisted ({saved} chunks → {EXPERIENCE_FILE.name})")
+            self._accumulator.append_to(self._experience_path, chunk)
+            result.log(
+                f"Experience persisted (appended → {Path(self._experience_path).name})"
+            )
         except Exception as e:
             log.warning("Experience save failed (%s: %s)", type(e).__name__, e)
             result.log(f"Experience save failed (non-fatal): {e}")

@@ -565,8 +565,27 @@ def _execute_with_websocket(
 # Handlers
 # ---------------------------------------------------------------------------
 
+def _set_session_validated(verdict: bool) -> None:
+    """Record the SESSION-workflow validation verdict for the gate's consent check.
+
+    Only session validations (no "path" input) call this — a path validation
+    says nothing about the session workflow. Defensive: the gate reads the
+    flag with a False default, so a failure here just leaves execution denied.
+    """
+    try:
+        from .workflow_patch import _get_state
+        _get_state()["validated_since_mutation"] = verdict
+    except Exception:
+        pass
+
+
 def _handle_validate_before_execute(tool_input: dict) -> str:
-    """Pre-flight validation of a workflow before queueing."""
+    """Pre-flight validation of a workflow before queueing.
+
+    When validating the SESSION workflow (no "path" input), records the
+    verdict in the session's validated_since_mutation flag — the pre-dispatch
+    gate requires it True before execute_workflow / execute_with_progress.
+    """
     path_str = tool_input.get("path")
 
     # Get workflow
@@ -588,12 +607,31 @@ def _handle_validate_before_execute(tool_input: dict) -> str:
     errors = []
     warnings = []
 
-    # Fetch node registry from ComfyUI
+    # workflow.lock (hardening 3.8): surface "drifted since lock" warnings
+    # for the file being validated (explicit path, else the session's
+    # loaded_path). Drift informs; it never blocks. Best-effort.
     try:
-        with httpx.Client() as client:
-            resp = client.get(f"{COMFYUI_URL}/object_info", timeout=30.0)
-            resp.raise_for_status()
-            object_info = resp.json()
+        from .workflow_lock import check_lock_drift
+        lock_target = path_str
+        if not lock_target:
+            from .workflow_patch import _get_state
+            lock_target = _get_state().get("loaded_path")
+        if lock_target:
+            warnings.extend(check_lock_drift(lock_target))
+    except Exception as e:
+        log.debug("workflow.lock drift check skipped: %s", e)
+
+    # Fetch node schemas from ComfyUI (H2: class-scoped, TTL-cached — a few
+    # KB-sized per-class GETs instead of the ~4.6 MB full /object_info, and
+    # re-validate after a fix re-pays nothing. A class absent from the
+    # result is not installed; unreachable ComfyUI raises instead.)
+    try:
+        from .comfy_api import get_object_info_classes
+        workflow_classes = {
+            n["class_type"] for n in workflow.values()
+            if isinstance(n, dict) and "class_type" in n
+        }
+        object_info = get_object_info_classes(workflow_classes, timeout=30.0)
     except httpx.ConnectError:
         return to_json({"error": f"ComfyUI not reachable at {COMFYUI_URL}. Is it running?"})
     except Exception as e:
@@ -692,6 +730,8 @@ def _handle_validate_before_execute(tool_input: dict) -> str:
         }
         if intelligence:
             result["intelligence"] = intelligence
+        if not path_str:
+            _set_session_validated(False)
         return to_json(result)
 
     result = {
@@ -703,6 +743,8 @@ def _handle_validate_before_execute(tool_input: dict) -> str:
     }
     if intelligence:
         result["intelligence"] = intelligence
+    if not path_str:
+        _set_session_validated(True)
     return to_json(result)
 
 

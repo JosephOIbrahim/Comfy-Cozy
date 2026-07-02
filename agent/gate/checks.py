@@ -3,7 +3,9 @@
 Check order:
   1. System health   — circuit breaker state
   2. Consent         — session active, validation done, escalation needed
-  3. Constitution    — wraps run_pre_checks() from constitution.py
+  3. Constitution    — wraps run_pre_checks() (lazy import — a broken
+                       agent.stage must not take the gate package down;
+                       the check itself fails closed instead, see C-P0-3)
   4. Reversibility   — undo availability for mutation tools
   5. Scope           — path sanitization for filesystem-touching inputs
 """
@@ -13,7 +15,6 @@ from __future__ import annotations
 from pathlib import Path
 
 from .risk_levels import RiskLevel
-from ..stage.constitution import run_pre_checks, all_passed, failed_checks
 
 
 # ---------------------------------------------------------------------------
@@ -89,15 +90,27 @@ def check_system_health(
 # Check 2: Consent
 # ---------------------------------------------------------------------------
 
+# EXECUTION tools that run the SESSION workflow — only these are bound to the
+# session's validated_since_mutation flag. Other EXECUTION tools (analyze_image,
+# push_workflow_to_canvas, nim_run, ...) do not execute the session workflow.
+_SESSION_EXECUTION_TOOLS = frozenset({"execute_workflow", "execute_with_progress"})
+
 
 def check_consent(
     tool_name: str,
     risk: RiskLevel,
     session_active: bool,
     validated: bool,
+    *,
+    has_workflow_override: bool = False,
 ) -> tuple[bool, str]:
     """Level 0-1 pass with active session.
-    Level 2 requires prior validation.
+    Level 2 (EXECUTION): tools that execute the SESSION workflow
+    (execute_workflow / execute_with_progress) require prior validation —
+    validated=True, i.e. validate_before_execute passed since the last
+    mutation — unless has_workflow_override=True (the call carries an
+    explicit "path" input, so the session flag says nothing about it).
+    All other EXECUTION tools pass with an active session.
     Level 3 escalates (returned as fail with escalation hint).
     Level 4 always locked.
     """
@@ -124,6 +137,18 @@ def check_consent(
             f"No active session. Tool '{tool_name}' requires an active session.",
         )
 
+    if (
+        risk == RiskLevel.EXECUTION
+        and tool_name in _SESSION_EXECUTION_TOOLS
+        and not has_workflow_override
+        and not validated
+    ):
+        return (
+            False,
+            "Session workflow not validated since the last change. Run "
+            "validate_before_execute (and fix any errors) before executing.",
+        )
+
     return True, "Consent satisfied."
 
 
@@ -141,7 +166,19 @@ def check_constitution(
 
     Keyword args are forwarded to run_pre_checks(). At minimum we need
     agent_name and allowed_tools; others fall back to safe defaults.
+
+    The constitution import is LAZY (C-P0-3): a stage package breakage no
+    longer kills the whole gate — READ_ONLY tools keep flowing via the
+    fast-path while mutation-class tools are denied by this failed check.
     """
+    try:
+        from ..stage.constitution import run_pre_checks, all_passed, failed_checks
+    except ImportError:
+        return (
+            False,
+            "Constitution check unavailable (agent.stage import failed) — failing closed.",
+        )
+
     agent_name: str = str(kwargs.get("agent_name", "default"))
     allowed_tools = kwargs.get("allowed_tools", None)
     # If no allowed_tools given, pass all tools (don't block on role check)

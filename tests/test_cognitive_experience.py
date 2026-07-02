@@ -4,6 +4,8 @@
 context matching, learning phases, and temporal decay.
 """
 
+import json
+import os
 import time
 
 import pytest
@@ -154,6 +156,18 @@ class TestQualityScore:
         assert q.overall == pytest.approx(0.75)
         assert q.technical == pytest.approx(0.6)
 
+    def test_is_rule_era_semantics(self):
+        """C-R5/C-R8 evaluator-swap prep: rule-era = source missing, empty,
+        or "rule" — these must be distinguishable from vision-based scores
+        when a vision evaluator arrives."""
+        assert QualityScore(overall=0.7, source="").is_rule_era is True
+        assert QualityScore(overall=0.7, source="rule").is_rule_era is True
+        q_none = QualityScore(overall=0.7)
+        q_none.source = None  # deserialized legacy data may carry null
+        assert q_none.is_rule_era is True
+        assert QualityScore(overall=0.7, source="vision").is_rule_era is False
+        assert QualityScore(overall=0.7, source="human").is_rule_era is False
+
 
 # ---------------------------------------------------------------------------
 # GenerationContextSignature
@@ -303,6 +317,31 @@ class TestAccumulator:
         assert len(good) == 1
         assert good[0].quality.overall == 0.8
 
+    def test_get_successful_chunks_excludes_rule_era(self, accumulator):
+        """C-R5/C-R8 evaluator-swap prep: the migration filter must drop
+        rule-era chunks (source missing/empty/"rule") and keep vision ones."""
+        accumulator.record(ExperienceChunk(
+            output_filenames=["rule.png"],
+            quality=QualityScore(overall=0.7, source="rule"),
+        ))
+        accumulator.record(ExperienceChunk(
+            output_filenames=["legacy.png"],
+            quality=QualityScore(overall=0.8, source=""),
+        ))
+        accumulator.record(ExperienceChunk(
+            output_filenames=["vision.png"],
+            quality=QualityScore(overall=0.9, source="vision"),
+        ))
+
+        # Default keeps everything (behavior unchanged for current callers)
+        assert len(accumulator.get_successful_chunks(min_quality=0.5)) == 3
+
+        filtered = accumulator.get_successful_chunks(
+            min_quality=0.5, exclude_rule_era=True,
+        )
+        assert len(filtered) == 1
+        assert filtered[0].quality.source == "vision"
+
     def test_get_stats(self, accumulator, good_chunk):
         accumulator.record(good_chunk)
         stats = accumulator.get_stats()
@@ -372,6 +411,99 @@ class TestAccumulator:
         assert restored.model_family == good_chunk.model_family
         assert restored.quality.overall == good_chunk.quality.overall
         assert restored.quality.aesthetic == good_chunk.quality.aesthetic
+
+
+# ---------------------------------------------------------------------------
+# C-R10a: append-only persistence (append_to) + fsync durability
+# ---------------------------------------------------------------------------
+
+class TestAppendTo:
+    """append_to() writes one fsync'd JSONL line, byte-identical to save()."""
+
+    def test_append_writes_one_line_and_fsyncs(
+        self, accumulator, good_chunk, tmp_path, monkeypatch,
+    ):
+        """One append → exactly one line on disk, and os.fsync was called."""
+        import cognitive.experience.accumulator as acc_mod
+        fsync_calls = []
+        real_fsync = os.fsync
+
+        def spy_fsync(fd):
+            fsync_calls.append(fd)
+            return real_fsync(fd)
+
+        monkeypatch.setattr(acc_mod.os, "fsync", spy_fsync)
+
+        path = tmp_path / "exp.jsonl"
+        accumulator.append_to(str(path), good_chunk)
+
+        lines = path.read_text(encoding="utf-8").splitlines()
+        assert len(lines) == 1
+        # Disk format byte-identical per line to save()
+        assert lines[0] == json.dumps(good_chunk.to_dict(), sort_keys=True)
+        assert fsync_calls, "os.fsync must be called for durability"
+
+    def test_append_creates_parent_dir(self, accumulator, good_chunk, tmp_path):
+        """Missing parent directory is created, mirroring save()."""
+        path = tmp_path / "sub" / "dir" / "exp.jsonl"
+        accumulator.append_to(str(path), good_chunk)
+        assert path.exists()
+
+    def test_append_load_round_trip_preserves_quality_source(self, accumulator, tmp_path):
+        """Append + load preserves the chunk, including quality.source."""
+        chunk = ExperienceChunk(
+            chunk_id="rt1", model_family="SD1.5",
+            output_filenames=["a.png"],
+            quality=QualityScore(overall=0.8, source="vision"),
+        )
+        path = str(tmp_path / "exp.jsonl")
+        accumulator.append_to(path, chunk)
+
+        loaded = ExperienceAccumulator.load(path)
+        assert loaded.generation_count == 1
+        assert loaded._chunks[0].chunk_id == "rt1"
+        assert loaded._chunks[0].quality.overall == 0.8
+        assert loaded._chunks[0].quality.source == "vision"
+
+    def test_compaction_fires_at_max_chunks_appends(self, tmp_path):
+        """At max_chunks appends, save() compacts the file to the snapshot."""
+        acc = ExperienceAccumulator(max_chunks=3)
+        path = tmp_path / "exp.jsonl"
+        # Seed a 3-line snapshot on disk
+        for i in range(3):
+            acc.record(ExperienceChunk(
+                chunk_id=f"s{i}", output_filenames=[f"s{i}.png"],
+                quality=QualityScore(overall=0.9),
+            ))
+        acc.save(str(path))
+
+        for i in range(3):
+            chunk = ExperienceChunk(
+                chunk_id=f"a{i}", output_filenames=[f"a{i}.png"],
+                quality=QualityScore(overall=0.8),
+            )
+            acc.record(chunk)
+            acc.append_to(str(path), chunk)
+            if i < 2:
+                # Before compaction the file grows: snapshot + appends
+                lines = path.read_text(encoding="utf-8").splitlines()
+                assert len(lines) == 3 + (i + 1)
+
+        # 3rd append hit max_chunks → compacted to the in-memory snapshot
+        lines = path.read_text(encoding="utf-8").splitlines()
+        assert len(lines) == acc.generation_count == 3
+        assert acc._appends_since_compact == 0
+
+    def test_torn_final_line_skipped_on_load(self, accumulator, good_chunk, tmp_path):
+        """A crash mid-append leaves half a JSON line — load() skips it."""
+        path = tmp_path / "exp.jsonl"
+        accumulator.append_to(str(path), good_chunk)
+        with open(path, "a", encoding="utf-8") as f:
+            f.write('{"chunk_id": "torn", "model_fam')
+
+        loaded = ExperienceAccumulator.load(str(path))
+        assert loaded.generation_count == 1
+        assert loaded._chunks[0].chunk_id == good_chunk.chunk_id
 
 
 # ---------------------------------------------------------------------------

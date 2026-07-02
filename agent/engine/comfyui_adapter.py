@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import threading
 from contextlib import contextmanager
 from typing import Iterator
 
@@ -72,14 +73,48 @@ class ComfyUIAdapter(IAIEngine):
     pattern of agent.tools.comfy_api._get_client).
     """
 
-    def __init__(self) -> None:
+    def __init__(self, url: str | None = None) -> None:
         # Lazy-import config so an import-time failure in config doesn't
         # break the engine module being imported.
         from ..config import COMFYUI_HOST, COMFYUI_PORT, COMFYUI_URL
 
-        self._url = COMFYUI_URL
-        self._host = COMFYUI_HOST
-        self._port = COMFYUI_PORT
+        if url is None:
+            self._url = COMFYUI_URL
+            self._host = COMFYUI_HOST
+            self._port = COMFYUI_PORT
+        else:
+            # Pool-created endpoint adapter (hardening 3.5). Keeps its own
+            # per-endpoint circuit breaker; the default adapter stays on the
+            # shared "comfyui" breaker so gate health wiring and test resets
+            # see exactly what they always did.
+            from urllib.parse import urlparse
+            self._url = url.rstrip("/")
+            parsed = urlparse(self._url)
+            self._host = parsed.hostname or self._url
+            self._port = parsed.port or 8188
+        self._breaker_url = None if url is None else self._url
+        # H2 (ledger C-R4): one pooled client per adapter instead of a fresh
+        # httpx.Client per call — the per-call TLS/TCP setup cost ~170-230 ms
+        # on every 1 s status poll.
+        self._client_lock = threading.Lock()
+        self._client: httpx.Client | None = None
+
+    def _http(self) -> httpx.Client:
+        """Shared pooled client (lazy, thread-safe)."""
+        if self._client is None:
+            with self._client_lock:
+                if self._client is None:
+                    self._client = httpx.Client(
+                        limits=httpx.Limits(max_connections=10, max_keepalive_connections=5),
+                    )
+        return self._client
+
+    def close(self) -> None:
+        """Close the pooled client (called by the test-reset hook)."""
+        with self._client_lock:
+            if self._client is not None:
+                self._client.close()
+                self._client = None
 
     # ------------------------------------------------------------------
     # IAIEngine — execution operations
@@ -102,22 +137,21 @@ class ComfyUIAdapter(IAIEngine):
 
         payload = {"prompt": workflow, "client_id": client_id}
         try:
-            with httpx.Client() as client:
-                resp = client.post(
-                    f"{self._url}/prompt",
-                    json=payload,
-                    timeout=30.0,
+            resp = self._http().post(
+                f"{self._url}/prompt",
+                json=payload,
+                timeout=30.0,
+            )
+            resp.raise_for_status()
+            breaker.record_success()
+            data = resp.json()
+            prompt_id = data.get("prompt_id")
+            if not prompt_id:
+                raise EngineError(
+                    "ComfyUI accepted the workflow but didn't return a job ID. "
+                    "It may be overloaded — try again in a few seconds."
                 )
-                resp.raise_for_status()
-                breaker.record_success()
-                data = resp.json()
-                prompt_id = data.get("prompt_id")
-                if not prompt_id:
-                    raise EngineError(
-                        "ComfyUI accepted the workflow but didn't return a job ID. "
-                        "It may be overloaded — try again in a few seconds."
-                    )
-                return prompt_id
+            return prompt_id
         except httpx.ConnectError as e:
             breaker.record_failure()
             raise EngineConnectionError(
@@ -156,9 +190,8 @@ class ComfyUIAdapter(IAIEngine):
         cancel can use the same shape.
         """
         try:
-            with httpx.Client() as client:
-                resp = client.post(f"{self._url}/interrupt", timeout=10.0)
-                resp.raise_for_status()
+            resp = self._http().post(f"{self._url}/interrupt", timeout=10.0)
+            resp.raise_for_status()
         except httpx.ConnectError as e:
             raise EngineConnectionError(
                 f"ComfyUI not reachable at {self._url}."
@@ -188,16 +221,15 @@ class ComfyUIAdapter(IAIEngine):
         else:
             path = "/history"
         try:
-            with httpx.Client() as client:
-                resp = client.get(f"{self._url}{path}", timeout=10.0)
-                resp.raise_for_status()
-                breaker.record_success()
-                try:
-                    return resp.json()
-                except ValueError as e:
-                    raise EngineConnectionError(
-                        f"ComfyUI returned non-JSON on {path}: {e}"
-                    ) from e
+            resp = self._http().get(f"{self._url}{path}", timeout=10.0)
+            resp.raise_for_status()
+            breaker.record_success()
+            try:
+                return resp.json()
+            except ValueError as e:
+                raise EngineConnectionError(
+                    f"ComfyUI returned non-JSON on {path}: {e}"
+                ) from e
         except httpx.ConnectError as e:
             breaker.record_failure()
             raise EngineConnectionError(str(e)) from e
@@ -226,12 +258,25 @@ class ComfyUIAdapter(IAIEngine):
         ws_url = f"{scheme}://{self._host}:{self._port}/ws?clientId={client_id}"
 
         try:
-            ws_cm = websockets.sync.client.connect(ws_url, close_timeout=5, open_timeout=10)
+            # C-R6 hardening: max_size lifts the library's 1 MiB frame cap
+            # (a preview frame above it closes the socket with code 1009);
+            # ping_timeout=60 survives model-load stalls that leave a ping
+            # unanswered past the 20 s default.
+            ws_cm = websockets.sync.client.connect(
+                ws_url,
+                close_timeout=5,
+                open_timeout=10,
+                max_size=16 * 1024 * 1024,
+                ping_interval=20,
+                ping_timeout=60,
+            )
         except Exception as e:
             raise EngineConnectionError(f"WebSocket connect failed: {e}") from e
 
         with ws_cm as ws:
-            ws.recv_bufsize = 16 * 1024 * 1024  # 16MB for preview images
+            # Socket read chunk size only — the frame-size cap is the
+            # max_size connect kwarg above.
+            ws.recv_bufsize = 16 * 1024 * 1024
 
             def _events() -> Iterator[EngineEvent]:
                 while True:
@@ -242,6 +287,14 @@ class ComfyUIAdapter(IAIEngine):
                         # check deadlines and keep going.
                         yield EngineEvent(type="__timeout__", data={}, raw={})
                         continue
+                    except (websockets.exceptions.ConnectionClosed, OSError) as e:
+                        # C-R6: translate mid-stream transport loss so the
+                        # event stream's contract is uniformly EngineError-
+                        # family (callers fall back to history polling).
+                        # TimeoutError (an OSError subclass) is caught above.
+                        raise EngineConnectionError(
+                            f"WebSocket connection lost mid-stream: {e}"
+                        ) from e
                     if isinstance(raw, bytes):
                         # Preview images — skip.
                         continue
@@ -261,13 +314,13 @@ class ComfyUIAdapter(IAIEngine):
     # Internal helpers
     # ------------------------------------------------------------------
 
-    @staticmethod
-    def _breaker():
+    def _breaker(self):
         """Resolve the ComfyUI circuit breaker lazily.
 
         Lazy import keeps the engine module import-cheap and matches
         the pattern in agent/tools/comfy_execute.py (which imports the
-        breaker per-call from inside its helpers).
+        breaker per-call from inside its helpers). Default adapters share
+        the "comfyui" breaker; pool-created ones are keyed per endpoint.
         """
         from ..circuit_breaker import COMFYUI_BREAKER
-        return COMFYUI_BREAKER()
+        return COMFYUI_BREAKER(self._breaker_url)

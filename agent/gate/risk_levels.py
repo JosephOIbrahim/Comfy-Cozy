@@ -100,6 +100,11 @@ TOOL_RISK_LEVELS: dict[str, RiskLevel] = {
     "provision_status": RiskLevel.READ_ONLY,  # Iter 13: reverted Cycle 64 backwards rename
     "provision_verify": RiskLevel.READ_ONLY,  # Iter 13: reverted Cycle 64 backwards rename
     "suggest_wiring": RiskLevel.READ_ONLY,  # Cycle 64: was missing
+    # C-P0-3: _status composes suggest_wiring + find_missing_nodes +
+    # check_model_compatibility; _verify stats a file on disk + identifies
+    # family/compat. Neither writes any state (provision_pipeline.py).
+    "provision_pipeline_status": RiskLevel.READ_ONLY,
+    "provision_pipeline_verify": RiskLevel.READ_ONLY,
     # Metadata reads
     "read_image_metadata": RiskLevel.READ_ONLY,
     "reconstruct_context": RiskLevel.READ_ONLY,
@@ -137,6 +142,9 @@ TOOL_RISK_LEVELS: dict[str, RiskLevel] = {
     "surface_relevant_memory": RiskLevel.READ_ONLY, # #10 memory recall
     "watch_outputs_begin": RiskLevel.READ_ONLY,     # #8 snapshot (no mutation)
     "watch_outputs_diff": RiskLevel.READ_ONLY,      # #8 diff (no mutation)
+    # NIM lifecycle reads (forward entry: registered by the NIM lifecycle PR)
+    "nim_preflight": RiskLevel.READ_ONLY,  # environment/GPU/port preflight probe
+    "nim_state": RiskLevel.READ_ONLY,      # lifecycle state read, no side effects
     # ------------------------------------------------------------------
     # REVERSIBLE (1) — workflow mutations, undoable
     # ------------------------------------------------------------------
@@ -189,6 +197,16 @@ TOOL_RISK_LEVELS: dict[str, RiskLevel] = {
     # Iterative refine (reversible)
     "iterative_refine": RiskLevel.REVERSIBLE,
     "wire_model": RiskLevel.REVERSIBLE,  # Cycle 64: was missing
+    # C-P0-3: node surgery — each handler snapshots the workflow to the undo
+    # history before mutating (workflow_patch.py _handle_delete_node /
+    # _handle_replace_node / _handle_rewire_around).
+    "delete_node": RiskLevel.REVERSIBLE,
+    "replace_node": RiskLevel.REVERSIBLE,
+    "rewire_around": RiskLevel.REVERSIBLE,
+    # C-P0-3: atomically overwrites the local model-list.json cache (handler is
+    # confirm-gated; preview path touches nothing) — a cache rewrite, not a
+    # pure fetch-and-report (comfy_discover.py _handle_refresh_model_registry).
+    "refresh_model_registry": RiskLevel.REVERSIBLE,
     # ------------------------------------------------------------------
     # EXECUTION (2) — GPU execution, API calls that produce output
     # ------------------------------------------------------------------
@@ -203,6 +221,9 @@ TOOL_RISK_LEVELS: dict[str, RiskLevel] = {
     # Agent tooling effects (Tracks 2-4)
     "push_workflow_to_canvas": RiskLevel.EXECUTION,  # #1 push: external canvas effect
     "analyze_image_cached": RiskLevel.EXECUTION,     # #9: delegates to analyze_image on miss
+    # NIM lifecycle run (forward entry: registered by the NIM lifecycle PR) —
+    # queues a workflow on the live engine, same class as execute_workflow.
+    "nim_run": RiskLevel.EXECUTION,
     # ------------------------------------------------------------------
     # PROVISION (3) — filesystem modifications (downloads, installs)
     # ------------------------------------------------------------------

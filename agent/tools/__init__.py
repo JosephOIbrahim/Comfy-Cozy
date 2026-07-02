@@ -10,6 +10,7 @@ Brain tools are lazily imported to avoid circular dependencies
 """
 
 import importlib
+import inspect
 import logging
 import threading
 import time
@@ -40,11 +41,10 @@ for _mod_name in _INTELLIGENCE_MODULE_NAMES:
     except Exception as _ie:
         log.warning("Tool module %r failed to import — its tools are unavailable: %s", _mod_name, _ie)
 
-for _mod_name in _STAGE_MODULE_NAMES:
-    try:
-        _MODULES.append(importlib.import_module(f"..stage.{_mod_name}", package=__name__))
-    except Exception as _ie:
-        log.warning("Stage module %r failed to import — its tools are unavailable: %s", _mod_name, _ie)
+# H2 (ledger C-R13): stage modules are NOT imported here — they pull
+# networkx (~294 ms) + pxr (~310 ms) into every cold import. They are
+# lazy-registered by _ensure_stage() below (importer-side only; the stage
+# package itself is untouched).
 
 # Intelligence layer tool schemas
 _LAYER_TOOLS: list[dict] = []
@@ -72,9 +72,37 @@ for _mod in _MODULES:
 # alert on drift. Brain layer counts are added by `_ensure_brain()` when
 # it lazy-loads; the line below is the stage+intelligence subtotal.
 log.info(
-    "tool dispatch: %d intelligence/stage tools registered (brain lazy)",
+    "tool dispatch: %d intelligence tools registered (stage + brain lazy)",
     len(_HANDLERS),
 )
+
+# C-R12: per-module cache — does mod.handle() accept a `progress` kwarg?
+# Computed once via inspect.signature. Replaces the try/except-TypeError
+# forwarding, which RE-EXECUTED a handler (without progress) whenever a
+# TypeError surfaced from INSIDE a progress-accepting handler.
+_PROGRESS_AWARE: dict[str, bool] = {}
+
+
+def _handle_accepts_progress(mod) -> bool:
+    """True if `mod.handle` accepts a `progress` keyword (cached per module).
+
+    Test doubles registered as handler modules may lack ``__name__`` —
+    those are computed per call instead of cached (real modules always
+    have a name, so the hot path stays cached).
+    """
+    key = getattr(mod, "__name__", None)
+    cached = _PROGRESS_AWARE.get(key) if key is not None else None
+    if cached is None:
+        try:
+            params = inspect.signature(mod.handle).parameters
+            cached = "progress" in params or any(
+                p.kind is inspect.Parameter.VAR_KEYWORD for p in params.values()
+            )
+        except (TypeError, ValueError, AttributeError):
+            cached = False
+        if key is not None:
+            _PROGRESS_AWARE[key] = cached
+    return cached
 
 # Brain tools are loaded lazily to break the circular import
 _brain_loaded = False
@@ -101,6 +129,47 @@ def _ensure_brain():
             log.warning(
                 "Brain layer unavailable — brain tools will not be registered: %s", _be
             )
+
+
+# Stage tools are loaded lazily (H2 / C-R13): same pattern as the brain
+# layer. Loaded on first full-tool-list access or on dispatch of a name the
+# eager layers don't know.
+_stage_loaded = False
+_stage_lock = threading.Lock()
+_STAGE_TOOL_NAMES: set[str] = set()
+
+
+def _ensure_stage():
+    """Lazily import + register stage-layer tools (thread-safe)."""
+    global _stage_loaded
+    if _stage_loaded:
+        return
+    with _stage_lock:
+        if _stage_loaded:
+            return
+        for _mod_name in _STAGE_MODULE_NAMES:
+            try:
+                _mod = importlib.import_module(f"..stage.{_mod_name}", package=__name__)
+            except Exception as _ie:
+                log.warning(
+                    "Stage module %r failed to import — its tools are unavailable: %s",
+                    _mod_name, _ie,
+                )
+                continue
+            _MODULES.append(_mod)
+            for _tool in _mod.TOOLS:
+                _name = _tool["name"]
+                if _name in _HANDLERS:
+                    log.warning(
+                        "tool registration collision: %r registered by %s, "
+                        "overwriting prior registration from %s",
+                        _name, _mod.__name__, _HANDLERS[_name].__name__,
+                    )
+                _HANDLERS[_name] = _mod
+                _STAGE_TOOL_NAMES.add(_name)
+            _LAYER_TOOLS.extend(_mod.TOOLS)
+        _stage_loaded = True
+        log.info("tool dispatch: stage layer loaded (+%d tools)", len(_STAGE_TOOL_NAMES))
 
 
 # Capability registry (parallel index for smart routing)
@@ -159,7 +228,8 @@ def _observe(name: str, tool_input: dict, ctx: "object | None") -> None:
 
 
 def _get_all_tools() -> list[dict]:
-    """Get all tool schemas (intelligence + brain layers)."""
+    """Get all tool schemas (intelligence + stage + brain layers)."""
+    _ensure_stage()
     _ensure_brain()
     if not _brain_loaded:
         return list(_LAYER_TOOLS)
@@ -188,6 +258,7 @@ class _ToolList(list):
         with self._lock:
             if self._initialized:  # Double-check after acquiring lock
                 return
+            _ensure_stage()
             self.extend(_LAYER_TOOLS)
             _ensure_brain()
             if _brain_loaded:
@@ -246,12 +317,17 @@ def handle(
     # gate is silently skipped for high-risk brain tools. (Cycle 28 fix)
     _ensure_brain()
 
+    # H2 (C-R13): stage tools register lazily — only pay the stage import
+    # when the requested name isn't known to the eager layers.
+    if name not in _HANDLERS and name not in _BRAIN_TOOL_NAMES:
+        _ensure_stage()
+
     # Pre-dispatch gate (guarded by kill switch, only for known tools)
     _is_known = name in _HANDLERS or name in _BRAIN_TOOL_NAMES
     try:
         from ..config import GATE_ENABLED
         if GATE_ENABLED and _is_known:
-            from ..gate import pre_dispatch_check, GateDecision
+            from ..gate import pre_dispatch_check, GateDecision, RiskLevel
 
             # Determine session_active: either explicit ctx (MCP path with
             # SessionContext), or a workflow loaded in this connection's
@@ -328,10 +404,40 @@ def handle(
                 except Exception:
                     pass
 
+            # C-P0-3: wire the REAL circuit-breaker state into the gate's
+            # system-health check (it previously ran on the "closed" default).
+            from ..circuit_breaker import COMFYUI_BREAKER
+            _breaker_state = COMFYUI_BREAKER().state
+
+            # C-P0-3: per-session action history (stored in the registry
+            # WorkflowSession) feeds the constitution checks. Behavior-neutral
+            # today by design — scout_before_act treats empty history as "not
+            # tracked — skipped" and passes non-empty history unconditionally,
+            # and verify_after_mutation only fires when
+            # verified_since_mutation=False is passed (it is not) — but the
+            # wiring makes the substrate real instead of always-default.
+            # H1.4: validated_since_mutation is set by validate_before_execute
+            # (session validations only) and cleared below when a mutation
+            # dispatches — it feeds the gate's consent check, which requires
+            # it True before execute_workflow / execute_with_progress run the
+            # session workflow. Defensive read, default False (deny-side).
+            _history: list = []
+            _validated = False
+            try:
+                from .workflow_patch import _get_state
+                _st = _get_state()
+                _history = list(_st.get("action_history") or [])
+                _validated = bool(_st.get("validated_since_mutation", False))
+            except Exception:
+                pass
+
             gate_result = pre_dispatch_check(
                 name, tool_input,
+                breaker_state=_breaker_state,
                 session_active=_session_active,
+                validated=_validated,
                 has_undo=_has_undo,
+                action_history=_history,
             )
             if gate_result.decision == GateDecision.DENY:
                 from ..errors import error_json
@@ -367,18 +473,56 @@ def handle(
                     log.info("Gate ESCALATE-blocked '%s' (risk %d) — needs confirm",
                              name, gate_result.risk_level)
                     from ..errors import error_json
+                    # C-R12: echo SAFE identifying inputs (url/filename/name) so
+                    # the human approves an IDENTIFIED action, not a blind one.
+                    _ident = ""
+                    if isinstance(tool_input, dict):
+                        _parts = [
+                            f"{_k}={str(tool_input[_k])[:120]}"
+                            for _k in ("url", "filename", "name")
+                            if isinstance(tool_input.get(_k), str) and tool_input.get(_k)
+                        ]
+                        if _parts:
+                            _ident = " Target: " + ", ".join(_parts) + "."
                     return error_json(
                         f"'{name}' is a network/code-executing operation and needs "
                         f"explicit confirmation before it runs — auto-blocked to "
-                        f"prevent unattended download/install.",
+                        f"prevent unattended download/install.{_ident}",
                         hint="A human must approve; re-call with \"confirm\": true "
                              "to proceed.",
                     )
                 log.info("Gate ESCALATE-confirmed '%s' (risk %d) — proceeding",
                          name, gate_result.risk_level)
                 # confirmed -> fall through to dispatch
+
+            # C-P0-3: the call WILL dispatch (ALLOW fell through, or ESCALATE
+            # with confirm=true) — record it in the per-session action history
+            # (capped at the last 50) so the constitution checks see real
+            # history on the next call. DENY/LOCKED/blocked returned early.
+            try:
+                from .workflow_patch import _get_state
+                _st = _get_state()
+                _st["action_history"] = (
+                    list(_st.get("action_history") or []) + [name]
+                )[-50:]
+                # H1.4: a mutation-class (REVERSIBLE) dispatch invalidates any
+                # prior validate_before_execute verdict — the session workflow
+                # is about to change, so execution must re-validate first.
+                if gate_result.risk_level == RiskLevel.REVERSIBLE:
+                    _st["validated_since_mutation"] = False
+            except Exception:
+                pass
     except ImportError:
-        pass  # Gate not available — degrade silently
+        # Gate not available — FAIL CLOSED (C-P0-3). A broken agent.gate import
+        # previously degraded silently, letting even DESTRUCTIVE tools dispatch
+        # ungated. Closed means closed: deny every tool until the gate imports.
+        log.error("Gate import failed for '%s' — denying dispatch for safety",
+                  name, exc_info=True)
+        from ..errors import error_json
+        return error_json(
+            f"Gate unavailable for '{name}' — denied for safety (gate import "
+            f"failed). Check the agent.gate package and logs."
+        )
     except Exception:
         log.warning("Gate check failed for '%s' — denying for safety", name,
                     exc_info=True)
@@ -413,10 +557,12 @@ def handle(
         return error_json(f"Unknown tool: {name}", hint="Check the tool name and try again.")
     _t0 = time.monotonic()
     try:
-        # Forward progress to any module that accepts it; fall back gracefully
-        try:
+        # C-R12: signature-aware progress forwarding — pass progress= only when
+        # the module's handle() accepts it. The old try/except-TypeError fallback
+        # re-ran the handler whenever a TypeError escaped from inside it.
+        if _handle_accepts_progress(mod):
             result = mod.handle(name, tool_input, progress=progress)
-        except TypeError:
+        else:
             result = mod.handle(name, tool_input)
         _observe(name, tool_input, ctx)
         _record_metric(name, "ok", time.monotonic() - _t0)

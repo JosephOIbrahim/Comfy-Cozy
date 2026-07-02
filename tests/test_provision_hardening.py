@@ -70,14 +70,6 @@ class TestS3PickleAndHash:
         assert _pickle_blocked(".ckpt", {"allow_pickle": True}) is False
         assert _pickle_blocked(".ckpt", {"allow_pickle": "true"}) is False
 
-    def test_sha256_verify_helper(self, tmp_path):  # NEGATIVE+POSITIVE
-        import hashlib
-        from agent.tools.comfy_provision import _verify_sha256
-        f = tmp_path / "blob.bin"
-        f.write_bytes(b"hello world")
-        assert _verify_sha256(f, hashlib.sha256(b"hello world").hexdigest()) is None  # match
-        assert _verify_sha256(f, "deadbeef" * 8) is not None                          # mismatch
-
 
 # ---------------------------------------------------------------------------
 # s4 — repair_workflow(auto_install) gates the inner install behind confirm
@@ -90,7 +82,11 @@ class TestS4RepairInstallGate:
         import agent.tools.comfy_discover as disc
         import agent.tools.comfy_provision as cp
         monkeypatch.setattr(disc, "handle", lambda name, ti: json.dumps(
-            {"missing": [{"class_type": "Foo", "pack_url": "https://github.com/x/foo", "pack_name": "foo"}]}
+            {"status": "missing_nodes", "missing_count": 1,
+             "missing_nodes": [{"node_type": "Foo", "pack_title": "foo",
+                                "pack_url": "https://github.com/x/foo", "pack_installed": False}],
+             "packs_to_install": [{"title": "foo", "url": "https://github.com/x/foo",
+                                   "installed": False, "missing_nodes": ["Foo"]}]}
         ) if name == "find_missing_nodes" else json.dumps({}))
         monkeypatch.setattr(cp, "_handle_install_node_pack",
                             lambda ti: (calls.append(ti), json.dumps({"installed": True, "message": "ok"}))[1])

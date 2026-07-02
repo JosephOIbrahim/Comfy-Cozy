@@ -25,9 +25,15 @@ def test_install_requires_confirm_at_handler_level():
     run.assert_not_called()
 
 
-def test_download_requires_confirm_at_handler_level():
-    """A valid download without confirm -> needs_confirmation; httpx never runs."""
-    with patch("agent.tools.comfy_provision.httpx.stream") as stream:
+def test_download_requires_confirm_at_handler_level(tmp_path):
+    """A valid download without confirm -> needs_confirmation; httpx never runs.
+
+    MODELS_DIR is patched to tmp so the exists-pre-gate check can never
+    short-circuit on a real file (ledger L-CONFIRM-ENVDEP — the assert used
+    to depend on the developer's actual models directory).
+    """
+    with patch("agent.tools.comfy_provision.MODELS_DIR", tmp_path), \
+         patch("agent.tools.comfy_provision.httpx.stream") as stream:
         result = json.loads(
             comfy_provision.handle(
                 "download_model",
@@ -39,6 +45,11 @@ def test_download_requires_confirm_at_handler_level():
             )
         )
     assert result.get("status") == "needs_confirmation", result
+    # C-R12 informed confirm: the payload identifies the action from LOCAL
+    # data only (no pre-confirm network probe — stream stays uncalled).
+    assert result.get("host") == "huggingface.co", result
+    assert result.get("destination", "").endswith("example.safetensors"), result
+    assert result.get("model_type") == "checkpoints", result
     stream.assert_not_called()
 
 

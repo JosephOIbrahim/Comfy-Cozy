@@ -18,7 +18,7 @@ from typing import Any
 
 _save_lock = threading.Lock()
 
-from .chunk import ExperienceChunk, QualityScore
+from .chunk import ExperienceChunk
 from .signature import GenerationContextSignature
 
 
@@ -59,6 +59,7 @@ class ExperienceAccumulator:
         self._chunks: list[ExperienceChunk] = []
         self._max_chunks = max_chunks
         self._chunks_lock = threading.Lock()
+        self._appends_since_compact = 0  # C-R10a: triggers compaction at _max_chunks
 
     @property
     def generation_count(self) -> int:
@@ -153,12 +154,23 @@ class ExperienceAccumulator:
 
         return result
 
-    def get_successful_chunks(self, min_quality: float = 0.5) -> list[ExperienceChunk]:
-        """Get all chunks above a quality threshold."""
+    def get_successful_chunks(
+        self,
+        min_quality: float = 0.5,
+        exclude_rule_era: bool = False,
+    ) -> list[ExperienceChunk]:
+        """Get all chunks above a quality threshold.
+
+        ``exclude_rule_era=True`` drops chunks whose score predates the
+        vision evaluator (source missing/empty/"rule" — see
+        ``QualityScore.is_rule_era``), so a future vision evaluator can
+        learn without rule-era placeholder scores (C-R5/C-R8 prep).
+        """
         with self._chunks_lock:
             return [
                 c for c in self._chunks
                 if c.quality.overall >= min_quality and c.succeeded
+                and not (exclude_rule_era and c.quality.is_rule_era)
             ]
 
     def get_stats(self) -> dict[str, Any]:
@@ -200,8 +212,36 @@ class ExperienceAccumulator:
             with open(tmp_path, "w", encoding="utf-8") as f:
                 for chunk in snapshot:
                     f.write(json.dumps(chunk.to_dict(), sort_keys=True) + "\n")
+                f.flush()
+                os.fsync(f.fileno())  # C-R10a: durable before the rename
             os.replace(tmp_path, p)
         return len(snapshot)
+
+    def append_to(self, path: str, chunk: ExperienceChunk) -> None:
+        """Append a single chunk to a JSONL file (C-R10a).
+
+        One fsync'd line per call — replaces the full-snapshot rewrite on the
+        hot path so a run costs O(1) disk instead of O(n). Disk format per
+        line is byte-identical to save(). Every _max_chunks appends, save()
+        runs as compaction, bounding the file at ~2x max_chunks lines (load()
+        also truncates past max_chunks, so consumers stay correct regardless).
+        """
+        import json
+        from pathlib import Path
+        p = Path(path)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        line = json.dumps(chunk.to_dict(), sort_keys=True) + "\n"
+        with _save_lock:
+            with open(p, "a", encoding="utf-8") as f:
+                f.write(line)
+                f.flush()
+                os.fsync(f.fileno())
+            self._appends_since_compact += 1
+            needs_compact = self._appends_since_compact >= self._max_chunks
+        # Compact outside _save_lock — save() acquires it (non-reentrant).
+        if needs_compact:
+            self.save(str(p))
+            self._appends_since_compact = 0
 
     @classmethod
     def load(cls, path: str, max_chunks: int = 10000) -> ExperienceAccumulator:

@@ -180,3 +180,19 @@ class TestEvaluatorSelection:
         pipeline = AutonomousPipeline()
         result = pipeline.run(PipelineConfig(intent="test"))
         assert result.quality.source == "rule"
+
+    def test_bare_float_evaluator_tagged_rule(self):
+        """C-R5/C-R8 evaluator-swap prep: a bare float from an evaluator must
+        be tagged source="rule" so rule-era records are distinguishable from
+        (future) vision-based scores — including in the recorded chunk."""
+        pipeline = AutonomousPipeline()
+        result = pipeline.run(PipelineConfig(
+            intent="test",
+            executor=lambda wf: _make_exec_result(),
+            evaluator=lambda _r: 0.83,
+        ))
+        assert result.quality.overall == pytest.approx(0.83)
+        assert result.quality.source == "rule"
+        assert result.quality.is_rule_era is True
+        assert result.experience_chunk is not None
+        assert result.experience_chunk.quality.source == "rule"

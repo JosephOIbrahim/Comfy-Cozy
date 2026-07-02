@@ -1,7 +1,9 @@
 """Mocked unit tests for the nim_lifecycle two-deadline state machine (PRD §10, AC-5/8).
 
-No GPU / no ComfyUI — feeds nim_run a synthetic EngineEvent stream. Lives under
-tests/manual/ (forge zone) and is run explicitly by the crucible.
+No GPU / no ComfyUI — feeds nim_run a synthetic EngineEvent stream. Note:
+despite the tests/manual/ location this file IS collected by the default
+suite (testpaths=["tests"], no collect_ignore) — ledger L-MANUAL-COLLECTED;
+the "manual" label here is historical, the tests are ordinary mocked units.
 """
 import pytest
 
@@ -134,9 +136,14 @@ def test_warm_record_selects_warm_budget(monkeypatch):
 
 # --- (e) nim_preflight is read-only (AC-1 / INV-2) -------------------------
 def test_preflight_is_read_only_even_when_unreachable():
+    # H2: the node-kind check goes through comfy_api._get (per-class
+    # /object_info GETs); the system_stats GET still uses nl's httpx.Client.
+    # Both edges must fail for "unreachable".
     with patch.object(nl, "record_warm_state") as rec, patch.object(
         nl.os, "replace"
-    ) as repl, patch.object(nl.httpx, "Client") as cli:
+    ) as repl, patch.object(nl.httpx, "Client") as cli, patch(
+        "agent.tools.comfy_api._get", side_effect=Exception("no server")
+    ):
         cli.return_value.__enter__.return_value.get.side_effect = Exception(
             "no server"
         )

@@ -142,14 +142,18 @@ def classify(workflow: dict) -> dict[str, list[str]]:
     for node_id, node in workflow.items():
         cls = node.get("class_type", "?")
         if cls in NIM_INSTALL_NODES or "install" in cls.lower() and "nim" in cls.lower():
-            buckets["install"].append(node_id); tag = "INSTALL"
+            buckets["install"].append(node_id)
+            tag = "INSTALL"
         elif cls in NIM_LOAD_NODES or ("load" in cls.lower() and "nim" in cls.lower()):
-            buckets["load"].append(node_id); tag = "LOAD"
+            buckets["load"].append(node_id)
+            tag = "LOAD"
         elif cls in NIM_GENERATE_NODES or ("flux" in cls.lower() and "nim" in cls.lower()) \
                 or "nimflux" in cls.lower():
-            buckets["generate"].append(node_id); tag = "GENERATE"
+            buckets["generate"].append(node_id)
+            tag = "GENERATE"
         else:
-            buckets["other"].append(node_id); tag = ""
+            buckets["other"].append(node_id)
+            tag = ""
         print(f"  {cls:<28} {node_id:<6} {tag}")
 
     print("\n── paste these into nim_lifecycle.py if they differ ──")

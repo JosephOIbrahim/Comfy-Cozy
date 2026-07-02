@@ -217,7 +217,12 @@ class SessionContext:
             return
         try:
             from cognitive.pipeline import create_default_pipeline
-            self._pipeline = create_default_pipeline()
+            from .config import EXPERIENCE_FILE
+            # CANON-EXPFILE: inject the agent-side canonical path so the
+            # pipeline loads and saves the same file agent.config points at.
+            self._pipeline = create_default_pipeline(
+                experience_path=str(EXPERIENCE_FILE)
+            )
             self._experience_accumulator = self._pipeline._accumulator
         except Exception as exc:
             import logging as _logging

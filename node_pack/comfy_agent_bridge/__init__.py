@@ -6,7 +6,16 @@ Server-side surface for the agent↔canvas bridge:
 
 Idempotent: registering the same route twice on hot-reload is guarded so it
 does not stack handlers or throw. No third-party imports beyond aiohttp/server
-(both ship with ComfyUI).
+(both ship with ComfyUI) — except the auth layer, which reuses the agent
+package's Origin allow-list and token (same product; same pattern as
+ui/server/routes.py's audited sidebar WebSocket gate).
+
+Security (L-PANEL): the mutating routes (/agent/push_workflow,
+/agent/canvas_changed) replace the artist's live canvas / seed the buffer the
+agent later trusts as "what the artist drew". They are Origin-gated (a browser
+fetch can't attach a custom Authorization header, so same-origin IS the auth
+layer) and, for non-browser callers, Bearer-gated when MCP_AUTH_TOKEN is set —
+so a cross-origin page or a tokenless script cannot drive them.
 """
 
 import logging
@@ -22,6 +31,42 @@ _ROUTES_REGISTERED = False
 
 # #5: per-node execution timing, fed by a send_sync observer (wired below).
 _capture = TimingCapture(time.perf_counter)
+
+
+def bridge_auth_failure(request):
+    """Origin-first auth check for the /agent/* routes (L-PANEL).
+
+    Mirrors ui/server/routes.py's audited sidebar-WebSocket gate. Browser
+    callers carry an Origin and must be same-origin (a browser fetch cannot
+    attach a custom Authorization header, so same-origin IS the auth layer);
+    non-browser callers (the agent's own httpx, curl) have no Origin and must
+    present the Bearer token when MCP_AUTH_TOKEN is configured.
+
+    Pure logic — takes anything with ``.headers`` and returns ``(status,
+    error)`` to reject or ``None`` to allow, so it is unit-testable without a
+    live ComfyUI. If the agent package is unavailable the bridge has nothing
+    to bridge to (inert routes) and the check is skipped.
+    """
+    try:
+        from agent._session_helpers import allowed_origins
+        from agent.config import MCP_AUTH_TOKEN
+    except Exception:
+        return None
+    origin = request.headers.get("Origin", "")
+    if origin:
+        if origin not in allowed_origins():
+            log.warning("comfy_agent_bridge: rejected cross-origin %s", origin)
+            return (403, "forbidden origin")
+        return None
+    if MCP_AUTH_TOKEN:
+        import hmac
+        auth = request.headers.get("Authorization", "")
+        if not auth.startswith("Bearer ") or not hmac.compare_digest(
+            auth[7:], MCP_AUTH_TOKEN
+        ):
+            log.warning("comfy_agent_bridge: rejected non-browser without bearer")
+            return (401, "unauthorized")
+    return None
 
 
 def _register_routes() -> None:
@@ -40,8 +85,16 @@ def _register_routes() -> None:
         log.warning("comfy_agent_bridge: PromptServer.instance not ready, routes skipped")
         return
 
+    def _reject(request):
+        fail = bridge_auth_failure(request)
+        if fail is not None:
+            return web.json_response({"ok": False, "error": fail[1]}, status=fail[0])
+        return None
+
     @instance.routes.post("/agent/push_workflow")
     async def push_workflow(request):
+        if (rejected := _reject(request)) is not None:
+            return rejected
         try:
             data = await request.json()
         except Exception:
@@ -62,6 +115,8 @@ def _register_routes() -> None:
 
     @instance.routes.post("/agent/canvas_changed")
     async def canvas_changed(request):
+        if (rejected := _reject(request)) is not None:
+            return rejected
         try:
             data = await request.json()
         except Exception:
@@ -77,6 +132,8 @@ def _register_routes() -> None:
 
     @instance.routes.get("/agent/canvas_state")
     async def canvas_state(request):
+        if (rejected := _reject(request)) is not None:
+            return rejected
         if not _canvas_buffer["seen"]:
             return web.json_response(
                 {"workflow": None, "note": "No artist edit captured yet."}
@@ -102,6 +159,8 @@ def _register_routes() -> None:
 
     @instance.routes.get("/agent/exec_profile/{prompt_id}")
     async def exec_profile(request):
+        if (rejected := _reject(request)) is not None:
+            return rejected
         pid = request.match_info.get("prompt_id")
         prof = _capture.profile(pid)
         if prof is None:

@@ -228,14 +228,20 @@ class TestBooleanCoercionCycle67:
         from unittest.mock import patch, MagicMock
         from agent.tools import comfy_provision
 
-        # find_missing_nodes returns dicts with class_type, pack_url, pack_name
+        # find_missing_nodes returns dicts with node_type, pack_title, pack_url
         missing_result = _json.dumps({
-            "missing": [
-                {"class_type": "SomeNode",
+            "status": "missing_nodes",
+            "missing_count": 1,
+            "missing_nodes": [
+                {"node_type": "SomeNode",
+                 "pack_title": "SomePack",
                  "pack_url": "https://github.com/org/pack",
-                 "pack_name": "SomePack"},
+                 "pack_installed": False},
             ],
-            "installed": [],
+            "packs_to_install": [
+                {"title": "SomePack", "url": "https://github.com/org/pack",
+                 "installed": False, "missing_nodes": ["SomeNode"]},
+            ],
         })
 
         # _handle_install_node_pack is called directly (not via handle()) when auto_install is truthy
@@ -349,7 +355,11 @@ class TestRepairWorkflowErrorPropagationCycle68:
         from unittest.mock import patch
         from agent.tools import comfy_provision
 
-        clean_result = _json.dumps({"missing": [], "installed": ["KSampler"]})
+        clean_result = _json.dumps({
+            "status": "all_installed",
+            "total_node_types": 1,
+            "message": "All node types in this workflow are available.",
+        })
 
         with patch("agent.tools.comfy_discover.handle", return_value=clean_result):
             result = _json.loads(comfy_provision._handle_repair_workflow({}))

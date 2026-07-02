@@ -4,9 +4,9 @@ Wires all cognitive components into a single autonomous pipeline:
 intent → compose → predict → execute → evaluate → learn
 """
 
+from . import autonomous as _autonomous
 from .autonomous import (
     AutonomousPipeline, PipelineConfig, PipelineResult, PipelineStage,
-    EXPERIENCE_FILE,  # computed locally in autonomous.py — no agent.* import needed
 )
 from ..experience.accumulator import ExperienceAccumulator
 from ..prediction.cwm import CognitiveWorldModel
@@ -14,13 +14,16 @@ from ..prediction.arbiter import SimulationArbiter
 from ..prediction.counterfactual import CounterfactualGenerator
 
 
-def create_default_pipeline() -> AutonomousPipeline:
+def create_default_pipeline(experience_path: str | None = None) -> AutonomousPipeline:
     """Construct an AutonomousPipeline with default singleton components.
 
     Instantiates all four cognitive components fresh, loading any previously
-    saved experience from EXPERIENCE_FILE so learning persists across sessions.
-    The caller owns their lifetime — for MCP server use, call once at startup
-    and keep the returned pipeline alive for the server's lifetime (Option A).
+    saved experience from *experience_path* (default: the call-time resolver
+    in autonomous.py — CANON-EXPFILE) so learning persists across sessions.
+    The same resolved path is passed into the pipeline so LEARN saves where
+    load() read — no save/load asymmetry. The caller owns their lifetime —
+    for MCP server use, call once at startup and keep the returned pipeline
+    alive for the server's lifetime (Option A).
 
     Two calls return two independent pipelines with independent
     accumulator state. There is no implicit module-level singleton.
@@ -28,7 +31,10 @@ def create_default_pipeline() -> AutonomousPipeline:
     Returns:
         AutonomousPipeline ready to call .run(PipelineConfig(...)).
     """
-    accumulator = ExperienceAccumulator.load(str(EXPERIENCE_FILE))
+    # Module-attribute lookup (not a from-import) so test patches of
+    # autonomous._default_experience_file take effect here too.
+    resolved = experience_path or _autonomous._default_experience_file()
+    accumulator = ExperienceAccumulator.load(resolved)
     cwm = CognitiveWorldModel()
     arbiter = SimulationArbiter()
     cf_gen = CounterfactualGenerator()
@@ -37,6 +43,7 @@ def create_default_pipeline() -> AutonomousPipeline:
         cwm=cwm,
         arbiter=arbiter,
         counterfactual_gen=cf_gen,
+        experience_path=resolved,
     )
 
 
@@ -45,6 +52,5 @@ __all__ = [
     "PipelineConfig",
     "PipelineResult",
     "PipelineStage",
-    "EXPERIENCE_FILE",
     "create_default_pipeline",
 ]

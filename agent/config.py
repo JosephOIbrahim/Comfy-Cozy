@@ -190,6 +190,14 @@ except ValueError:
     COMFYUI_PORT = 8188
 COMFYUI_URL = f"http://{COMFYUI_HOST}:{COMFYUI_PORT}"
 
+# Multi-endpoint floors (hardening 3.5): comma-separated "host:port" or full
+# URLs. Empty (the default) = single-endpoint mode via COMFYUI_HOST/PORT —
+# behavior is byte-identical to before the pool existed. One or more entries
+# route execution through the health-checked EndpointPool (agent/engine/pool).
+COMFYUI_ENDPOINTS = [
+    e.strip() for e in os.getenv("COMFYUI_ENDPOINTS", "").split(",") if e.strip()
+]
+
 # Kill switches — independently disable subsystems (all default ON)
 BRAIN_ENABLED = os.getenv("BRAIN_ENABLED", "1") == "1"
 OBSERVATION_ENABLED = os.getenv("OBSERVATION_ENABLED", "1") == "1"

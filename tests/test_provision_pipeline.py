@@ -90,12 +90,16 @@ _SUGGEST_WIRING = {
     "total_nodes": 5,
 }
 
-_MISSING_NODES_NONE = {"missing": []}
+# Real producer contract (find_missing_nodes): "missing_nodes" with
+# node_type/pack_title entries — the old "missing" shape here was the same
+# fabricated-mock drift that hid C-P0-1 (ledger L-PIPESTAT, reproduced live).
+_MISSING_NODES_NONE = {"missing_nodes": [], "missing_count": 0}
 
 _MISSING_NODES_SOME = {
-    "missing": [
-        {"class_type": "IPAdapterApply", "pack_name": "ComfyUI_IPAdapter_plus"},
+    "missing_nodes": [
+        {"node_type": "IPAdapterApply", "pack_title": "ComfyUI_IPAdapter_plus"},
     ],
+    "missing_count": 1,
 }
 
 _COMPAT_OK = {
@@ -613,25 +617,37 @@ class TestInstallLoopNonJsonGuard:
         # _handle_install_node_pack for each pack. We simulate a missing node that
         # has a known pack, then make the installer return garbage.
         missing_nodes_response = json.dumps({
-            "missing": [
+            "status": "missing_nodes",
+            "missing_count": 1,
+            "missing_nodes": [
                 {
-                    "class_type": "TestNode",
+                    "node_type": "TestNode",
+                    "pack_title": "TestPack",
                     "pack_url": "https://github.com/owner/test-pack",
-                    "pack_name": "TestPack",
+                    "pack_installed": False,
                 }
-            ]
+            ],
+            "packs_to_install": [
+                {"title": "TestPack", "url": "https://github.com/owner/test-pack",
+                 "installed": False, "missing_nodes": ["TestNode"]}
+            ],
         })
 
         with patch("agent.tools.comfy_discover.handle", return_value=missing_nodes_response), \
              patch(
                  "agent.tools.comfy_provision._handle_install_node_pack",
                  return_value="DEFINITELY NOT JSON",
-             ):
-            # repair_workflow should survive the non-JSON from the installer
+             ) as mock_install:
+            # repair_workflow should survive the non-JSON from the installer.
+            # confirm=True so the gated install loop actually runs the installer.
             try:
-                result = json.loads(comfy_provision.handle("repair_workflow", {}))
+                result = json.loads(
+                    comfy_provision.handle("repair_workflow", {"confirm": True}))
                 # Must not crash — whatever the result, it must be JSON-parseable
                 assert isinstance(result, dict)
+                assert mock_install.call_count == 1, "install loop must have run"
+                assert result["packs_installed"] == 0, \
+                    "non-JSON installer output must count as failure, not success"
             except Exception as e:
                 pytest.fail(f"repair_workflow crashed on non-JSON installer output: {e}")
 
