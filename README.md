@@ -1271,9 +1271,9 @@ flowchart LR
     class KW,TFIDF,Context,Merge yellow
 ```
 
-### MiniLM Embedder (in-process semantic vectors)
+### BGE Embedder (in-process semantic vectors)
 
-`agent/embedder.py` exposes a single function — `embed(payload: str) -> list[float]` — that returns 384-dimension L2-normalized vectors from `sentence-transformers/all-MiniLM-L6-v2`. The model is lazy-loaded on first call (≈80 MB cache at `~/.cache/huggingface/hub/`) and reused thereafter; encoding latency on M-series CPU is ≈5 ms per short string after warm-up. Opt-in: requires `pip install -r requirements.txt` to pull `sentence-transformers` + the CPU-only torch wheel (`--extra-index-url https://download.pytorch.org/whl/cpu` keeps the install small for users without a GPU).
+`agent/embedder.py` exposes a single function — `embed(payload: str) -> list[float]` — that returns 384-dimension L2-normalized vectors from `BAAI/bge-small-en-v1.5`. The model is lazy-loaded on first call (≈130 MB cache at `~/.cache/huggingface/hub/`) and reused thereafter; encoding latency on CPU is a few ms per short string after warm-up. Opt-in: `pip install -e ".[embed]"` pulls the encoder (`sentence-transformers` + torch); `requirements.txt` pins the CPU-only torch wheel (`--extra-index-url https://download.pytorch.org/whl/cpu`) if you want to skip CUDA.
 
 ```mermaid
 flowchart LR
@@ -1345,8 +1345,8 @@ agent/
   engine/             Execution-engine abstraction (IAIEngine + ComfyUIAdapter)
                       Wraps POST /prompt, POST /interrupt, GET /history, WS /ws
                       so the agent's execution path is backend-pluggable
-  embedder.py         MiniLM (all-MiniLM-L6-v2) -- 384-dim L2-normalized vectors
-                      Lazy-loaded, thread-safe, opt-in via requirements.txt
+  embedder.py         BGE (bge-small-en-v1.5) -- 384-dim L2-normalized vectors
+                      Lazy-loaded, thread-safe, opt-in via the [embed] extra
   tools/              84 tools -- workflow ops, model search, provisioning, auto-wire,
                       graph surgery, canvas bridge, UI->API parser, execution profiling
                       workflow_patch.py wraps the cognitive engine for non-destructive PILOT
