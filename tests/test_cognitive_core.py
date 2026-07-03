@@ -855,3 +855,165 @@ class TestDeltaStackCap:
         """_MAX_DELTA_STACK module constant must exist and be reasonable."""
         from cognitive.core.graph import _MAX_DELTA_STACK
         assert _MAX_DELTA_STACK >= 100
+
+
+# ---------------------------------------------------------------------------
+# 11. Stack Compaction (F-05 — resolution-preserving same-opinion collapse)
+# ---------------------------------------------------------------------------
+
+class TestStackCompaction:
+    """compact_stack() collapses contiguous same-opinion runs WITHOUT changing
+    the resolved graph — the review's 'collapse successive Local edits' cleanup."""
+
+    def test_empty_stack_is_noop(self, engine):
+        """Nothing to compact on an empty stack."""
+        assert engine.compact_stack() == 0
+        assert len(engine.delta_stack) == 0
+
+    def test_single_delta_is_noop(self, engine):
+        """A single delta cannot form a run."""
+        engine.mutate_workflow({"4": {"cfg": 5.0}}, opinion="L")
+        assert engine.compact_stack() == 0
+        assert len(engine.delta_stack) == 1
+
+    def test_merges_successive_same_opinion(self, engine):
+        """Three consecutive Local deltas collapse to one layer."""
+        engine.mutate_workflow({"4": {"cfg": 5.0}}, opinion="L")
+        engine.mutate_workflow({"4": {"steps": 30}}, opinion="L")
+        engine.mutate_workflow({"5": {"width": 768}}, opinion="L")
+        assert engine.compact_stack() == 2
+        assert len(engine.delta_stack) == 1
+
+    def test_resolution_unchanged_after_compaction(self, engine):
+        """The core guarantee: resolved graph is byte-identical after compaction."""
+        engine.mutate_workflow({"4": {"cfg": 5.0}}, opinion="L")
+        engine.mutate_workflow({"4": {"steps": 30}}, opinion="L")
+        engine.mutate_workflow({"5": {"width": 768, "height": 768}}, opinion="L")
+        before = engine.to_api_json()
+        engine.compact_stack()
+        assert engine.to_api_json() == before
+
+    def test_last_write_wins_preserved(self, engine):
+        """A later same-opinion edit to the same key still wins after merge."""
+        engine.mutate_workflow({"4": {"cfg": 5.0}}, opinion="L")
+        engine.mutate_workflow({"4": {"cfg": 9.0}}, opinion="L")
+        engine.compact_stack()
+        assert len(engine.delta_stack) == 1
+        assert engine.to_api_json()["4"]["inputs"]["cfg"] == 9.0
+
+    def test_different_opinions_not_merged(self, engine):
+        """[L, S, L] has no contiguous same-opinion run — nothing collapses."""
+        engine.mutate_workflow({"4": {"cfg": 5.0}}, opinion="L")
+        engine.mutate_workflow({"4": {"cfg": 40.0}}, opinion="S")
+        engine.mutate_workflow({"4": {"steps": 30}}, opinion="L")
+        assert engine.compact_stack() == 0
+        assert len(engine.delta_stack) == 3
+
+    def test_resolution_unchanged_with_interleaving(self, engine):
+        """Only the leading [L, L] run collapses; a Safety layer still overrides."""
+        engine.mutate_workflow({"4": {"cfg": 5.0}}, opinion="L")
+        engine.mutate_workflow({"4": {"steps": 30}}, opinion="L")
+        engine.mutate_workflow({"4": {"cfg": 40.0}}, opinion="S")
+        engine.mutate_workflow({"5": {"width": 768}}, opinion="L")
+        before = engine.to_api_json()
+        assert engine.compact_stack() == 1
+        assert engine.to_api_json() == before
+
+    def test_multiple_runs_collapse_independently(self, engine):
+        """[L,L,S,I,I] collapses both 2-runs, boundary layer untouched."""
+        engine.mutate_workflow({"4": {"cfg": 5.0}}, opinion="L")
+        engine.mutate_workflow({"4": {"steps": 30}}, opinion="L")
+        engine.mutate_workflow({"4": {"cfg": 40.0}}, opinion="S")
+        engine.mutate_workflow({"5": {"width": 768}}, opinion="I")
+        engine.mutate_workflow({"5": {"height": 768}}, opinion="I")
+        before = engine.to_api_json()
+        assert engine.compact_stack() == 2
+        assert len(engine.delta_stack) == 3
+        assert engine.to_api_json() == before
+
+    def test_injection_survives_compaction(self, engine):
+        """A node injected then updated within a run stays injected + updated."""
+        engine.mutate_workflow(
+            {"99": {"class_type": "VAELoader", "vae_name": "x.safetensors"}}, opinion="L"
+        )
+        engine.mutate_workflow({"99": {"vae_name": "y.safetensors"}}, opinion="L")
+        engine.compact_stack()
+        assert len(engine.delta_stack) == 1
+        resolved = engine.to_api_json()
+        assert resolved["99"]["class_type"] == "VAELoader"
+        assert resolved["99"]["inputs"]["vae_name"] == "y.safetensors"
+
+    def test_compacted_layer_is_intact(self, engine):
+        """The merged layer carries a valid, self-consistent hash."""
+        engine.mutate_workflow({"4": {"cfg": 5.0}}, opinion="L")
+        engine.mutate_workflow({"4": {"steps": 30}}, opinion="L")
+        engine.compact_stack()
+        ok, _ = engine.verify_stack_integrity()
+        assert ok
+        assert engine.delta_stack[0].is_intact
+
+    def test_tampered_run_is_not_compacted(self, engine):
+        """A run containing a tampered layer is left intact so tamper stays detectable."""
+        engine.mutate_workflow({"4": {"cfg": 5.0}}, opinion="L")
+        engine.mutate_workflow({"4": {"steps": 30}}, opinion="L")
+        engine.delta_stack[0].mutations["4"]["cfg"] = 999.0  # post-hoc tamper
+        assert engine.compact_stack() == 0
+        ok, errors = engine.verify_stack_integrity()
+        assert not ok and errors
+
+    def test_idempotent(self, engine):
+        """Compacting an already-compacted stack is a no-op."""
+        engine.mutate_workflow({"4": {"cfg": 5.0}}, opinion="L")
+        engine.mutate_workflow({"4": {"steps": 30}}, opinion="L")
+        assert engine.compact_stack() == 1   # 2 layers -> 1 merged = 1 removed
+        assert engine.compact_stack() == 0
+
+    def test_orphan_mutation_before_class_type_not_merged(self, engine):
+        """Params on a not-yet-injected node set BEFORE its class_type appears
+        must not be resurrected by a merge (resolution drops them as a no-op)."""
+        engine.mutate_workflow({"99": {"cfg": 5.0}}, opinion="L")  # orphan, no class_type
+        engine.mutate_workflow(
+            {"99": {"class_type": "KSampler", "steps": 20}}, opinion="L"
+        )
+        before = engine.to_api_json()
+        assert engine.compact_stack() == 0            # unsafe run left verbatim
+        assert engine.to_api_json() == before         # resolution preserved
+        assert "cfg" not in engine.to_api_json()["99"]["inputs"]  # orphan stays dropped
+
+    def test_reinjection_differing_class_type_uses_first(self, engine):
+        """Node injected then re-stated with a DIFFERENT class_type in one run:
+        resolution pins the FIRST class_type (injection); the merge must too.
+        (Adversarial counterexample — first-wins vs last-wins on class_type.)"""
+        engine.mutate_workflow({"99": {"class_type": "Foo", "a": 1}}, opinion="L")
+        engine.mutate_workflow({"99": {"class_type": "Bar", "a": 2}}, opinion="L")
+        before = engine.to_api_json()
+        engine.compact_stack()
+        after = engine.to_api_json()
+        assert after == before
+        assert after["99"]["class_type"] == "Foo"      # first-wins, not Bar
+        assert after["99"]["inputs"]["a"] == 2         # last-wins for non-class_type
+
+    def test_reinjection_differing_class_type_with_links(self, engine):
+        """Same class_type asymmetry, with link-array inputs — links survive."""
+        engine.mutate_workflow(
+            {"77": {"class_type": "VAEDecode", "samples": ["4", 0]}}, opinion="V"
+        )
+        engine.mutate_workflow(
+            {"77": {"class_type": "OtherDecode", "samples": ["4", 1]}}, opinion="V"
+        )
+        before = engine.to_api_json()
+        engine.compact_stack()
+        after = engine.to_api_json()
+        assert after == before
+        assert after["77"]["class_type"] == "VAEDecode"
+        assert after["77"]["inputs"]["samples"] == ["4", 1]
+
+    def test_base_node_class_type_change_is_safe(self, engine):
+        """A node already in base: class_type in the run is skipped by resolution
+        both before and after compaction (control for the injection fix)."""
+        engine.mutate_workflow({"4": {"class_type": "Nope", "cfg": 5.0}}, opinion="L")
+        engine.mutate_workflow({"4": {"class_type": "AlsoNope", "steps": 30}}, opinion="L")
+        before = engine.to_api_json()
+        engine.compact_stack()
+        assert engine.to_api_json() == before
+        assert engine.to_api_json()["4"]["class_type"] == "KSampler"  # base type intact
