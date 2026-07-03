@@ -30,12 +30,14 @@ graph LR
 
 > **TL;DR**
 > - Plain-English co-pilot for ComfyUI. You describe the change; the agent loads workflows, swaps models, patches parameters, runs generations, evaluates output.
-> - **131 MCP tools** across **5 LLM providers** — Claude, GPT-4o, Gemini, Ollama, and NVIDIA Nemotron. Swap providers (or models) with one env var or a flag.
+> - **133 MCP tools** across **5 LLM providers** — Claude, GPT-4o, Gemini, Ollama, and NVIDIA Nemotron. Swap providers (or models) with one env var or a flag.
 > - Every mutation is a **reversible delta layer** (LIVRPS). Full undo stack. Nothing destructive lands without your say-so.
 > - **Experience persists.** Session 1 ships with built-in knowledge. After ~30 runs the agent starts biasing toward what's actually worked for you. Every run appends one fsync'd line — never a rewrite, never silent loss.
 > - **The edit loop is fast.** Validate → fix → re-validate dropped from ~7 s to ~0.5 s (measured): node schemas are fetched class-scoped and cached, so a re-validate after a fix costs ~1 ms. Interrupted model downloads resume from the byte they died at, with live progress. Long jobs get real per-tool time budgets — a 15-minute video render is no longer killed at 2 minutes.
 > - **Built for the VFX floor.** Linear EXR renders flow into the vision loop (ACEScg→sRGB display transform; data passes are refused, not misjudged). Every saved workflow gets a **`workflow.lock`** sidecar — model SHA-256s, node-pack commits, ComfyUI version — and validate warns when anything drifted since the lock. `COMFYUI_ENDPOINTS` pools multiple workers with per-host circuit breakers, health-checked failover, and job affinity.
 > - Ships three ways: **inside Claude Code/Desktop (MCP)**, **standalone CLI**, **native ComfyUI sidebar**. Pick one.
+
+**Jump to:** &nbsp; [⚡ Get Running](#get-running) &nbsp;·&nbsp; [🧠 Pick Your LLM](#pick-your-llm) &nbsp;·&nbsp; [💬 Three Ways to Use It](#three-ways-to-use-it) &nbsp;·&nbsp; [🎨 Artist-Speak](#artist-speak-translation) &nbsp;·&nbsp; [⚙️ How It Works](#how-it-works) &nbsp;·&nbsp; [🤖 Autonomous Mode](#autonomous-mode) &nbsp;·&nbsp; [🖼️ Sidebar](#comfy-cozy-sidebar-native-comfyui-integration) &nbsp;·&nbsp; [📦 Model Provisioning](#one-click-model-provisioning) &nbsp;·&nbsp; [🔧 Configuration](#configuration) &nbsp;·&nbsp; [🧪 Testing](#testing)
 
 ---
 
@@ -66,7 +68,7 @@ graph LR
 
 ## Sponsor This Project
 
-Comfy Cozy is production software. 4,600+ tests (all mocked, runnable in minutes) cover the 131 MCP tools that drive the workflow lifecycle end-to-end. CI runs the full advertised matrix — Python 3.10–3.13 on Ubuntu and Windows — with the USD stage layer actually installed and tested, not skipped. Five LLM providers — Anthropic, OpenAI, Gemini, Ollama, and NVIDIA Nemotron — sit behind a single abstraction with parity across all five. The [CHANGELOG](CHANGELOG.md) tracks active hardening and new work.
+Comfy Cozy is production software. 4,600+ tests (all mocked, runnable in minutes) cover the 133 MCP tools that drive the workflow lifecycle end-to-end. CI runs the full advertised matrix — Python 3.10–3.13 on Ubuntu and Windows — with the USD stage layer actually installed and tested, not skipped. Five LLM providers — Anthropic, OpenAI, Gemini, Ollama, and NVIDIA Nemotron — sit behind a single abstraction. Anthropic is the reference path (extended thinking, three-tier prompt caching, and signature-bearing thinking-block replay are Anthropic-only); the other four are first-class for tool use and streaming, with vision decoupled onto a multimodal provider. The [CHANGELOG](CHANGELOG.md) tracks active hardening and new work.
 
 If Comfy Cozy saves you time inside ComfyUI, sponsorship is the most direct way to keep it moving.
 
@@ -280,7 +282,7 @@ Restart ComfyUI. You'll see `comfy_agent_bridge: routes registered` in the log -
 
 ## Pick Your LLM
 
-Comfy Cozy is **provider-agnostic**. Same 131 tools, same streaming, same vision analysis -- swap one env var, or swap models mid-session.
+Comfy Cozy is **provider-agnostic** for the agent loop. Same 133 tools, same streaming -- swap one env var, or swap models mid-session. Vision is decoupled onto a multimodal provider (`VISION_PROVIDER`, default `anthropic`), so swapping the reasoning loop to a text-only model never breaks `analyze_image`.
 
 ### Anthropic (default)
 
@@ -391,7 +393,7 @@ All five providers share the same abstraction layer (`agent/llm/`):
 
 ```mermaid
 graph LR
-    Agent[Agent Loop<br/>131 tools] --> LLM{LLM_PROVIDER}
+    Agent[Agent Loop<br/>133 tools] --> LLM{LLM_PROVIDER}
     LLM -->|anthropic| A["Claude<br/>Streaming + Cache"]
     LLM -->|openai| B["GPT-4o<br/>Tool Calls"]
     LLM -->|gemini| C["Gemini<br/>Function Decl."]
@@ -473,7 +475,7 @@ API accepts the next request.
 
 ### A. Inside Claude Code / Claude Desktop (recommended)
 
-The agent runs as an MCP server -- Claude can use all 131 tools directly.
+The agent runs as an MCP server -- Claude can use all 133 tools directly.
 
 Add this to your Claude Code or Claude Desktop MCP config:
 
@@ -559,8 +561,8 @@ graph TB
         Sidebar["Comfy Cozy Sidebar<br/>Native left panel -- Chat -- Quick Actions"]
     end
     subgraph Backend ["Agent Backend (Python)"]
-        Routes["49 REST Routes<br/>+ WebSocket"]
-        Tools["131 Tools<br/>workflow -- models -- vision -- session -- provision"]
+        Routes["51 REST Routes<br/>+ WebSocket"]
+        Tools["133 Tools<br/>workflow -- models -- vision -- session -- provision"]
         Cache["object_info cache<br/>TTL + invalidate<br/>re-validate ~1 ms"]
         Engine["IAIEngine<br/>ComfyUIAdapter -- EndpointPool<br/>pooled client -- per-host breakers -- job affinity"]
         Cog["Cognitive Engine<br/>LIVRPS delta stack -- CWM -- experience"]
@@ -600,7 +602,7 @@ graph TB
 
 ```mermaid
 graph LR
-    You([You]) --> Agent[131 Tools]
+    You([You]) --> Agent[133 Tools]
     Agent --> Understand[UNDERSTAND<br/>What do you have?]
     Understand --> Discover[DISCOVER<br/>What do you need?]
     Discover --> Pilot[PILOT<br/>Make the changes]
@@ -990,7 +992,7 @@ graph TB
     subgraph Foundation ["Foundation Layer"]
         DAG["Workflow Intelligence DAG<br/>6 pure computation nodes"]
         OBS["Time-Sampled State<br/>Monotonic step index"]
-        CAP["Capability Registry<br/>131 tools indexed"]
+        CAP["Capability Registry<br/>133 tools indexed"]
     end
 
     subgraph Safety ["Safety Layer"]
@@ -1035,7 +1037,7 @@ graph LR
 
 Every tool call passes through a default-deny gate. Read-only tools bypass it (zero overhead). Destructive tools are always locked. The gate auto-detects loaded workflows AND USD stages: if either kind of workspace state exists for the current connection, mutation tools are allowed without explicit session context. Stage tools (`stage_write`, `stage_add_delta`) are recognized separately from workflow tools — a USD stage can exist independently of any loaded workflow.
 
-The gate runs on live state, not defaults. The real ComfyUI circuit-breaker state feeds the system-health check, and a per-session action history (the last 50 dispatched calls) feeds the constitution checks. Every one of the 131 dispatched tools carries an **explicit** risk classification — a completeness test (`tests/test_gate_completeness.py`) pins the registry so a new tool can't ship unclassified. And the gate **fails closed**: if the gate package itself can't import, every tool is denied until it can (it used to degrade silently, which meant ungated dispatch). One more consent rule rides on the same checks: after any workflow mutation, `execute_workflow` / `execute_with_progress` on the session workflow are denied until a `validate_before_execute` passes — validate, then run, enforced by the gate itself. (Executing an explicit file path is exempt; the session flag says nothing about an external file.)
+The gate runs on live state, not defaults. The real ComfyUI circuit-breaker state feeds the system-health check, and a per-session action history (the last 50 dispatched calls) feeds the constitution checks. Every one of the 133 dispatched tools carries an **explicit** risk classification — a completeness test (`tests/test_gate_completeness.py`) pins the registry so a new tool can't ship unclassified. And the gate **fails closed**: if the gate package itself can't import, every tool is denied until it can (it used to degrade silently, which meant ungated dispatch). One more consent rule rides on the same checks: after any workflow mutation, `execute_workflow` / `execute_with_progress` on the session workflow are denied until a `validate_before_execute` passes — validate, then run, enforced by the gate itself. (Executing an explicit file path is exempt; the session flag says nothing about an external file.)
 
 ```mermaid
 flowchart LR
@@ -1249,6 +1251,8 @@ Every generation is an experiment. The agent tracks what worked:
 - **Sessions 30-100**: Blends knowledge with what it's learned from your renders
 - **Sessions 100+**: Primarily driven by your personal history
 
+> *Under the hood:* the 1–30 / 30–100 / 100+ phases are the autonomous pipeline's real **quality-prediction** blend boundaries (the `cognitive` CWM). The artist-facing recommendation tools start biasing on as few as **3–5** recorded runs — there's no hard 30-run gate. Persistence is crash-safe today; the semantic embedder that sharpens retrieval (next section) ships **opt-in**, not yet the default. **Session 1 is fully capable regardless.**
+
 ### Semantic Knowledge Retrieval
 
 The agent ships with 12 knowledge files (1,300+ lines) covering ControlNet preprocessor selection and strength scheduling (174 lines), Flux guidance and T5 encoder tuning (172 lines), multi-pass compositing for Nuke/AE/Fusion (119 lines), video workflows, 3D pipelines, and more. Retrieval is hybrid: keyword triggers fire first (fast path), then TF-IDF semantic search fills gaps when keywords miss. Pure Python, zero external dependencies -- no vector DB required.
@@ -1284,16 +1288,16 @@ flowchart LR
     class Text,Neighbors yellow
 ```
 
-The acceptance test (`tests/embedder/test_minilm_clustering.py`) verifies the contract on a 50-outcome × 5-theme corpus: within-theme cosine averages stay above 0.4, between-theme below 0.3, separation above 0.15. A parallel control using deterministic hash-based "synthetic" vectors (the shape of the comfy-moneta-bridge's current stub) deliberately does **not** cluster — the test asserts `|within − between| < 0.05` and that both averages sit near zero. This is the contract that distinguishes a real embedder from a placeholder before the in-process Moneta migration consumes it. **`record_outcome` and the existing JSONL → bridge pipeline are not modified by this step** — the embedder is wired in as a future-ready dependency, not switched on yet.
+The acceptance test (`tests/embedder/test_minilm_clustering.py`) verifies the contract on a 50-outcome × 5-theme corpus: within-theme cosine averages stay above 0.4, between-theme below 0.3, separation above 0.15. A parallel control using deterministic hash-based "synthetic" vectors (the shape of a placeholder stub) deliberately does **not** cluster — the test asserts `|within − between| < 0.05` and that both averages sit near zero. This is the contract that distinguishes a real embedder from a placeholder before an in-process retrieval path consumes it. **`record_outcome` and the existing JSONL pipeline are not modified by this step** — the embedder is wired in as a future-ready dependency, opt-in, not switched on yet.
 
 ### Tool Inventory
 
-**131 tools reachable via the central dispatcher** (`agent/tools/__init__.py:handle()`). The dispatcher routes through TWO maps:
+**133 tools reachable via the central dispatcher** (`agent/tools/__init__.py:handle()`). The dispatcher routes through TWO maps:
 
-- `_HANDLERS` (104 entries) — tools registered via module-level `TOOLS:` lists. Loaded eagerly at import time for the intelligence + stage layers.
+- `_HANDLERS` (106 entries) — tools registered via module-level `TOOLS:` lists. Loaded eagerly at import time for the intelligence + stage layers.
 - `_BRAIN_TOOL_NAMES` (27 entries) — tools registered via `BrainAgent` SDK subclasses (`__init_subclass__` auto-registration in `agent/brain/_sdk.py`). Loaded lazily on first call when `BRAIN_ENABLED=true` to break import cycles.
 
-Sum: 104 + 27 = 131. Verify the live count with:
+Sum: 106 + 27 = 133. Verify the live count with:
 ```python
 from agent.tools import _HANDLERS, _BRAIN_TOOL_NAMES, _ensure_brain
 _ensure_brain()  # forces lazy brain registration
@@ -1302,10 +1306,10 @@ print(len(_HANDLERS) + len(_BRAIN_TOOL_NAMES))
 
 | Layer | Count | Dispatch | Highlights |
 |-------|-------|----------|------------|
-| **Intelligence** (`agent/tools/`) | 82 | TOOLS list → `_HANDLERS` | Workflow parsing, model search (CivitAI + HF + 31k nodes), delta patching, graph surgery, canvas bridge, UI→API parsing, execution profiling, auto-wire, provisioning, execution, NIM lifecycle, model swap |
+| **Intelligence** (`agent/tools/`) | 84 | TOOLS list → `_HANDLERS` | Workflow parsing, model search (CivitAI + HF + 31k nodes), delta patching, graph surgery, canvas bridge, UI→API parsing, execution profiling, auto-wire, provisioning, execution, NIM lifecycle, model swap |
 | **Stage** (`agent/stage/`) | 22 | TOOLS list → `_HANDLERS` | USD cognitive state, LIVRPS composition, predictive experiments, scene composition |
 | **Brain** (`agent/brain/`) | 27 | BrainAgent SDK → `_BRAIN_TOOL_NAMES` | Vision analysis, goal planning, pattern memory, GPU optimization, artistic intent capture, iteration tracking |
-| **Total** | **131** | | |
+| **Total** | **133** | | |
 
 ### Workflow Lifecycle
 
@@ -1343,7 +1347,7 @@ agent/
                       so the agent's execution path is backend-pluggable
   embedder.py         MiniLM (all-MiniLM-L6-v2) -- 384-dim L2-normalized vectors
                       Lazy-loaded, thread-safe, opt-in via requirements.txt
-  tools/              80 tools -- workflow ops, model search, provisioning, auto-wire,
+  tools/              84 tools -- workflow ops, model search, provisioning, auto-wire,
                       graph surgery, canvas bridge, UI->API parser, execution profiling
                       workflow_patch.py wraps the cognitive engine for non-destructive PILOT
                       comfy_execute.py routes execution traffic through agent/engine/
