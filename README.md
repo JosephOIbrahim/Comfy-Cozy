@@ -1079,18 +1079,18 @@ The gate runs on live state, not defaults. The real ComfyUI circuit-breaker stat
 
 ```mermaid
 flowchart LR
-    Tool([Tool Call]) --> Gate{"Gate\nimports?"}
-    Gate -->|"No — fail closed"| Closed["Denied:\ngate unavailable"]
-    Gate -->|Yes| Type{"Stage\ntool?"}
-    Type -->|No| WF{"Workflow\nloaded?"}
-    Type -->|Yes| ST{"Stage\nexists?"}
+    Tool([Tool Call]) --> Gate{"Gate<br/>imports?"}
+    Gate -->|"No — fail closed"| Closed["Denied:<br/>gate unavailable"]
+    Gate -->|Yes| Type{"Stage<br/>tool?"}
+    Type -->|No| WF{"Workflow<br/>loaded?"}
+    Type -->|Yes| ST{"Stage<br/>exists?"}
     WF -->|Yes| Risk{Risk Level?}
-    WF -->|No| Deny["Denied:\nno active session"]
+    WF -->|No| Deny["Denied:<br/>no active session"]
     ST -->|Yes| Risk
     ST -->|No| Deny
     Risk -->|"Read-only"| Pass[Pass through]
-    Risk -->|"Mutation / Execute"| Checks["5 safety checks\nlive breaker + history"]
-    Risk -->|"Install / Download"| Escalate["Needs your\nconfirmation"]
+    Risk -->|"Mutation / Execute"| Checks["5 safety checks<br/>live breaker + history"]
+    Risk -->|"Install / Download"| Escalate["Needs your<br/>confirmation"]
     Risk -->|"Uninstall / Delete"| Block[Blocked]
 
     Checks --> OK{All pass?}
@@ -1307,9 +1307,9 @@ flowchart LR
     class KW,TFIDF,Context,Merge yellow
 ```
 
-### MiniLM Embedder (in-process semantic vectors)
+### BGE Embedder (in-process semantic vectors)
 
-`agent/embedder.py` exposes a single function — `embed(payload: str) -> list[float]` — that returns 384-dimension L2-normalized vectors from `sentence-transformers/all-MiniLM-L6-v2`. The model is lazy-loaded on first call (≈80 MB cache at `~/.cache/huggingface/hub/`) and reused thereafter; encoding latency on M-series CPU is ≈5 ms per short string after warm-up. Opt-in: requires `pip install -r requirements.txt` to pull `sentence-transformers` + the CPU-only torch wheel (`--extra-index-url https://download.pytorch.org/whl/cpu` keeps the install small for users without a GPU).
+`agent/embedder.py` exposes a single function — `embed(payload: str) -> list[float]` — that returns 384-dimension L2-normalized vectors from `BAAI/bge-small-en-v1.5`. The model is lazy-loaded on first call (≈130 MB cache at `~/.cache/huggingface/hub/`) and reused thereafter; encoding latency on CPU is a few ms per short string after warm-up. Opt-in: `pip install -e ".[embed]"` pulls the encoder (`sentence-transformers` + torch); `requirements.txt` pins the CPU-only torch wheel (`--extra-index-url https://download.pytorch.org/whl/cpu`) if you want to skip CUDA.
 
 ```mermaid
 flowchart LR
@@ -1324,7 +1324,7 @@ flowchart LR
     class Text,Neighbors yellow
 ```
 
-The acceptance test (`tests/embedder/test_minilm_clustering.py`) verifies the contract on a 50-outcome × 5-theme corpus: within-theme cosine averages stay above 0.4, between-theme below 0.3, separation above 0.15. A parallel control using deterministic hash-based "synthetic" vectors (the shape of the comfy-moneta-bridge's current stub) deliberately does **not** cluster — the test asserts `|within − between| < 0.05` and that both averages sit near zero. This is the contract that distinguishes a real embedder from a placeholder before the in-process Moneta migration consumes it. **`record_outcome` and the existing JSONL → bridge pipeline are not modified by this step** — the embedder is wired in as a future-ready dependency, not switched on yet.
+The acceptance test (`tests/embedder/test_minilm_clustering.py`) verifies the contract on a 50-outcome × 5-theme corpus: within-theme cosine averages stay above 0.4, between-theme below 0.3, separation above 0.15. A parallel control using deterministic hash-based "synthetic" vectors (the shape of a placeholder stub) deliberately does **not** cluster — the test asserts `|within − between| < 0.05` and that both averages sit near zero. This is the contract that distinguishes a real embedder from a placeholder before an in-process retrieval path consumes it. **`record_outcome` and the existing JSONL pipeline are not modified by this step** — the embedder is wired in as a future-ready dependency, opt-in, not switched on yet.
 
 ### Tool Inventory
 
@@ -1382,8 +1382,8 @@ agent/
   engine/             Execution-engine abstraction (IAIEngine + ComfyUIAdapter)
                       Wraps POST /prompt, POST /interrupt, GET /history, WS /ws
                       so the agent's execution path is backend-pluggable
-  embedder.py         MiniLM (all-MiniLM-L6-v2) -- 384-dim L2-normalized vectors
-                      Lazy-loaded, thread-safe, opt-in via requirements.txt
+  embedder.py         BGE (bge-small-en-v1.5) -- 384-dim L2-normalized vectors
+                      Lazy-loaded, thread-safe, opt-in via the [embed] extra
   tools/              84 tools -- workflow ops, model search, provisioning, auto-wire, recipes,
                       graph surgery, canvas bridge, UI->API parser, execution profiling
                       workflow_patch.py wraps the cognitive engine for non-destructive PILOT
