@@ -184,6 +184,103 @@ class CognitiveGraphEngine:
                 return self._delta_stack.pop()
         return None
 
+    def compact_stack(self) -> int:
+        """Collapse maximal runs of consecutive same-opinion deltas into one.
+
+        An explicit, opt-in cleanup for long sessions: it bounds delta-stack
+        growth more intelligently than the FIFO eviction cap by merging a
+        burst of successive same-opinion edits (e.g. many Local tweaks) into a
+        single layer.
+
+        Resolution-preserving. Same-opinion deltas resolve in insertion order
+        with last-write-wins per key (see ``_resolve_from_raw``), so the
+        key-wise merge of a *contiguous* same-opinion run yields the identical
+        resolved graph — while shrinking the stack.
+
+        Trade-off: compaction discards the fine-grained history *within* a
+        collapsed run, so ``temporal_query`` / ``pop_delta`` can no longer step
+        through those individual edits. That is why it is opt-in, not
+        automatic. A run containing a tampered layer (``is_intact`` False) is
+        left untouched, so a fresh merge hash never hides tamper detection.
+
+        Returns:
+            The number of layers removed (0 if nothing was compacted).
+        """
+        with self._delta_stack_lock:
+            original = self._delta_stack
+            if len(original) < 2:
+                return 0
+            compacted: list[DeltaLayer] = []
+            i, n = 0, len(original)
+            while i < n:
+                j = i + 1
+                while j < n and original[j].opinion == original[i].opinion:
+                    j += 1
+                run = original[i:j]
+                if (
+                    len(run) > 1
+                    and all(d.is_intact for d in run)
+                    and self._run_is_mergeable(run)
+                ):
+                    compacted.append(self._merge_run(run))
+                else:
+                    compacted.extend(run)
+                i = j
+            removed = len(original) - len(compacted)
+            if removed:
+                self._delta_stack = compacted
+            return removed
+
+    @staticmethod
+    def _merge_run(run: list[DeltaLayer]) -> DeltaLayer:
+        """Merge a contiguous same-opinion run into one delta.
+
+        Non-class_type keys are last-wins (later mutations overwrite earlier
+        per (node_id, key)). ``class_type`` is FIRST-wins per node, mirroring
+        resolution: injection pins an injected node's class_type at its first
+        appearance and skips class_type on every later update to that node
+        (``_resolve_from_raw`` line ``if param_name == "class_type": continue``).
+        Merging class_type last-wins would silently flip an injected node's
+        type — caught by adversarial review.
+        """
+        merged: dict[str, dict[str, Any]] = {}
+        for delta in run:
+            for node_id, params in delta.mutations.items():
+                node = merged.setdefault(node_id, {})
+                for key, value in params.items():
+                    if key == "class_type" and "class_type" in node:
+                        continue  # first class_type wins (mirrors injection)
+                    node[key] = copy.deepcopy(value)
+        return DeltaLayer.create(
+            mutations=merged,
+            opinion=run[0].opinion,
+            description=f"compacted {len(run)} {run[0].opinion} layers",
+        )
+
+    @staticmethod
+    def _run_is_mergeable(run: list[DeltaLayer]) -> bool:
+        """True if merging this same-opinion run cannot change resolution.
+
+        The one unsafe pattern is an *orphan* mutation: a node whose FIRST
+        appearance in the run sets params WITHOUT class_type, while a LATER
+        delta in the run supplies its class_type. Resolution drops those
+        pre-injection params (a mutation to a not-yet-present node without
+        class_type is a no-op), but a naive key-wise merge would resurrect
+        them. In that case, refuse to merge and keep the run verbatim.
+        """
+        seen: set[str] = set()
+        seen_without_ct: set[str] = set()
+        for delta in run:
+            for node_id, params in delta.mutations.items():
+                has_ct = "class_type" in params
+                if node_id not in seen:
+                    seen.add(node_id)
+                    if not has_ct:
+                        seen_without_ct.add(node_id)
+                elif has_ct and node_id in seen_without_ct:
+                    return False
+        return True
+
     def __deepcopy__(self, memo: dict) -> "CognitiveGraphEngine":
         """Support copy.deepcopy() — creates a fresh lock, copies data.
 
