@@ -55,6 +55,8 @@ graph LR
 | Let it run overnight | [Autonomous Mode](#autonomous-mode) |
 | Understand the machinery | [How It Works](#how-it-works) · Architecture Deep Dive (expandable, below) |
 
+> **Maturity legend** — Unless flagged otherwise, a feature is **on by default**. **Opt-in** = one extra install or env flag, always called out inline (e.g. the USD stage layer via `pip install -e ".[dev,stage]"`, the Agent Bridge node pack, or the BGE embedder).
+
 ---
 
 ## Demo
@@ -489,6 +491,8 @@ API accepts the next request.
 
 ## Three Ways to Use It
 
+*Same 133 tools, three front ends — MCP inside Claude, standalone CLI, or the one-click launcher. Pick one.*
+
 ### A. Inside Claude Code / Claude Desktop (recommended)
 
 The agent runs as an MCP server -- Claude can use all 133 tools directly.
@@ -586,6 +590,8 @@ Two tools drive it: `list_recipes` (see what's available) and `apply_recipe` (fi
 ---
 
 ## How It Works
+
+*The four-phase loop every request runs through — UNDERSTAND → DISCOVER → PILOT → VERIFY — plus the safety rails around installs and execution.*
 
 ```mermaid
 graph TB
@@ -1019,7 +1025,7 @@ The safety gate classifies these like everything else: `nim_preflight` and `nim_
 ---
 
 <details>
-<summary><b>Architecture Deep Dive</b> (click to expand)</summary>
+<summary><b>Architecture Deep Dive</b> — internals for engineers; artists can skip this (click to expand)</summary>
 
 ### Seven Structural Subsystems
 
