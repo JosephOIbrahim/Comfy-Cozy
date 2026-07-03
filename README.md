@@ -37,7 +37,9 @@ graph LR
 > - **Built for the VFX floor.** Linear EXR renders flow into the vision loop (ACEScg→sRGB display transform; data passes are refused, not misjudged). Every saved workflow gets a **`workflow.lock`** sidecar — model SHA-256s, node-pack commits, ComfyUI version — and validate warns when anything drifted since the lock. `COMFYUI_ENDPOINTS` pools multiple workers with per-host circuit breakers, health-checked failover, and job affinity.
 > - Ships three ways: **inside Claude Code/Desktop (MCP)**, **standalone CLI**, **native ComfyUI sidebar**. Pick one.
 
-**Jump to:** &nbsp; [⚡ Get Running](#get-running) &nbsp;·&nbsp; [🧠 Pick Your LLM](#pick-your-llm) &nbsp;·&nbsp; [💬 Three Ways to Use It](#three-ways-to-use-it) &nbsp;·&nbsp; [🎨 Artist-Speak](#artist-speak-translation) &nbsp;·&nbsp; [⚙️ How It Works](#how-it-works) &nbsp;·&nbsp; [🤖 Autonomous Mode](#autonomous-mode) &nbsp;·&nbsp; [🖼️ Sidebar](#comfy-cozy-sidebar-native-comfyui-integration) &nbsp;·&nbsp; [📦 Model Provisioning](#one-click-model-provisioning) &nbsp;·&nbsp; [🔧 Configuration](#configuration) &nbsp;·&nbsp; [🧪 Testing](#testing)
+> **Maturity legend** — Unless flagged otherwise, a feature is **on by default**. **Opt-in** = one extra install or env flag, always called out inline (e.g. the USD stage layer via `pip install -e ".[dev,stage]"`, or the Agent Bridge node pack). **Reference path** = Anthropic-only richness (extended thinking, three-tier prompt caching, signature-bearing thinking-block replay) that the other four providers don't use.
+
+**Jump to:** &nbsp; [🗣️ See It In Action](#see-it-in-action) &nbsp;·&nbsp; [⚡ Get Running](#get-running) &nbsp;·&nbsp; [🧠 Pick Your LLM](#pick-your-llm) &nbsp;·&nbsp; [💬 Three Ways to Use It](#three-ways-to-use-it) &nbsp;·&nbsp; [🎨 Artist-Speak](#artist-speak-translation) &nbsp;·&nbsp; [⚙️ How It Works](#how-it-works) &nbsp;·&nbsp; [🤖 Autonomous Mode](#autonomous-mode) &nbsp;·&nbsp; [🖼️ Sidebar](#comfy-cozy-sidebar-native-comfyui-integration) &nbsp;·&nbsp; [📦 Model Provisioning](#one-click-model-provisioning) &nbsp;·&nbsp; [🔧 Configuration](#configuration) &nbsp;·&nbsp; [🧪 Testing](#testing)
 
 ---
 
@@ -473,6 +475,8 @@ API accepts the next request.
 
 ## Three Ways to Use It
 
+*Same 133 tools, three front ends — MCP inside Claude, standalone CLI, or the one-click launcher. Pick one.*
+
 ### A. Inside Claude Code / Claude Desktop (recommended)
 
 The agent runs as an MCP server -- Claude can use all 133 tools directly.
@@ -554,6 +558,8 @@ The agent ships with built-in knowledge about how each model family actually beh
 ---
 
 ## How It Works
+
+*The four-phase loop every request runs through — UNDERSTAND → DISCOVER → PILOT → VERIFY — plus the safety rails around installs and execution.*
 
 ```mermaid
 graph TB
@@ -865,6 +871,9 @@ flowchart TD
 
 ### Write-back v1 -- touched-set push to the live canvas
 
+<details>
+<summary><b>Write-back v1 — how agent edits land on your canvas without clobbering your hand-edits</b> (engineering detail, click to expand)</summary>
+
 The canvas bridge is **bidirectional**. The canvas → agent direction has worked since launch (the panel POSTs the live graph to the agent on every change). The agent → canvas direction shipped Tier 1 only -- widget edits -- and **silently dropped every link the agent emitted** (`panel/web/js/superduperPanel.js:89-92, :106` pre-v1). Write-back v1 closes that gap with a touched-set delta-merge.
 
 ```mermaid
@@ -930,6 +939,8 @@ npm test                            # 87 Vitest cases (~250ms)
 python -m pytest tests/test_touched.py -v   # 24 pytest cases
 ```
 
+</details>
+
 ---
 
 ## One-Click Model Provisioning
@@ -981,7 +992,7 @@ The safety gate classifies these like everything else: `nim_preflight` and `nim_
 ---
 
 <details>
-<summary><b>Architecture Deep Dive</b> (click to expand)</summary>
+<summary><b>Architecture Deep Dive</b> — internals for engineers; artists can skip this (click to expand)</summary>
 
 ### Seven Structural Subsystems
 
@@ -1041,18 +1052,18 @@ The gate runs on live state, not defaults. The real ComfyUI circuit-breaker stat
 
 ```mermaid
 flowchart LR
-    Tool([Tool Call]) --> Gate{"Gate\nimports?"}
-    Gate -->|"No — fail closed"| Closed["Denied:\ngate unavailable"]
-    Gate -->|Yes| Type{"Stage\ntool?"}
-    Type -->|No| WF{"Workflow\nloaded?"}
-    Type -->|Yes| ST{"Stage\nexists?"}
+    Tool([Tool Call]) --> Gate{"Gate<br/>imports?"}
+    Gate -->|"No — fail closed"| Closed["Denied:<br/>gate unavailable"]
+    Gate -->|Yes| Type{"Stage<br/>tool?"}
+    Type -->|No| WF{"Workflow<br/>loaded?"}
+    Type -->|Yes| ST{"Stage<br/>exists?"}
     WF -->|Yes| Risk{Risk Level?}
-    WF -->|No| Deny["Denied:\nno active session"]
+    WF -->|No| Deny["Denied:<br/>no active session"]
     ST -->|Yes| Risk
     ST -->|No| Deny
     Risk -->|"Read-only"| Pass[Pass through]
-    Risk -->|"Mutation / Execute"| Checks["5 safety checks\nlive breaker + history"]
-    Risk -->|"Install / Download"| Escalate["Needs your\nconfirmation"]
+    Risk -->|"Mutation / Execute"| Checks["5 safety checks<br/>live breaker + history"]
+    Risk -->|"Install / Download"| Escalate["Needs your<br/>confirmation"]
     Risk -->|"Uninstall / Delete"| Block[Blocked]
 
     Checks --> OK{All pass?}
