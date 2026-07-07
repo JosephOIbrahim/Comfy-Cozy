@@ -17,11 +17,28 @@ TOOLS: list[dict] = [
         "name": "list_models_available",
         "description": (
             "List the LLM model aliases you can swap the agent to (e.g. 'claude', "
-            "'nemotron'). Returns each alias with its provider and model id, plus a "
-            "per-alias 'capabilities' map (e.g. whether the model can tool-call). "
-            "Includes the 'custom' engine — a bring-your-own OpenAI-compatible endpoint."
+            "'nemotron'). Returns each alias with its provider and model id, a "
+            "per-alias 'capabilities' map (e.g. whether the model can tool-call), and "
+            "a per-alias 'status' column showing whether each engine is CONFIGURED "
+            "(has its key/endpoint) with a reason when not. Pass probe=true to also "
+            "live-check reachability of the CONFIGURED engines — adds 'reachable' + "
+            "'latency_ms' via a tiny 1-token call each (costs a few tokens; default is "
+            "free and makes no network calls). Includes the 'custom' engine — a "
+            "bring-your-own OpenAI-compatible endpoint."
         ),
-        "input_schema": {"type": "object", "properties": {}},
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "probe": {
+                    "type": "boolean",
+                    "description": (
+                        "Live-check reachability of CONFIGURED providers (a tiny "
+                        "1-token call each; costs a few tokens). Default false = free, "
+                        "no network."
+                    ),
+                },
+            },
+        },
     },
     {
         "name": "swap_model",
@@ -56,7 +73,14 @@ def handle(name: str, tool_input: dict) -> str:
     from ..llm.swap import list_aliases, list_capabilities, swap
 
     if name == "list_models_available":
-        return to_json({"aliases": list_aliases(), "capabilities": list_capabilities()})
+        from ..llm._health import model_status
+
+        probe = bool(tool_input.get("probe"))
+        return to_json({
+            "aliases": list_aliases(),
+            "capabilities": list_capabilities(),
+            "status": model_status(probe=probe),
+        })
 
     if name == "swap_model":
         try:
