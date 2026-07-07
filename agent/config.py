@@ -37,6 +37,14 @@ NVIDIA_EMIT_REASONING = os.getenv("NVIDIA_EMIT_REASONING", "false").lower() in (
 # OpenRouter key (alias for an OpenRouter-hosted NVIDIA_BASE_URL; falls back to NVIDIA_API_KEY).
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 
+# Custom engine — bring-your-own OpenAI-compatible endpoint (self-hosted vLLM/
+# SGLang/LM Studio/LiteLLM/OpenRouter/etc.). Distinct, honestly-named engine so a
+# local endpoint isn't mislabeled "nvidia". Pick the endpoint via CUSTOM_BASE_URL;
+# CUSTOM_MODEL selects the backend model; key optional for keyless local servers.
+CUSTOM_BASE_URL = os.getenv("CUSTOM_BASE_URL", "http://localhost:8000/v1")
+CUSTOM_API_KEY = os.getenv("CUSTOM_API_KEY")
+CUSTOM_MODEL = os.getenv("CUSTOM_MODEL", "")
+
 # Vision is DECOUPLED from the agent-loop provider: analyze_image / compare_outputs
 # need a MULTIMODAL provider + key even when AGENT_MODEL is a text-only Nemotron.
 # Defaults to anthropic so swapping the agent loop never breaks the brain's vision.
@@ -106,6 +114,7 @@ _DEFAULT_AGENT_MODELS = {
     "ollama": "llama3.1",
     # id verified live via GET /v1/models on integrate.api.nvidia.com (2026-06-24)
     "nvidia": "nvidia/nemotron-3-super-120b-a12b",
+    "custom": CUSTOM_MODEL,
 }
 _DEFAULT_FAST_MODELS = {
     "anthropic": "claude-haiku-4-5-20251001",
@@ -113,6 +122,7 @@ _DEFAULT_FAST_MODELS = {
     "gemini": "gemini-2.5-flash",
     "ollama": "llama3.1",
     "nvidia": "nvidia/nemotron-3-nano-30b-a3b",
+    "custom": CUSTOM_MODEL,
 }
 AGENT_MODEL = os.getenv(
     "AGENT_MODEL",

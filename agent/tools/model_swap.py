@@ -17,18 +17,23 @@ TOOLS: list[dict] = [
         "name": "list_models_available",
         "description": (
             "List the LLM model aliases you can swap the agent to (e.g. 'claude', "
-            "'nemotron'). Returns each alias with its provider and model id."
+            "'nemotron'). Returns each alias with its provider and model id, plus a "
+            "per-alias 'capabilities' map (e.g. whether the model can tool-call). "
+            "Includes the 'custom' engine — a bring-your-own OpenAI-compatible endpoint."
         ),
         "input_schema": {"type": "object", "properties": {}},
     },
     {
         "name": "swap_model",
         "description": (
-            "Switch the agent's reasoning model for this session. Pass an alias "
-            "('claude', 'nemotron'), a 'provider:model' string, or a bare model id. "
-            "Affects the CLI agent loop and brain/vision out-of-band calls. Under "
-            "`agent mcp` the host (Claude Code) owns this chat model and is unchanged. "
-            "Does NOT move image analysis (analyze_image stays on VISION_PROVIDER)."
+            "Switch the agent's reasoning model. Pass an alias ('claude', 'nemotron', "
+            "'custom' for a bring-your-own OpenAI-compatible endpoint), a "
+            "'provider:model' string, or a bare model id. The choice PERSISTS across "
+            "restarts. Refuses a model that cannot tool-call (see list_models_available "
+            "for per-alias capabilities). Affects the CLI agent loop and brain/vision "
+            "out-of-band calls. Under `agent mcp` the host (Claude Code) owns this chat "
+            "model and is unchanged. Does NOT move image analysis (analyze_image stays "
+            "on VISION_PROVIDER)."
         ),
         "input_schema": {
             "type": "object",
@@ -48,10 +53,10 @@ def _mcp_mode() -> bool:
 
 
 def handle(name: str, tool_input: dict) -> str:
-    from ..llm.swap import list_aliases, swap
+    from ..llm.swap import list_aliases, list_capabilities, swap
 
     if name == "list_models_available":
-        return to_json({"aliases": list_aliases()})
+        return to_json({"aliases": list_aliases(), "capabilities": list_capabilities()})
 
     if name == "swap_model":
         try:
@@ -60,6 +65,7 @@ def handle(name: str, tool_input: dict) -> str:
                 provider=tool_input.get("provider"),
                 model=tool_input.get("model"),
                 probe=True,  # live-check the key so a bad one rolls back, not mid-chat
+                persist=True,  # user-facing swaps remember the choice across restarts
             )
         except Exception as e:
             return to_json({"error": str(e)})

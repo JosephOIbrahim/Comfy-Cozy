@@ -40,6 +40,8 @@ if openai is None:  # Cycle 58: surface unavailability at import time, not first
 class OpenAIProvider(LLMProvider):
     """OpenAI GPT models via the openai SDK."""
 
+    _metric_name = "openai"
+
     def __init__(self) -> None:
         if openai is None:
             raise LLMError(
@@ -144,24 +146,24 @@ class OpenAIProvider(LLMProvider):
                                 acc["arguments_parts"].append(tc_delta.function.arguments)
 
         except openai.AuthenticationError as e:
-            _record_llm_metric("openai", "error", time.monotonic() - start)
+            _record_llm_metric(self._metric_name, "error", time.monotonic() - start)
             raise LLMAuthError(str(e)) from e
         except openai.RateLimitError as e:
-            _record_llm_metric("openai", "error", time.monotonic() - start)
+            _record_llm_metric(self._metric_name, "error", time.monotonic() - start)
             raise LLMRateLimitError(str(e)) from e
         except openai.APIConnectionError as e:
-            _record_llm_metric("openai", "error", time.monotonic() - start)
+            _record_llm_metric(self._metric_name, "error", time.monotonic() - start)
             raise LLMConnectionError(str(e)) from e
         except openai.APIStatusError as e:
-            _record_llm_metric("openai", "error", time.monotonic() - start)
+            _record_llm_metric(self._metric_name, "error", time.monotonic() - start)
             if e.status_code >= 500:
                 raise LLMServerError(str(e), status_code=e.status_code) from e
             raise LLMError(str(e)) from e
         except openai.APIError as e:
-            _record_llm_metric("openai", "error", time.monotonic() - start)
+            _record_llm_metric(self._metric_name, "error", time.monotonic() - start)
             raise LLMError(str(e)) from e
 
-        _record_llm_metric("openai", "ok", time.monotonic() - start)
+        _record_llm_metric(self._metric_name, "ok", time.monotonic() - start)
         return _build_response(
             text_parts=text_parts,
             tool_calls_acc=tool_calls_acc,
@@ -194,30 +196,27 @@ class OpenAIProvider(LLMProvider):
         start = time.monotonic()
 
         try:
-            if timeout:
-                client = openai.OpenAI(timeout=timeout)
-            else:
-                client = self._client
+            client = self._client.with_options(timeout=timeout) if timeout else self._client
             response = client.chat.completions.create(**kwargs)
         except openai.AuthenticationError as e:
-            _record_llm_metric("openai", "error", time.monotonic() - start)
+            _record_llm_metric(self._metric_name, "error", time.monotonic() - start)
             raise LLMAuthError(str(e)) from e
         except openai.RateLimitError as e:
-            _record_llm_metric("openai", "error", time.monotonic() - start)
+            _record_llm_metric(self._metric_name, "error", time.monotonic() - start)
             raise LLMRateLimitError(str(e)) from e
         except openai.APIConnectionError as e:
-            _record_llm_metric("openai", "error", time.monotonic() - start)
+            _record_llm_metric(self._metric_name, "error", time.monotonic() - start)
             raise LLMConnectionError(str(e)) from e
         except openai.APIStatusError as e:
-            _record_llm_metric("openai", "error", time.monotonic() - start)
+            _record_llm_metric(self._metric_name, "error", time.monotonic() - start)
             if e.status_code >= 500:
                 raise LLMServerError(str(e), status_code=e.status_code) from e
             raise LLMError(str(e)) from e
         except openai.APIError as e:
-            _record_llm_metric("openai", "error", time.monotonic() - start)
+            _record_llm_metric(self._metric_name, "error", time.monotonic() - start)
             raise LLMError(str(e)) from e
 
-        _record_llm_metric("openai", "ok", time.monotonic() - start)
+        _record_llm_metric(self._metric_name, "ok", time.monotonic() - start)
         return _to_response(response)
 
     def convert_tools(self, tools: list[dict]) -> list[dict]:

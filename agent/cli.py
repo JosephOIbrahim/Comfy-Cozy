@@ -85,7 +85,7 @@ def run(
     ),
     provider: str = typer.Option(
         None, "--provider",
-        help="LLM provider: anthropic|openai|gemini|ollama|nvidia",
+        help="LLM provider: anthropic|openai|gemini|ollama|nvidia|custom",
     ),
 ):
     """Start an interactive agent session.
@@ -103,11 +103,21 @@ def run(
         level=logging.DEBUG if verbose else logging.WARNING,
         log_file=LOG_DIR / "agent.log",
     )
+    # Apply any saved selection first so it becomes the default; an explicit
+    # --model/--provider below still overrides it (this runs before that block).
+    from .llm._selection import apply_saved_selection
+    try:
+        _saved = apply_saved_selection()
+        if _saved and not (model or provider):
+            console.print(f"[dim]LLM (saved): {_saved['provider']} / {_saved['model']}[/dim]")
+    except Exception:
+        pass
+
     # Apply a launch-time model/provider swap before validating credentials.
     if model or provider:
         from .llm.swap import swap
         try:
-            info = swap(model=model, provider=provider, probe=True)
+            info = swap(model=model, provider=provider, probe=True, persist=True)
         except Exception as e:
             console.print(f"[red]Model swap failed: {e}[/red]")
             raise typer.Exit(1)
@@ -1036,6 +1046,13 @@ def mcp():
     """
     import os
     os.environ["COMFY_COZY_MCP"] = "1"  # swap_model reports the host owns the chat model
+    # Honor a saved selection for brain/vision out-of-band calls (the host still
+    # owns the conversational chat model).
+    try:
+        from .llm._selection import apply_saved_selection
+        apply_saved_selection()
+    except Exception:
+        pass
     from .mcp_server import main as mcp_main
     mcp_main()
 
