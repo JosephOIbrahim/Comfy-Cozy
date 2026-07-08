@@ -471,7 +471,10 @@ class TestOpenAICreate:
         assert msgs[0] == {"role": "system", "content": "You are a test bot"}
 
     def test_create_with_timeout(self):
-        """Timeout parameter creates a new client."""
+        """create(timeout=...) derives the per-call client via
+        with_options(...) on the cached client — NOT a fresh OpenAI() per
+        call. Building a new client would drop the configured base_url
+        (load-bearing for CustomProvider's self-hosted endpoint)."""
         import openai as real_openai
 
         with patch("agent.llm._openai.openai") as mock_mod:
@@ -485,10 +488,12 @@ class TestOpenAICreate:
             from agent.llm._openai import OpenAIProvider
 
             prov = OpenAIProvider()
+            assert mock_mod.OpenAI.call_count == 1  # constructed once
 
             completion = _make_completion()
-            # The timeout client is a new OpenAI() call
-            mock_mod.OpenAI.return_value.chat.completions.create.return_value = completion
+            # The timeout client is derived via with_options, not a new OpenAI()
+            derived = prov._client.with_options.return_value
+            derived.chat.completions.create.return_value = completion
 
             prov.create(
                 model="gpt-4o",
@@ -498,9 +503,10 @@ class TestOpenAICreate:
                 timeout=30.0,
             )
 
-            # OpenAI() called twice: once in __init__, once for timeout
-            assert mock_mod.OpenAI.call_count == 2
-            assert mock_mod.OpenAI.call_args.kwargs["timeout"] == 30.0
+            # No new SDK client constructed for the timeout path
+            assert mock_mod.OpenAI.call_count == 1
+            prov._client.with_options.assert_called_with(timeout=30.0)
+            assert derived.chat.completions.create.call_count == 1
 
 
 # ---------------------------------------------------------------------------

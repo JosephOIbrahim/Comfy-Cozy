@@ -22,7 +22,7 @@ from . import _provider_lock, get_provider
 
 log = logging.getLogger(__name__)
 
-_KNOWN = ("anthropic", "openai", "gemini", "ollama", "nvidia")
+_KNOWN = ("anthropic", "openai", "gemini", "ollama", "nvidia", "custom")
 
 # alias -> (provider, model). Single source of truth for the swap UX.
 # NVIDIA/Nemotron rows stay commented until the endpoint is ratified and the
@@ -42,14 +42,64 @@ MODEL_ALIASES: dict[str, tuple[str, str]] = {
 }
 
 
+# Capability profiles per provider. Drives the tool-calling gate in swap(): the
+# agent loop requires tool-calling, so a KNOWN-incapable model is refused before
+# any config mutation. Unknown providers default PERMISSIVE (see capabilities()).
+PROVIDER_CAPS: dict[str, dict] = {
+    "anthropic": {"tool_calling": True, "vision": True,  "tier": "flagship"},
+    "openai":    {"tool_calling": True, "vision": True,  "tier": "flagship"},
+    "gemini":    {"tool_calling": True, "vision": True,  "tier": "flagship"},
+    "ollama":    {"tool_calling": True, "vision": False, "tier": "local"},
+    "nvidia":    {"tool_calling": True, "vision": False, "tier": "reasoning"},
+    "custom":    {"tool_calling": True, "vision": False, "tier": "custom"},
+}
+# Per-alias overrides (partial dicts; only differences from the provider default).
+ALIAS_CAPS: dict[str, dict] = {
+    "claude-fast": {"tier": "fast"},
+    "gemini": {"tier": "fast"},
+    "nemotron-nano": {"tier": "fast"},
+    "nemotron-ultra": {"tier": "reasoning"},
+}
+
+
+def capabilities(provider: str, model: str = "", alias: str | None = None) -> dict:
+    """Capability profile for a provider/model/alias.
+
+    PERMISSIVE default for UNKNOWN providers: tool_calling True (never falsely
+    refuse a model we can't assess — only refuse a KNOWN-incapable one).
+    """
+    base = {"tool_calling": True, "vision": False, "tier": "unknown"}
+    caps = {**base, **PROVIDER_CAPS.get(provider, {})}
+    if alias:
+        caps = {**caps, **ALIAS_CAPS.get(alias, {})}
+    return caps
+
+
+def list_capabilities() -> dict[str, dict]:
+    """Capability table keyed by alias, plus the dynamic 'custom' row."""
+    out = {a: capabilities(p, m, alias=a) for a, (p, m) in MODEL_ALIASES.items()}
+    from .. import config
+
+    out["custom"] = capabilities("custom", config.CUSTOM_MODEL, alias="custom")
+    return out
+
+
 def list_aliases() -> dict[str, dict[str, str]]:
     """Artist-facing alias table: alias -> {provider, model}."""
-    return {a: {"provider": p, "model": m} for a, (p, m) in MODEL_ALIASES.items()}
+    out = {a: {"provider": p, "model": m} for a, (p, m) in MODEL_ALIASES.items()}
+    from .. import config
+
+    out["custom"] = {"provider": "custom", "model": config.CUSTOM_MODEL}
+    return out
 
 
 def resolve(name: str) -> tuple[str, str]:
     """Resolve an alias OR a 'provider:model' string OR a bare model id."""
     key = name.strip()
+    if key == "custom":
+        from .. import config
+
+        return ("custom", config.CUSTOM_MODEL)
     if key in MODEL_ALIASES:
         return MODEL_ALIASES[key]
     if ":" in key and key.split(":", 1)[0] in _KNOWN:
@@ -83,6 +133,8 @@ def swap(
     alias: str | None = None,
     also_vision: bool = False,
     probe: bool = False,
+    require_tools: bool = True,
+    persist: bool = False,
 ) -> dict:
     """Swap the agent-loop model/provider at runtime. Returns {provider, model}.
 
@@ -106,6 +158,19 @@ def swap(
     if not model:
         raise ValueError("swap requires a model, an alias, or provider+model")
     provider = provider.lower().strip()
+
+    caps = capabilities(provider, model, alias=alias)
+    if require_tools and not caps["tool_calling"]:
+        raise ValueError(
+            f"Model {provider}/{model} does not support tool-calling, which the agent "
+            f"loop requires. Choose a tool-capable model, or pass require_tools=False."
+        )
+    if also_vision and not caps["vision"]:
+        log.warning(
+            "Model %s/%s is not multimodal; also_vision=True may break analyze_image.",
+            provider,
+            model,
+        )
 
     snapshot = (config.LLM_PROVIDER, config.AGENT_MODEL, config.VISION_MODEL)
     try:
@@ -132,6 +197,11 @@ def swap(
             _clear_cache_locked()
             _reset_brain()
         raise
+
+    if persist:
+        from ._selection import save_selection
+
+        save_selection(provider, model)
 
     log.info("model swap: %s/%s -> %s/%s", snapshot[0], snapshot[1], provider, model)
     return {"provider": provider, "model": model}

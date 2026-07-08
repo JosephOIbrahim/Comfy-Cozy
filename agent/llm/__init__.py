@@ -117,10 +117,14 @@ def _create_provider(name: str) -> LLMProvider:
         from ._nvidia import NvidiaProvider
         return NvidiaProvider()
 
+    elif name == "custom":
+        from ._custom import CustomProvider
+        return CustomProvider()
+
     else:
         raise ValueError(
             f"Unknown LLM provider: {name!r}. "
-            f"Supported: anthropic, openai, gemini, ollama, nvidia"
+            f"Supported: anthropic, openai, gemini, ollama, nvidia, custom"
         )
 
 

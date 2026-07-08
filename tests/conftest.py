@@ -129,6 +129,20 @@ def reset_workflow_state():
     workflow_patch._get_state().update(original)
 
 
+@pytest.fixture(autouse=True)
+def _isolate_model_selection(tmp_path, monkeypatch):
+    """Redirect the persisted model-selection file to a per-test temp path.
+
+    ``save_selection`` / ``apply_saved_selection`` default to
+    ``~/.comfy-cozy/model_selection.json``; without this, any test that
+    persists a selection would write into the developer's real home dir.
+    ``MODEL_SELECTION_PATH`` is read LIVE on every access (see
+    ``agent/llm/_selection.py:_selection_path``), so setting the env var
+    is enough — no module reload needed.
+    """
+    monkeypatch.setenv("MODEL_SELECTION_PATH", str(tmp_path / "model_selection.json"))
+
+
 @pytest.fixture
 def sample_workflow():
     """Minimal SD1.5 API-format workflow dict."""
