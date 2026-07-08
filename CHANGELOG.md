@@ -7,6 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.6.0] - 2026-07-08 — Switchboard
+
+Pick any engine, keep your pick, and see which ones are actually live. Runtime
+model switching grew a capability-aware selector — ported from SYNAPSE's panel
+design onto the existing atomic swap core: a sixth "bring-your-own" engine, a
+gate that won't hand you a model that can't run the tools, a choice that survives
+restarts, and a health column that tells you which engines answer. All additive —
+the atomic, rollback-on-bad-key swap core is untouched.
+
+### Added
+- **Custom engine — 6th LLM provider** (`LLM_PROVIDER=custom`, `agent/llm/_custom.py`).
+  Point `CUSTOM_BASE_URL` / `CUSTOM_API_KEY` / `CUSTOM_MODEL` at any OpenAI-compatible
+  endpoint — self-hosted vLLM/SGLang, LM Studio, LiteLLM, OpenRouter, or your own
+  gateway. A plain passthrough (no Nemotron `<think>` handling), so a local endpoint
+  isn't mislabeled `nvidia` anymore.
+- **Capability-aware model gate** (`agent/llm/swap.py`). A swap refuses a model that
+  can't tool-call *before* mutating any state (no half-swap), and warns on a vision
+  swap to a text-only engine. A no-op for every existing (tool-capable) alias.
+- **Persisted model selection** (`agent/llm/_selection.py`). Your last swap is
+  remembered across restarts at `~/.comfy-cozy/model_selection.json`
+  (`MODEL_SELECTION_PATH` to relocate); an explicit `--model` still wins. Boot replay
+  is best-effort — a missing/corrupt file degrades to defaults, never crashes.
+- **Preflight health column** (`agent/llm/_health.py`). `list_models_available` now
+  returns a per-alias `status`: `configured` (free, static — is the key/endpoint set?)
+  always, plus opt-in `reachable` / `latency_ms` via `probe=true` — a bounded,
+  concurrent, read-only ping that never touches the active selection.
+
+### Changed
+- **5 → 6 LLM providers** (added `custom`). README, config table, provider keywords,
+  and the provider-abstraction diagram updated to match.
+- `list_models_available` now returns `capabilities` + `status` alongside `aliases`;
+  `swap_model` persists the choice and enforces the tool-calling gate.
+- Fixed a latent `create(timeout=…)` path in the OpenAI-family provider that dropped
+  the custom `base_url` (now derived via `with_options`).
+
+### Verified
+- 4,744 passed / 2 skipped across independent full-suite runs; CI green on the full
+  matrix (Ubuntu + Windows × Python 3.10–3.13) for the code merge (PR #86). The
+  A+B+C+D port was adversarially reviewed twice (build + safety) — the health surface
+  provably never mutates the active selection, hangs, or raises.
+
 ## [5.5.0] - 2026-07-02 — Zero-LLM Recipes
 
 "Dreamier", "sharper", "faster" now land in milliseconds: the most common artist

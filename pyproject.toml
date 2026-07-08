@@ -1,7 +1,7 @@
 [project]
 name = "comfyui-agent"
-version = "5.5.0"
-description = "AI co-pilot for VFX artists using ComfyUI: 133 MCP tools across 5 LLM providers, zero-LLM artist recipes, a default-deny safety gate, reversible LIVRPS edits, EXR-aware vision, workflow.lock provenance, and durable cross-session learning."
+version = "5.6.0"
+description = "AI co-pilot for VFX artists using ComfyUI: 133 MCP tools across 6 swappable LLM providers (incl. any OpenAI-compatible endpoint), zero-LLM artist recipes, a default-deny safety gate, reversible LIVRPS edits, EXR-aware vision, workflow.lock provenance, and durable cross-session learning."
 readme = "README.md"
 license = {text = "MIT"}
 authors = [{name = "Joseph Ibrahim"}]
@@ -11,6 +11,7 @@ keywords = [
   "llm", "anthropic-claude", "stable-diffusion", "flux", "sdxl",
   "image-generation", "generative-ai", "workflow-automation", "usd",
   "livrps", "provenance", "exr", "computer-vision", "nvidia-nemotron",
+  "model-switching", "openai-compatible", "self-hosted-llm", "vllm",
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
