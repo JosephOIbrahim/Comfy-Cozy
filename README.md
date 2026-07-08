@@ -35,7 +35,7 @@ graph LR
 
 > **TL;DR** *(each line stands alone — take what you need)*
 > - **Plain-English co-pilot for ComfyUI.** You describe the change; the agent does it.
-> - **133 MCP tools · 5 LLM providers** — Claude, GPT-4o, Gemini, Ollama, NVIDIA Nemotron. Swap with one env var, or mid-session.
+> - **133 MCP tools · 6 LLM providers** — Claude, GPT-4o, Gemini, Ollama, NVIDIA Nemotron, or *any* OpenAI-compatible endpoint (`custom`). Swap with one env var or mid-session — your pick sticks across restarts, and it won't switch you to a model that can't run the tools.
 > - **Zero-LLM recipes.** "Dreamier", "sharper", "faster" — common intents apply as instant, deterministic parameter macros. No API call, no wait, fully undoable.
 > - **Everything is undoable.** Reversible delta layers (LIVRPS), full undo stack, nothing destructive without your say-so.
 > - **It learns you.** ~30 runs in, it starts biasing toward what actually worked for *your* renders. Crash-safe, append-only.
@@ -86,7 +86,7 @@ graph LR
 
 ## Sponsor This Project
 
-Comfy Cozy is production software. 4,680+ tests (all mocked, runnable in minutes) cover the 133 MCP tools that drive the workflow lifecycle end-to-end. CI runs the full advertised matrix — Python 3.10–3.13 on Ubuntu and Windows — with the USD stage layer actually installed and tested, not skipped. Five LLM providers — Anthropic, OpenAI, Gemini, Ollama, and NVIDIA Nemotron — sit behind a single abstraction with parity across all five. The [CHANGELOG](CHANGELOG.md) tracks active hardening and new work.
+Comfy Cozy is production software. 4,740+ tests (all mocked, runnable in minutes) cover the 133 MCP tools that drive the workflow lifecycle end-to-end. CI runs the full advertised matrix — Python 3.10–3.13 on Ubuntu and Windows — with the USD stage layer actually installed and tested, not skipped. Six LLM providers — Anthropic, OpenAI, Gemini, Ollama, NVIDIA Nemotron, and any OpenAI-compatible endpoint (`custom`) — sit behind a single abstraction with parity across all six. The [CHANGELOG](CHANGELOG.md) tracks active hardening and new work.
 
 If Comfy Cozy saves you time inside ComfyUI, sponsorship is the most direct way to keep it moving.
 
@@ -300,7 +300,7 @@ Restart ComfyUI. You'll see `comfy_agent_bridge: routes registered` in the log -
 
 ## Pick Your LLM
 
-Comfy Cozy is **provider-agnostic**. Same 133 tools, same streaming, same vision analysis -- swap one env var, or swap models mid-session.
+Comfy Cozy is **provider-agnostic** — six engines, one abstraction. Same 133 tools, same streaming, same vision analysis; swap one env var, or swap models mid-session. Your last pick is remembered across restarts, a swap won't hand you a model that can't call tools, and `list_models_available` shows which engines are configured (and, with `probe=true`, which actually answer).
 
 ### Anthropic (default)
 
@@ -393,21 +393,44 @@ agent run --model nemotron
 
 Endpoint-agnostic, OpenAI-compatible provider for NVIDIA's **Nemotron-3** reasoning models — grab a key + free credits at [build.nvidia.com](https://build.nvidia.com). The same provider serves NVIDIA NIM cloud, OpenRouter, and a self-hosted vLLM/SGLang endpoint; the model id picks the backend. Nemotron streams `<think>` reasoning, which the provider strips from both the visible output **and** the replayed history by default (reasoning is off unless you set `NVIDIA_EMIT_REASONING=true`). Vision stays on a multimodal provider (`VISION_PROVIDER`, default `anthropic`), so swapping the loop to a text-only Nemotron never breaks `analyze_image`.
 
+### Custom (bring-your-own OpenAI-compatible endpoint)
+
+```bash
+# Install the SDK (one time)
+pip install openai
+
+# .env
+LLM_PROVIDER=custom
+CUSTOM_BASE_URL=http://localhost:8000/v1   # your vLLM / SGLang / LM Studio / LiteLLM / OpenRouter endpoint
+CUSTOM_API_KEY=                            # optional -- many local servers need none
+CUSTOM_MODEL=my-local-model                # the model id your endpoint serves
+
+# Run (LLM_PROVIDER=custom is already set above)
+agent run
+```
+
+Point it at **anything that speaks the OpenAI chat-completions API** -- a self-hosted vLLM/SGLang server, LM Studio, LiteLLM, OpenRouter, or your own gateway. It's a plain passthrough (no Nemotron `<think>` handling), so a local endpoint isn't mislabeled `nvidia` anymore. Vision stays on `VISION_PROVIDER`, so `analyze_image` keeps working.
+
 ### Swap models on the fly
 
-Beyond the `LLM_PROVIDER` env var, switch the reasoning model per launch or mid-conversation — no restart, atomic (rolls back on a bad key), and it reaches the live loop immediately:
+Beyond the `LLM_PROVIDER` env var, switch the reasoning model per launch or mid-conversation — no restart, and it reaches the live loop immediately:
 
 ```bash
 agent run --model nemotron        # alias -> nvidia/nemotron-3-super-120b-a12b
 agent run --model claude          # back to the default
 agent run --provider openai --model gpt-4o
+agent run --model custom          # your custom OpenAI-compatible endpoint (needs CUSTOM_MODEL)
 ```
 
-In conversation, the `swap_model` and `list_models_available` tools do the same thing.
+In conversation, the `swap_model` and `list_models_available` tools do the same thing. Three things happen for free:
+
+- **Your pick sticks.** The last swap is remembered across restarts (`~/.comfy-cozy/model_selection.json`); an explicit `--model` always wins.
+- **No broken loops.** A swap is atomic (rolls back on a bad key) and refuses a model that can't call tools — *before* anything changes, not mid-chat.
+- **You can see what's live.** `list_models_available` lists each engine's capabilities and a health `status` column: which engines are configured, and — with `probe=true` — which actually answer, and how fast.
 
 ### Architecture
 
-All five providers share the same abstraction layer (`agent/llm/`):
+All six providers share the same abstraction layer (`agent/llm/`):
 
 ```mermaid
 graph LR
@@ -417,14 +440,15 @@ graph LR
     LLM -->|gemini| C["Gemini<br/>Function Decl."]
     LLM -->|ollama| D["Ollama<br/>Local + Private"]
     LLM -->|nvidia| E["Nemotron<br/>NIM / OpenRouter"]
+    LLM -->|custom| F["Custom<br/>Any OpenAI-compatible"]
 
     classDef orange fill:#d99458,color:#1a1a1a,stroke:#1a1a1a
     classDef yellow fill:#d9c958,color:#1a1a1a,stroke:#1a1a1a
-    class B,D orange
+    class B,D,F orange
     class Agent,A,C,E,LLM yellow
 ```
 
-Common types (`TextBlock`, `ToolUseBlock`, `LLMResponse`), unified error hierarchy, provider-specific format conversion handled internally. Switch providers with one env var -- no code changes. All 5 providers have dedicated test suites (180+ tests) plus a parameterized conformance suite that verifies protocol compliance across providers. Every `stream()` and `create()` call is instrumented with `llm_call_total` and `llm_call_duration_seconds` metrics (per-provider labels).
+Common types (`TextBlock`, `ToolUseBlock`, `LLMResponse`), unified error hierarchy, provider-specific format conversion handled internally. Switch providers with one env var -- no code changes. All 6 providers have dedicated test suites (230+ tests) plus a parameterized conformance suite that verifies protocol compliance across providers. Every `stream()` and `create()` call is instrumented with `llm_call_total` and `llm_call_duration_seconds` metrics (per-provider labels).
 
 ### Reasoning + caching (Opus 4.7)
 
@@ -1200,7 +1224,7 @@ Each delta layer carries its `creation_hash` (SHA-256 of `opinion + sorted-JSON 
 
 ### LLM Provider Hardening
 
-The agent supports five LLM providers (Anthropic, OpenAI, Gemini, Ollama, NVIDIA). Cycles 7+18+20 closed six real bugs in the streaming, retry, and multi-turn paths, and the Opus 4.7 upgrade (commit `c61c65f`) refined the multi-turn `ThinkingBlock` policy on Anthropic. After this work, every provider correctly: extracts streaming token usage, doesn't duplicate text on retry, doesn't fire callbacks with empty content, doesn't leak reasoning into user-visible text, and handles `ThinkingBlock` correctly on multi-turn replay — Anthropic re-sends signature-bearing thinking blocks (required by the API when extended thinking runs alongside tool use), while OpenAI / Gemini / Ollama drop them (those APIs don't model replayable thinking).
+The agent supports six LLM providers (Anthropic, OpenAI, Gemini, Ollama, NVIDIA, and a bring-your-own `custom` OpenAI-compatible endpoint). Cycles 7+18+20 closed six real bugs in the streaming, retry, and multi-turn paths, and the Opus 4.7 upgrade (commit `c61c65f`) refined the multi-turn `ThinkingBlock` policy on Anthropic. After this work, every provider correctly: extracts streaming token usage, doesn't duplicate text on retry, doesn't fire callbacks with empty content, doesn't leak reasoning into user-visible text, and handles `ThinkingBlock` correctly on multi-turn replay — Anthropic re-sends signature-bearing thinking blocks (required by the API when extended thinking runs alongside tool use), while the others drop them (those APIs don't model replayable thinking).
 
 ```mermaid
 graph TB
@@ -1383,7 +1407,7 @@ flowchart LR
 
 ```
 agent/
-  llm/                Multi-provider LLM abstraction (Anthropic, OpenAI, Gemini, Ollama, NVIDIA)
+  llm/                Multi-provider LLM abstraction (Anthropic, OpenAI, Gemini, Ollama, NVIDIA, Custom)
   recipes/            Zero-LLM recipe layer -- 14+ deterministic intent/build macros
   engine/             Execution-engine abstraction (IAIEngine + ComfyUIAdapter)
                       Wraps POST /prompt, POST /interrupt, GET /history, WS /ws
@@ -1498,13 +1522,17 @@ All settings live in your `.env` file:
 | `ANTHROPIC_API_KEY` | *(required for Anthropic)* | Your Claude API key |
 | `OPENAI_API_KEY` | | Your OpenAI API key |
 | `GEMINI_API_KEY` | | Your Google Gemini API key |
-| `LLM_PROVIDER` | `anthropic` | Which LLM to use: `anthropic`, `openai`, `gemini`, `ollama` |
+| `LLM_PROVIDER` | `anthropic` | Which LLM to use: `anthropic`, `openai`, `gemini`, `ollama`, `nvidia`, `custom` |
 | `AGENT_MODEL` | *(auto per provider)* | Override the model name |
 | `FAST_MODEL` | *(auto per provider)* | Model for short triage / classification (Haiku 4.5 default on Anthropic) |
 | `VISION_MODEL` | *(same as `AGENT_MODEL`)* | Model for vision tools (`analyze_image`, `compare_outputs`) |
 | `THINKING_BUDGET` | `4000` | Extended-thinking budget per agent turn (Anthropic Claude 4.x+ only; `0` disables; requires `max_tokens > 1024` or the call raises `ValueError`) |
 | `VISION_THINKING_BUDGET` | `2000` | Extended-thinking budget for vision-tool calls (`0` disables) |
 | `OLLAMA_BASE_URL` | `http://localhost:11434/v1` | Ollama server URL |
+| `CUSTOM_BASE_URL` | `http://localhost:8000/v1` | Endpoint for the `custom` provider (vLLM / LM Studio / LiteLLM / OpenRouter / …) |
+| `CUSTOM_API_KEY` | | Key for the `custom` endpoint (optional -- many local servers need none) |
+| `CUSTOM_MODEL` | | Model id your `custom` endpoint serves |
+| `MODEL_SELECTION_PATH` | `~/.comfy-cozy/model_selection.json` | Where your last model pick is remembered across restarts |
 | `COMFYUI_HOST` | `127.0.0.1` | Where ComfyUI runs |
 | `COMFYUI_PORT` | `8188` | ComfyUI port |
 | `COMFYUI_DATABASE` | `~/ComfyUI` | Your ComfyUI folder (models, nodes, workflows) |
