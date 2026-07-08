@@ -42,6 +42,14 @@ the atomic, rollback-on-bad-key swap core is untouched.
 - Fixed a latent `create(timeout=…)` path in the OpenAI-family provider that dropped
   the custom `base_url` (now derived via `with_options`).
 
+### Fixed
+- `agent/__init__.py` `__version__` synced `5.4.0` → `5.6.0` (was two releases stale);
+  `agent/mcp_server.py` now advertises the correct version and
+  `scripts/validate_project.py`'s pyproject↔`__init__` check passes.
+- 6-provider consistency sweep — `custom` added to the `CLAUDE.md` provider table,
+  `docs/DIRECTION.md`, `.env.example`, and the `config.py` / `llm/__init__.py` /
+  `main.py` provider enumerations.
+
 ### Verified
 - 4,744 passed / 2 skipped across independent full-suite runs; CI green on the full
   matrix (Ubuntu + Windows × Python 3.10–3.13) for the code merge (PR #86). The

@@ -428,6 +428,26 @@ In conversation, the `swap_model` and `list_models_available` tools do the same 
 - **No broken loops.** A swap is atomic (rolls back on a bad key) and refuses a model that can't call tools — *before* anything changes, not mid-chat.
 - **You can see what's live.** `list_models_available` lists each engine's capabilities and a health `status` column: which engines are configured, and — with `probe=true` — which actually answer, and how fast.
 
+The whole swap in one picture — the gate, the rollback, the memory, and the health check:
+
+```mermaid
+graph TD
+    Req["swap_model · --model · LLM_PROVIDER"] --> Resolve["resolve alias<br/>claude · nemotron · custom · …"]
+    Resolve --> Gate{"can it<br/>tool-call?"}
+    Gate -->|no| Refuse["refuse — nothing changes<br/>(no half-swap)"]
+    Gate -->|yes| Swap["atomic swap<br/>snapshot → reassign → clear cache"]
+    Swap --> Probe{"live probe<br/>key / endpoint ok?"}
+    Probe -->|fails| Rollback["roll back to<br/>the previous model"]
+    Probe -->|ok| Persist["remember it<br/>~/.comfy-cozy/model_selection.json"]
+    Persist --> Live["now running the new engine"]
+    Live --> Health["list_models_available<br/>status: configured + reachable"]
+
+    classDef orange fill:#d99458,color:#1a1a1a,stroke:#1a1a1a
+    classDef yellow fill:#d9c958,color:#1a1a1a,stroke:#1a1a1a
+    class Refuse,Rollback orange
+    class Req,Resolve,Gate,Swap,Probe,Persist,Live,Health yellow
+```
+
 ### Architecture
 
 All six providers share the same abstraction layer (`agent/llm/`):

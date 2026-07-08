@@ -1,4 +1,5 @@
-"""Comprehensive tests for all 4 LLM providers.
+"""Comprehensive tests for the four core LLM providers (NVIDIA and custom
+are covered in test_llm_nvidia.py and test_llm_custom.py).
 
 Covers: factory (get_provider), AnthropicProvider, OpenAIProvider,
 GeminiProvider, OllamaProvider — all fully mocked.

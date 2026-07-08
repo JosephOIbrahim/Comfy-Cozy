@@ -1,6 +1,6 @@
 """Cross-provider conformance tests for the LLM abstraction layer.
 
-Uses @pytest.mark.parametrize to verify all 4 providers implement
+Uses @pytest.mark.parametrize to verify the parametrized providers implement
 the LLMProvider protocol correctly. All tests are mocked — no network.
 """
 
