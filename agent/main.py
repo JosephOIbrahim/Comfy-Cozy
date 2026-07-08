@@ -1,6 +1,7 @@
 """Agent loop -- the core of the ComfyUI Agent.
 
-Uses a pluggable LLM provider (Anthropic, OpenAI, Gemini, Ollama) with
+Uses a pluggable LLM provider (Anthropic, OpenAI, Gemini, Ollama, NVIDIA Nemotron,
+or any OpenAI-compatible custom endpoint) with
 streaming tool-use to run an interactive agent. The agent decides which
 tools to call; we execute them and feed results back.
 

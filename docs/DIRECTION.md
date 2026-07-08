@@ -68,7 +68,7 @@ What's genuinely shipped and load-bearing:
   source of truth.)
 - **4,268 test functions across 146 files**, all mocked, sub-60s. (Both
   CLAUDE.md figures — "~3,600" and "4,150+" — are stale. Fix them.)
-- **4 LLM providers** (Claude / GPT / Gemini / Ollama), swappable by env var.
+- **6 LLM providers** (Claude / GPT / Gemini / Ollama / NVIDIA Nemotron / any OpenAI-compatible endpoint via `custom`), swappable by env var or mid-session, selection persisted across restarts.
 - **Reversible-by-construction**: every mutation is a LIVRPS delta layer with a
   full undo stack. This is the same safety posture as Synapse (atomic,
   idempotent, undo-grouped) — a through-line across the portfolio, and the

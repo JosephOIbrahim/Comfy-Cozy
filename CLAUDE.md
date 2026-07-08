@@ -100,10 +100,17 @@ or in conversation via `swap_model`. **NVIDIA Nemotron** is OpenAI-compatible an
 | `gemini` | `GEMINI_API_KEY` | SDK default | yes | yes |
 | `ollama` | — | `OLLAMA_BASE_URL` | model-dependent | model-dependent |
 | `nvidia` | `NVIDIA_API_KEY` | `NVIDIA_BASE_URL` (NIM cloud / OpenRouter / self-hosted vLLM) | model-dependent | no (text) |
+| `custom` | `CUSTOM_API_KEY` (optional) | `CUSTOM_BASE_URL` (any OpenAI-compatible: vLLM/SGLang/LM Studio/LiteLLM/OpenRouter) | model-dependent | no (text) |
 
 **Vision is decoupled** (`VISION_PROVIDER`, default `anthropic`): swapping the agent loop to a text-only
 Nemotron never moves `analyze_image`, so `ANTHROPIC_API_KEY` stays required for vision. Under `agent mcp`
 the **host** (Claude Code) owns the chat model; `swap_model` only affects the CLI loop + brain/vision.
+
+The **`custom`** engine (v5.6.0) points at any OpenAI-compatible endpoint (self-hosted vLLM/SGLang,
+LM Studio, LiteLLM, OpenRouter) via `CUSTOM_BASE_URL`/`CUSTOM_API_KEY`/`CUSTOM_MODEL`. A swap **persists
+across restarts** (`~/.comfy-cozy/model_selection.json`, override `MODEL_SELECTION_PATH`) and **refuses a
+model that can't tool-call** before changing anything; `list_models_available` returns per-alias
+capabilities + a health `status` column (opt-in reachability via `probe=true`).
 
 ## Artistic Intent Translation
 
@@ -224,7 +231,7 @@ Brain agents (`brain/*.py`) inherit from `BrainAgent` (`brain/_sdk.py`). Depende
 - **Deterministic JSON**: `sort_keys=True` everywhere (He2025 pattern). Use `_util.py:to_json()`.
 - **Line length**: 99 chars (ruff config in pyproject.toml)
 - **All tests mocked**: No ComfyUI server or API key needed. HTTP via `unittest.mock.patch`.
-- **Config via .env**: `ANTHROPIC_API_KEY` (required), `COMFYUI_DATABASE` (default `G:/COMFYUI_Database`), `COMFYUI_HOST`/`COMFYUI_PORT`, `LLM_PROVIDER` (anthropic|openai|gemini|ollama), `AGENT_MODEL`, `BRAIN_ENABLED`, `GATE_ENABLED`.
+- **Config via .env**: `ANTHROPIC_API_KEY` (required), `COMFYUI_DATABASE` (default `G:/COMFYUI_Database`), `COMFYUI_HOST`/`COMFYUI_PORT`, `LLM_PROVIDER` (anthropic|openai|gemini|ollama|nvidia|custom), `AGENT_MODEL`, `BRAIN_ENABLED`, `GATE_ENABLED`.
 - **Custom_Nodes**: Capital C, capital N (ComfyUI convention).
 - **asyncio_mode = "auto"**: In pyproject.toml for pytest-asyncio.
 - **Python 3.10+**: Matches `pyproject.toml` `requires-python`. Type hints everywhere. `httpx` for HTTP.

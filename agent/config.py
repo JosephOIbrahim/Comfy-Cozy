@@ -12,7 +12,7 @@ from dotenv import load_dotenv
 _PROJECT_ROOT = Path(__file__).parent.parent
 load_dotenv(_PROJECT_ROOT / ".env", override=True)
 
-# LLM Provider selection — anthropic (default), openai, gemini, ollama, nvidia
+# LLM Provider selection — anthropic (default), openai, gemini, ollama, nvidia, custom
 LLM_PROVIDER = os.getenv("LLM_PROVIDER", "anthropic")
 
 # Provider API keys

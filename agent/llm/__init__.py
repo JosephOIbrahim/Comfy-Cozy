@@ -5,7 +5,7 @@ Usage:
     provider = get_provider()  # Uses LLM_PROVIDER env var
     response = provider.stream(model=..., ...)
 
-Supported providers: anthropic, openai, gemini, ollama, nvidia.
+Supported providers: anthropic, openai, gemini, ollama, nvidia, custom.
 """
 
 from __future__ import annotations
