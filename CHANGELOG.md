@@ -7,6 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+`pip install comfy-cozy` now means what it says: the distribution takes the
+project's real name, the version has one source of truth, and an installed
+wheel behaves like a good citizen — state lives in `~/.comfy-cozy`, not in
+site-packages.
+
+### Added
+- **`comfy-cozy` + `cozy` console scripts** — both launch the same Typer app;
+  `agent` is kept as a deprecated alias (see Changed).
+- **Packaging gate** — CI builds the wheel, installs it into a clean venv, and
+  runs the test suite against the *installed* package (data families
+  knowledge/, profiles/, schemas/, templates/ asserted present; suite runs
+  minus `tests/test_provisioner.py`, matching the long-standing release.yml
+  exclusion).
+- **PyPI trusted-publishing lane** — release workflow wired for OIDC publish,
+  dormant until enabled.
+- **User-home state dir for installed packages** — sessions, logs, and
+  `BLOCKER.md` land in `~/.comfy-cozy` (override with `COMFY_COZY_HOME`).
+
+### Changed
+- **Distribution renamed `comfyui-agent` → `comfy-cozy`** (the `agent` import
+  package is unchanged).
+- **Version single-sourced** from `agent.__version__` via
+  `[tool.hatch.version]`; the static `version` line in `pyproject.toml` is gone.
+- `.env` discovery now checks the home config dir (`~/.comfy-cozy/.env`) then
+  the checkout root, most specific last; a CWD `.env` is deliberately excluded
+  (untrusted-directory hardening).
+- `agent` console script deprecated (kept as an alias; removal in a future
+  major release — the `--help` epilog says so).
+- NIM warm-state dot-dir unified to `~/.comfy-cozy`.
+
+### Removed
+- `LOCAL_WORKFLOWS_DIR` config constant (dead — zero consumers).
+
+### Fixed
+- Installed packages no longer write sessions/logs/`BLOCKER.md` into
+  site-packages.
+- `validate_path` no longer whitelists site-packages when running from a wheel.
+- `cognitive` no longer climbs into `agent/templates` — it ships its own copy
+  and falls back loudly.
+- Build identity (`agent/_build.py`) can no longer report a *foreign* repo's
+  HEAD: the git probe only runs when the install root is actually this repo.
+
 ## [5.6.0] - 2026-07-08 — Switchboard
 
 Pick any engine, keep your pick, and see which ones are actually live. Runtime

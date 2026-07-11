@@ -22,6 +22,8 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent
 
 def _git(*args: str) -> "str | None":
     """Run a git command from the repo root; return stripped stdout or None."""
+    if not ((_REPO_ROOT / ".git").exists() and (_REPO_ROOT / "pyproject.toml").is_file()):
+        return None
     try:
         proc = subprocess.run(
             ["git", *args],

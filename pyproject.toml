@@ -1,6 +1,6 @@
 [project]
-name = "comfyui-agent"
-version = "5.6.0"
+name = "comfy-cozy"
+dynamic = ["version"]
 description = "AI co-pilot for VFX artists using ComfyUI: 133 MCP tools across 6 swappable LLM providers (incl. any OpenAI-compatible endpoint), zero-LLM artist recipes, a default-deny safety gate, reversible LIVRPS edits, EXR-aware vision, workflow.lock provenance, and durable cross-session learning."
 readme = "README.md"
 license = {text = "MIT"}
@@ -69,14 +69,25 @@ Repository = "https://github.com/JosephOIbrahim/comfyui-agent"
 Issues = "https://github.com/JosephOIbrahim/comfyui-agent/issues"
 
 [project.scripts]
+comfy-cozy = "agent.cli:app"
+cozy = "agent.cli:app"
 agent = "agent.cli:app"
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+[tool.hatch.version]
+path = "agent/__init__.py"
+
+# The four data families (knowledge/, profiles/, schemas/, templates/) ride hatchling's
+# whole-dir inclusion of the packages below; the packaging gate asserts they are present.
 [tool.hatch.build.targets.wheel]
 packages = ["agent", "cognitive"]
+
+[tool.hatch.build.targets.sdist]
+only-include = ["agent", "cognitive", "tests"]
+exclude = ["**/__pycache__"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

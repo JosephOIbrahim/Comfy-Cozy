@@ -21,6 +21,10 @@ log = logging.getLogger(__name__)
 
 app = typer.Typer(
     help="ComfyUI Agent -- AI co-pilot for ComfyUI workflows",
+    epilog=(
+        "Command names: comfy-cozy (primary) | cozy (alias) | "
+        "agent (deprecated, will be removed in a future major release)."
+    ),
     no_args_is_help=True,
 )
 console = Console()
@@ -128,7 +132,8 @@ def run(
         console.print(
             "[red]ANTHROPIC_API_KEY not set.[/red]\n"
             "Setup steps:\n"
-            "  1. Copy .env.example to .env\n"
+            "  1. Create a .env file (repo root for a checkout; "
+            "~/.comfy-cozy/.env for an installed package)\n"
             "  2. Get a key from https://console.anthropic.com/\n"
             "  3. Add: ANTHROPIC_API_KEY=sk-ant-...\n"
         )
