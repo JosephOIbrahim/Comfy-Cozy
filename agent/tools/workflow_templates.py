@@ -12,6 +12,7 @@ Sources (in priority order):
 import copy
 import json
 import logging
+from importlib.resources import files
 from pathlib import Path
 
 from ._util import to_json
@@ -19,7 +20,7 @@ from ..config import WORKFLOWS_DIR, COMFYUI_BLUEPRINTS_DIR
 
 log = logging.getLogger(__name__)
 
-_TEMPLATES_DIR = Path(__file__).parent.parent / "templates"
+_TEMPLATES_DIR = files("agent") / "templates"
 
 # Template metadata — keeps descriptions out of the JSON files
 _TEMPLATE_INFO = {
@@ -192,7 +193,7 @@ def _handle_list_templates(tool_input: dict) -> str:
             entry = {
                 "name": name,
                 "source": "builtin",
-                "available": path.exists(),
+                "available": path.is_file(),
             }
             if fmt != "names_only":
                 entry["description"] = info["description"]
@@ -275,7 +276,7 @@ def _resolve_template_path(template_name: str) -> Path | None:
 
     # 1. Built-in templates (exact match)
     builtin = _TEMPLATES_DIR / f"{template_name}.json"
-    if builtin.exists():
+    if builtin.is_file():
         return builtin
 
     # 2. User workflows

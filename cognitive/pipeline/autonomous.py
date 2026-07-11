@@ -20,6 +20,7 @@ import logging
 import threading
 from dataclasses import dataclass, field
 from enum import Enum
+from importlib.resources import files
 from pathlib import Path
 from typing import Any, Callable
 
@@ -147,12 +148,11 @@ _FALLBACK_WORKFLOW_SD15: dict = {
     },
 }
 
-# NOTE: This path reads from agent/templates/ but does NOT import from agent/.
-# Option A-compliant — filesystem read, not a Python import. If agent/ is ever
-# removed, SDXL silently falls back to SD1.5 (the hardcoded fallback only
-# contains SD1.5). Follow-up session: copy templates to cognitive/templates/
-# to eliminate this cross-layer dependency.
-_AGENT_TEMPLATES_DIR = Path(__file__).parent.parent.parent / "agent" / "templates"
+# Templates live in cognitive/templates/ (copies of agent/templates/), so the
+# pipeline no longer reaches across the layer boundary into agent/ — the last
+# path-level coupling is gone. Anchored via importlib.resources so the lookup
+# survives wheel installs.
+_TEMPLATES_DIR = files("cognitive") / "templates"
 
 _STEM_TO_FAMILY = {
     "txt2img_sd15": "SD1.5",
@@ -163,7 +163,7 @@ _STEM_TO_FAMILY = {
 
 
 def _load_available_templates() -> list[dict]:
-    """Load workflow templates from agent/templates/ dir.
+    """Load workflow templates from cognitive/templates/.
 
     Returns a list of template metadata dicts in the shape expected by
     compose_workflow: [{"name": str, "family": str, "data": dict}].
@@ -172,9 +172,12 @@ def _load_available_templates() -> list[dict]:
     or all files fail to parse.
     """
     templates: list[dict] = []
-    if _AGENT_TEMPLATES_DIR.exists():
-        for json_path in sorted(_AGENT_TEMPLATES_DIR.glob("*.json")):
-            name = json_path.stem
+    if _TEMPLATES_DIR.is_dir():
+        entries = sorted(_TEMPLATES_DIR.iterdir(), key=lambda p: p.name)
+        for json_path in entries:
+            if not json_path.name.endswith(".json"):
+                continue
+            name = json_path.name[: -len(".json")]
             try:
                 data = json.loads(json_path.read_text(encoding="utf-8"))
                 if not isinstance(data, dict):
@@ -188,6 +191,11 @@ def _load_available_templates() -> list[dict]:
                 continue
 
     if not templates:
+        log.warning(
+            "No workflow templates found at %s — falling back to the "
+            "built-in SD1.5 template only.",
+            _TEMPLATES_DIR,
+        )
         templates = [
             {
                 "name": "txt2img_sd15_fallback",

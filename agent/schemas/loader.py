@@ -22,7 +22,7 @@ from __future__ import annotations
 import copy
 import threading
 from collections.abc import Mapping
-from pathlib import Path
+from importlib.resources import files
 from typing import Any
 
 import yaml
@@ -31,8 +31,8 @@ import yaml
 # Constants
 # ---------------------------------------------------------------------------
 
-SCHEMAS_DIR: Path = Path(__file__).parent
-"""Directory where agent schema subdirectories live."""
+SCHEMAS_DIR = files("agent.schemas")
+"""Directory (traversable) where agent schema subdirectories live."""
 
 # ---------------------------------------------------------------------------
 # Thread-safe cache
@@ -46,9 +46,9 @@ _cache_lock: threading.Lock = threading.Lock()
 # ---------------------------------------------------------------------------
 
 
-def _load_yaml(path: Path) -> dict[str, Any]:
+def _load_yaml(path) -> dict[str, Any]:
     """Read and parse a YAML file with explicit UTF-8 encoding."""
-    with open(path, encoding="utf-8") as fh:
+    with path.open(encoding="utf-8") as fh:
         try:
             data = yaml.safe_load(fh)
         except yaml.YAMLError as exc:
@@ -344,14 +344,16 @@ def list_schemas(agent: str) -> list[str]:
 
     # Standard schemas
     if agent_dir.is_dir():
-        for path in agent_dir.glob("*.yaml"):
-            names.add(path.stem)
+        for path in agent_dir.iterdir():
+            if path.name.endswith(".yaml"):
+                names.add(path.name[: -len(".yaml")])
 
     # Custom schemas
     custom_dir = agent_dir / "custom"
     if custom_dir.is_dir():
-        for path in custom_dir.glob("*.yaml"):
-            names.add(path.stem)
+        for path in custom_dir.iterdir():
+            if path.name.endswith(".yaml"):
+                names.add(path.name[: -len(".yaml")])
 
     return sorted(names)
 

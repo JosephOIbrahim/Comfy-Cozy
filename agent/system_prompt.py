@@ -2,7 +2,7 @@
 
 import logging
 import threading
-from pathlib import Path
+from importlib.resources import files
 
 log = logging.getLogger(__name__)
 
@@ -76,7 +76,8 @@ Session Memory:
 """
 
 # Keyword -> knowledge file mapping loaded from YAML
-_TRIGGERS_PATH = Path(__file__).parent / "knowledge" / "triggers.yaml"
+# ("knowledge" is a data dir, not a package — anchor on the agent package)
+_TRIGGERS_PATH = files("agent") / "knowledge" / "triggers.yaml"
 _triggers_lock = threading.Lock()
 _triggers_cache: dict | None = None
 
@@ -89,10 +90,10 @@ def _load_triggers() -> dict:
     with _triggers_lock:
         if _triggers_cache is not None:
             return _triggers_cache
-        if _TRIGGERS_PATH.exists():
+        if _TRIGGERS_PATH.is_file():
             import yaml
             try:
-                with open(_TRIGGERS_PATH, encoding="utf-8") as f:
+                with _TRIGGERS_PATH.open(encoding="utf-8") as f:
                     _triggers_cache = yaml.safe_load(f) or {}
             except yaml.YAMLError as exc:
                 import logging as _log

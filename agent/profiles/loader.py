@@ -19,7 +19,7 @@ lookups within a single session are effectively free.
 from __future__ import annotations
 
 import threading
-from pathlib import Path
+from importlib.resources import files
 from typing import Any
 
 import yaml
@@ -28,8 +28,8 @@ import yaml
 # Constants
 # ---------------------------------------------------------------------------
 
-PROFILES_DIR: Path = Path(__file__).parent
-"""Directory where YAML profile files are stored."""
+PROFILES_DIR = files("agent.profiles")
+"""Directory (traversable) where YAML profile files are stored."""
 
 _FALLBACK_CANDIDATES: list[str] = [
     "default_dit",
@@ -49,9 +49,9 @@ _cache_lock: threading.Lock = threading.Lock()
 # ---------------------------------------------------------------------------
 
 
-def _load_yaml(path: Path) -> dict[str, Any]:
+def _load_yaml(path) -> dict[str, Any]:
     """Read and parse a YAML file with explicit UTF-8 encoding."""
-    with open(path, encoding="utf-8") as fh:
+    with path.open(encoding="utf-8") as fh:
         try:
             data = yaml.safe_load(fh)
         except yaml.YAMLError as exc:
@@ -237,8 +237,10 @@ def list_profiles() -> list[str]:
     Returns a deterministically sorted list.
     """
     profiles: list[str] = []
-    for path in PROFILES_DIR.glob("*.yaml"):
-        stem = path.stem
+    for path in PROFILES_DIR.iterdir():
+        if not path.name.endswith(".yaml"):
+            continue
+        stem = path.name[: -len(".yaml")]
         if stem.startswith("_") or stem.startswith("default_"):
             continue
         profiles.append(stem)
