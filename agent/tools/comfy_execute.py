@@ -368,6 +368,7 @@ def _execute_with_websocket(
 
     progress_log = []
     prompt_done = False
+    timed_out = False
     node_times = {}
     current_node = None
     nodes_done = 0
@@ -379,6 +380,7 @@ def _execute_with_websocket(
 
             for event in events:
                 if time.monotonic() >= deadline:
+                    timed_out = True
                     break
 
                 # Sentinel surfaced by the adapter when ws.recv() times out
@@ -505,6 +507,17 @@ def _execute_with_websocket(
         result["monitoring"] = "polling_fallback"
         result["ws_error"] = str(e)
         return result
+
+    if timed_out and not prompt_done:
+        progress.report(timeout, timeout, "Timed out")
+        return {
+            "status": "timeout",
+            "prompt_id": prompt_id,
+            "progress_log": progress_log,
+            "monitoring": "websocket",
+            "message": f"Execution did not complete within {timeout}s. "
+                       f"Use get_execution_status to check later.",
+        }
 
     # Finalize node timing
     if current_node and current_node in node_times and "end" not in node_times[current_node]:

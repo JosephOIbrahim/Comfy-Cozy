@@ -6,6 +6,7 @@ in the sessions/ directory.
 """
 
 import copy
+from collections import deque
 
 from .._conn_ctx import current_conn_session
 from ..memory.session import (
@@ -183,7 +184,8 @@ def _handle_load_session(tool_input: dict) -> str:
         wf_state["base_workflow"] = copy.deepcopy(wf["base_workflow"])
         wf_state["current_workflow"] = copy.deepcopy(wf["current_workflow"])
         wf_state["format"] = wf.get("format")
-        wf_state["history"] = []  # Fresh undo history on restore
+        from .workflow_patch import _MAX_HISTORY
+        wf_state["history"] = deque(maxlen=_MAX_HISTORY)  # Fresh undo history on restore
         restored_workflow = True
 
     # Load CognitiveWorkflowStage if .usda exists alongside session

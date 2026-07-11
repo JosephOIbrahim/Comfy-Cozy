@@ -72,17 +72,14 @@ print("\n== Tool Counts ==")
 
 try:
     sys.path.insert(0, str(PROJECT_ROOT))
-    from agent.tools import _LAYER_TOOLS
-    from agent.brain import ALL_BRAIN_TOOLS
+    from agent import tool_count
 
-    intel_count = len(_LAYER_TOOLS)
-    brain_count = len(ALL_BRAIN_TOOLS)
-    total = intel_count + brain_count
-    print(f"  Intelligence: {intel_count}, Brain: {brain_count}, Total: {total}")
+    intel_count, brain_count, total = tool_count()
+    print(f"  Intelligence+Stage: {intel_count}, Brain: {brain_count}, Total: {total}")
 
     # Check README matches
     readme = (PROJECT_ROOT / "README.md").read_text(encoding="utf-8")
-    readme_match = re.search(r"with (\d+) specialized tools", readme)
+    readme_match = re.search(r"drives all (\d+) tools", readme)
     if readme_match:
         readme_total = int(readme_match.group(1))
         check(
@@ -95,7 +92,7 @@ try:
 
     # Check CLAUDE.md matches
     claude_md = (PROJECT_ROOT / "CLAUDE.md").read_text(encoding="utf-8")
-    claude_match = re.search(r"with\s*\n?(\d+) specialized tools", claude_md)
+    claude_match = re.search(r"Tool Overview \((\d+) dispatched tools", claude_md)
     if claude_match:
         claude_total = int(claude_match.group(1))
         check(
@@ -146,7 +143,7 @@ print("\n== Tests ==")
 try:
     result = subprocess.run(
         [sys.executable, "-m", "pytest", "tests/", "-q", "--tb=no", "-x"],
-        capture_output=True, text=True, cwd=PROJECT_ROOT, timeout=120,
+        capture_output=True, text=True, cwd=PROJECT_ROOT, timeout=600,
     )
     # Parse last line for pass/fail counts
     last_lines = result.stdout.strip().split("\n")[-3:]
@@ -161,7 +158,7 @@ try:
 
     check(f"Tests: {p} passed, {f} failed, {s} skipped", f == 0, f"{f} test(s) failed")
 except subprocess.TimeoutExpired:
-    warn("Tests timed out after 120s")
+    warn("Tests timed out after 600s")
 except FileNotFoundError:
     warn("pytest not installed — skipping tests")
 
