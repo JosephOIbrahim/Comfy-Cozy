@@ -1,12 +1,31 @@
-# LATENCY MAP — offline pass, 2026-07-11
+# LATENCY MAP — offline + live passes, 2026-07-11
 
 Deliverable of the latency-and-refinement harness (`tooling/harness/latency/`,
-WP-4.0 lineage). **Regime: ComfyUI DOWN** — every number below is offline-real
-(median of N on this machine, Windows 11 / Python 3.12, git `2c15b2c` working
-tree); the six live end-to-end scenarios are deferred to a live pass (see
-`tooling/harness/latency/ORCHESTRATOR.md`). Raw runs:
+WP-4.0 lineage). Offline pass measured with ComfyUI DOWN (git `2c15b2c`);
+**live pass** measured same day against ComfyUI 0.27.0 on the RTX 4090
+(`tooling/bench/bench_live.py`, post-v5.7.0 master). Raw runs:
 `tooling/bench/benchmark_log.jsonl`. C6: these numbers are internal evidence,
 not publishable benchmarks — WP-4.1 owns publication.
+
+## Live pass (ComfyUI UP — LB1–LB4)
+
+| Term | Measured | Layer |
+|---|---|---|
+| `object_info` full fetch, cold (2,636 classes, fresh proc) | **4,221 ms** | L4 |
+| `object_info` warm (in-proc cache) | 0.007 ms | L4 |
+| `validate_before_execute` cold / warm re-validate | 510 / 0.19 ms | L4 |
+| Handshake live: initialize / tools-list / ping | 906 / 47 / 173 ms | L6 |
+| SDXL 768² 12-step: queue→execution_start | 0.9 s | L5 |
+| queue→first ws progress signal | 5.3 s | L6 |
+| queue→completion (/history truth, n=3 seed-varied) | 56.4 s | L5 |
+| **Silent window without progress forwarding (first signal→done)** | **~50 s** | **L6** |
+
+**Binding order RESOLVED (supersedes the offline lean):** **WP-4.3 first** —
+progress notifications fill a ~50 s per-generation dead-air window, the largest
+user-felt term measured anywhere in this map. **WP-4.4 second** — the 4.2 s
+object_info disk cache is real but once-per-cold-session. WP-1.1's live
+acceptance also closed this pass: the released v5.7.0 wheel dispatched
+read-only tools against the live server from a clean venv.
 
 ## Where the milliseconds actually live (measured)
 
