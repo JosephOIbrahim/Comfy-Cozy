@@ -136,7 +136,11 @@ def _load_workflow(path_str: str) -> str | None:
     _get_state()["history"] = deque(maxlen=_MAX_HISTORY)
 
     # Create engine from the loaded workflow (session-scoped)
-    _set_engine(_create_engine(api_nodes))
+    try:
+        _set_engine(_create_engine(api_nodes))
+    except Exception as exc:  # load already succeeded, engine is optional
+        log.warning("Could not create engine on load: %s. Engine disabled.", exc)
+        _set_engine(None)
 
     return None
 
@@ -534,7 +538,11 @@ def _handle_apply_patch(tool_input: dict) -> str:
 
         # Rebuild engine from current state to keep it in sync
         if engine is not None:
-            _set_engine(_create_engine(_get_state()["current_workflow"]))
+            try:
+                _set_engine(_create_engine(_get_state()["current_workflow"]))
+            except Exception as exc:  # patch already applied, engine is optional
+                log.warning("Could not rebuild engine after patch: %s. Engine disabled.", exc)
+                _set_engine(None)
 
     # Build change report
     changes = []
@@ -673,6 +681,10 @@ def _handle_save(tool_input: dict) -> str:
             fd.close()
             os.replace(fd.name, str(dest))
         except Exception:
+            try:
+                fd.close()
+            except Exception:
+                pass
             try:
                 Path(fd.name).unlink(missing_ok=True)
             except Exception:
@@ -1256,7 +1268,11 @@ def load_workflow_from_data(data: dict, source: str = "<sidebar>") -> str | None
         _get_state()["validated_since_mutation"] = False
 
         # Create engine from loaded workflow (session-scoped)
-        _set_engine(_create_engine(nodes))
+        try:
+            _set_engine(_create_engine(nodes))
+        except Exception as exc:  # load already succeeded, engine is optional
+            log.warning("Could not create engine on load: %s. Engine disabled.", exc)
+            _set_engine(None)
 
     return None
 

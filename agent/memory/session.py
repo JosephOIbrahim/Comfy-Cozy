@@ -291,6 +291,10 @@ def _atomic_write(path: Path, content: str) -> None:
     except Exception:
         # Clean up temp file on failure — log if cleanup itself fails
         try:
+            fd.close()
+        except Exception:
+            pass
+        try:
             Path(fd.name).unlink(missing_ok=True)
         except Exception as _cleanup_exc:  # Cycle 44: log instead of silent swallow
             log.warning("Failed to clean up temp file %s: %s", fd.name, _cleanup_exc)

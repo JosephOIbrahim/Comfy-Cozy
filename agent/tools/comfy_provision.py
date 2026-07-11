@@ -911,7 +911,7 @@ def _handle_download_model(
             "error": "Download timed out. The file may be very large.",
             "hint": "Re-call download_model — it resumes from the partial file.",
         })
-    except httpx.ConnectError as e:
+    except (httpx.ConnectError, httpx.ReadError, httpx.RemoteProtocolError) as e:
         # C-R12: transient failure — KEEP the partial (resume on retry).
         return to_json({
             "error": f"Connection failed during download: {e}",

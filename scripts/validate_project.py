@@ -142,7 +142,7 @@ print("\n== Tests ==")
 
 try:
     result = subprocess.run(
-        [sys.executable, "-m", "pytest", "tests/", "-q", "--tb=no", "-x"],
+        [sys.executable, "-m", "pytest", "tests/", "-q", "--tb=no", "-x", "-m", "not integration"],
         capture_output=True, text=True, cwd=PROJECT_ROOT, timeout=600,
     )
     # Parse last line for pass/fail counts

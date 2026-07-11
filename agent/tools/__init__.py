@@ -1,10 +1,11 @@
-"""Tool registry for the ComfyUI Comfy Cozy Agent.
+"""Tool registry for Comfy Cozy.
 
 Each tool module exports:
   TOOLS: list[dict]    -- Anthropic tool schemas
   handle(name, input)  -- Execute a tool call, return result string
 
-Intelligence layers (53 tools) + Brain layer (27 tools) + Stage layer (22 tools) = 103 tools total.
+Intelligence layer (84 tools) + Stage layer (22 tools, lazy) + Brain layer (27 tools)
+= 133 dispatched tools.
 Brain tools are lazily imported to avoid circular dependencies
 (brain modules import _util from this package).
 """
