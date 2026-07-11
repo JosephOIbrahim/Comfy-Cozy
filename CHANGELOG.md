@@ -5,7 +5,61 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [5.7.0] - 2026-07-11 — Local Twin
+
+The distribution becomes a pip-installable `comfy-cozy`: the project's real
+name, one source of truth for the version, and a packaging gate that proves
+every release wheel actually installs and passes the suite on Ubuntu and
+Windows. An installed wheel behaves like a good citizen — state lives in
+`~/.comfy-cozy`, not in site-packages. And the MCP handshake no longer waits
+on an unreachable ComfyUI — the server answers the host right away and
+reports ComfyUI's status instead of stalling the connection.
+
+### Added
+- **`comfy-cozy` + `cozy` console scripts** — both launch the same Typer app;
+  `agent` is kept as a deprecated alias (see Changed).
+- **Dependency upper bounds** — every runtime dependency now carries a
+  next-major ceiling (e.g. `anthropic<1`, `rich<15`) so a surprise major
+  release can't break a fresh install; lower bounds unchanged (`mcp` was
+  already bounded).
+- **Coverage floor in CI** — the test step now measures `--cov=agent` and
+  `[tool.coverage.report] fail_under = 70` fails the build if coverage drops
+  below the floor.
+- **Packaging gate** — CI builds the wheel, installs it into a clean venv, and
+  runs the test suite against the *installed* package (data families
+  knowledge/, profiles/, schemas/, templates/ asserted present; suite runs
+  minus `tests/test_provisioner.py`, matching the long-standing release.yml
+  exclusion).
+- **PyPI trusted-publishing lane** — release workflow wired for OIDC publish,
+  dormant until enabled.
+- **User-home state dir for installed packages** — sessions, logs, and
+  `BLOCKER.md` land in `~/.comfy-cozy` (override with `COMFY_COZY_HOME`).
+
+### Changed
+- **Distribution renamed `comfyui-agent` → `comfy-cozy`** (the `agent` import
+  package is unchanged).
+- **Version single-sourced** from `agent.__version__` via
+  `[tool.hatch.version]`; the static `version` line in `pyproject.toml` is gone.
+- `.env` discovery now checks the home config dir (`~/.comfy-cozy/.env`) then
+  the checkout root, most specific last; a CWD `.env` is deliberately excluded
+  (untrusted-directory hardening).
+- `agent` console script deprecated (kept as an alias; removal in a future
+  major release — the `--help` epilog says so).
+- NIM warm-state dot-dir unified to `~/.comfy-cozy`.
+
+### Removed
+- `LOCAL_WORKFLOWS_DIR` config constant (dead — zero consumers).
+
+### Fixed
+- CLI session header no longer announces a hardcoded `v0.4` — the panel title
+  reads the real `agent.__version__`.
+- Installed packages no longer write sessions/logs/`BLOCKER.md` into
+  site-packages.
+- `validate_path` no longer whitelists site-packages when running from a wheel.
+- `cognitive` no longer climbs into `agent/templates` — it ships its own copy
+  and falls back loudly.
+- Build identity (`agent/_build.py`) can no longer report a *foreign* repo's
+  HEAD: the git probe only runs when the install root is actually this repo.
 
 ## [5.6.0] - 2026-07-08 — Switchboard
 

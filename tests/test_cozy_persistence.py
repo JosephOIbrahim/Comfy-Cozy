@@ -337,7 +337,7 @@ class TestCozyLoopHarness:
         """An AnchorViolationError must halt the harness and write BLOCKER.md."""
         # Redirect BLOCKER.md to tmp_path so we don't pollute the repo.
         from agent import config as cfg_mod
-        monkeypatch.setattr(cfg_mod, "PROJECT_DIR", tmp_path)
+        monkeypatch.setattr(cfg_mod, "STATE_DIR", tmp_path)
 
         def execute(ctx):
             raise RuntimeError("AnchorViolationError: protected param")

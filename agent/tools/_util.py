@@ -26,16 +26,19 @@ def _get_safe_dirs() -> list[Path]:
     global _SAFE_DIRS
     if _SAFE_DIRS is None:
         from ..config import (
-            COMFYUI_DATABASE, COMFYUI_OUTPUT_DIR, PROJECT_DIR, SESSIONS_DIR,
-            WORKFLOWS_DIR, COMFYUI_INSTALL_DIR,
+            COMFYUI_DATABASE, COMFYUI_OUTPUT_DIR, IS_EDITABLE_INSTALL, PROJECT_DIR,
+            STATE_DIR, WORKFLOWS_DIR, COMFYUI_INSTALL_DIR,
         )
         _SAFE_DIRS = [
             COMFYUI_DATABASE.resolve(),
             COMFYUI_OUTPUT_DIR.resolve(),
-            PROJECT_DIR.resolve(),
-            SESSIONS_DIR.resolve(),
+            STATE_DIR.resolve(),
             WORKFLOWS_DIR.resolve(),
         ]
+        # PROJECT_DIR is the repo root in a checkout but site-packages under a
+        # wheel — only a checkout is a legitimate sandbox root.
+        if IS_EDITABLE_INSTALL:
+            _SAFE_DIRS.append(PROJECT_DIR.resolve())
         # Add install dir if it differs from database (split-directory setups)
         install_resolved = COMFYUI_INSTALL_DIR.resolve()
         if install_resolved not in _SAFE_DIRS:
@@ -95,7 +98,8 @@ def validate_path(path_str: str, *, must_exist: bool = False) -> str | None:
     if not in_safe_dir:
         return (
             f"Access denied: path '{path_str}' is outside allowed directories. "
-            f"Allowed: ComfyUI database, project dir, sessions, workflows."
+            f"Allowed: ComfyUI database, state dir, workflows "
+            f"(plus the repo checkout in editable installs)."
         )
 
     if must_exist and not p.exists():

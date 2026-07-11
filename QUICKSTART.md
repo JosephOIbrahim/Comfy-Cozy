@@ -1,4 +1,4 @@
-# Quick Start — ComfyUI Agent for VFX Artists
+# Quick Start — Comfy-Cozy for VFX Artists
 
 > **What this is:** An AI co-pilot that talks to your ComfyUI installation.
 > Ask it questions in plain English, and it inspects your workflows, finds models,
@@ -18,8 +18,16 @@ You need:
 ### 2. Install
 
 ```bash
-git clone https://github.com/JosephOIbrahim/comfyui-agent.git
-cd comfyui-agent
+pip install comfy-cozy
+```
+
+> (PyPI publish is pending — until `comfy-cozy` goes live on PyPI, install from source below.)
+
+**From source:**
+
+```bash
+git clone https://github.com/JosephOIbrahim/Comfy-Cozy.git
+cd Comfy-Cozy
 pip install -e .
 ```
 
@@ -36,6 +44,10 @@ ANTHROPIC_API_KEY=sk-ant-your-key-here
 COMFYUI_DATABASE=G:/path/to/your/ComfyUI
 ```
 
+> **Installed from PyPI (no checkout)?** Put your `.env` at `~/.comfy-cozy/.env` —
+> the agent reads that first, then the checkout root. The current directory is
+> deliberately not searched.
+
 > **Where's my ComfyUI database?** It's wherever your `models/`, `Custom_Nodes/`,
 > and `output/` folders live. If you're not sure, check your ComfyUI startup script.
 
@@ -49,10 +61,11 @@ It starts ComfyUI, waits for it to be ready, then tells you how to connect.
 **Option B — Manual:**
 
 1. Start ComfyUI however you normally do
-2. In a terminal, from the `comfyui-agent` folder:
+2. In a terminal:
    ```
-   agent run
+   comfy-cozy run
    ```
+   (`cozy` works as a short alias; the old `agent` command still works but is deprecated.)
 3. Type what you want. Type `quit` to exit.
 
 ---
@@ -60,12 +73,12 @@ It starts ComfyUI, waits for it to be ready, then tells you how to connect.
 ## Using with Claude Code (Best Experience)
 
 The agent works best as an MCP server inside Claude Code. This means Claude
-can use all 77 ComfyUI tools alongside its normal coding abilities.
+can use all 133 ComfyUI tools alongside its normal coding abilities.
 
 ### Setup
 
 1. Install [Claude Code](https://docs.anthropic.com/en/docs/claude-code)
-2. Open a terminal in the `comfyui-agent` folder
+2. Open a terminal in the `Comfy-Cozy` folder
 3. The MCP server is already configured in `.claude/settings.json`
 4. Run `claude` — the agent tools are automatically available
 
@@ -82,17 +95,17 @@ Add this to your Claude Desktop MCP config (`%APPDATA%\Claude\claude_desktop_con
 ```json
 {
   "mcpServers": {
-    "comfyui-agent": {
-      "command": "agent",
+    "comfy-cozy": {
+      "command": "comfy-cozy",
       "args": ["mcp"],
-      "cwd": "C:\\Users\\YourName\\comfyui-agent"
+      "cwd": "C:\\Users\\YourName\\Comfy-Cozy"
     }
   }
 }
 ```
 
-Change the `cwd` path to wherever you cloned comfyui-agent. Restart Claude Desktop.
-The 77 tools will appear automatically.
+Change the `cwd` path to wherever you cloned Comfy-Cozy. Restart Claude Desktop.
+The 133 tools will appear automatically.
 
 ### What you can say
 
@@ -113,11 +126,13 @@ Just talk normally. Examples:
 Some commands work without an Anthropic key or running ComfyUI:
 
 ```bash
-agent inspect              # See what models and nodes you have
-agent parse workflow.json  # Analyze a workflow file
-agent sessions             # See saved sessions
-agent search "controlnet" --nodes   # Search node registry
+comfy-cozy inspect              # See what models and nodes you have
+comfy-cozy parse workflow.json  # Analyze a workflow file
+comfy-cozy sessions             # See saved sessions
+comfy-cozy search "controlnet" --nodes   # Search node registry
 ```
+
+(`cozy` is a short alias for `comfy-cozy`; the old `agent` command still works but is deprecated.)
 
 ---
 
@@ -144,7 +159,7 @@ agent search "controlnet" --nodes   # Search node registry
 ## Folder Structure
 
 ```
-comfyui-agent/
+Comfy-Cozy/
 ├── agent/          # The AI co-pilot code
 ├── sessions/       # Your saved workflow sessions (auto-created)
 ├── workflows/      # Starter workflow templates
@@ -152,3 +167,6 @@ comfyui-agent/
 ├── .env            # Your config (API key, paths)
 └── CLAUDE.md       # Full project documentation
 ```
+
+> Installed from PyPI instead of a checkout? Sessions, logs, and config live at
+> `~/.comfy-cozy` (override with the `COMFY_COZY_HOME` environment variable).

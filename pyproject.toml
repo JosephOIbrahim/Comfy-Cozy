@@ -1,6 +1,6 @@
 [project]
-name = "comfyui-agent"
-version = "5.6.0"
+name = "comfy-cozy"
+dynamic = ["version"]
 description = "AI co-pilot for VFX artists using ComfyUI: 133 MCP tools across 6 swappable LLM providers (incl. any OpenAI-compatible endpoint), zero-LLM artist recipes, a default-deny safety gate, reversible LIVRPS edits, EXR-aware vision, workflow.lock provenance, and durable cross-session learning."
 readme = "README.md"
 license = {text = "MIT"}
@@ -27,19 +27,19 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 dependencies = [
-    "anthropic>=0.52.0",
-    "jsonpatch>=1.33",
-    "jsonschema>=4.20.0",
-    "httpx>=0.27.0",
-    "websockets>=12.0",
-    "python-dotenv>=1.0.0",
-    "typer>=0.12.0",
-    "rich>=13.0.0",
+    "anthropic>=0.52.0,<1",
+    "jsonpatch>=1.33,<2",
+    "jsonschema>=4.20.0,<5",
+    "httpx>=0.27.0,<1",
+    "websockets>=12.0,<17",
+    "python-dotenv>=1.0.0,<2",
+    "typer>=0.12.0,<1",
+    "rich>=13.0.0,<15",
     "mcp>=1.20.0,<2.0",
-    "pyyaml>=6.0",
-    "aiohttp>=3.9.0",
-    "networkx>=3.0",
-    "Pillow>=10.0",
+    "pyyaml>=6.0,<7",
+    "aiohttp>=3.9.0,<4",
+    "networkx>=3.0,<4",
+    "Pillow>=10.0,<13",
 ]
 
 [project.optional-dependencies]
@@ -64,19 +64,30 @@ exr = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/JosephOIbrahim/comfyui-agent"
-Repository = "https://github.com/JosephOIbrahim/comfyui-agent"
-Issues = "https://github.com/JosephOIbrahim/comfyui-agent/issues"
+Homepage = "https://github.com/JosephOIbrahim/Comfy-Cozy"
+Repository = "https://github.com/JosephOIbrahim/Comfy-Cozy"
+Issues = "https://github.com/JosephOIbrahim/Comfy-Cozy/issues"
 
 [project.scripts]
+comfy-cozy = "agent.cli:app"
+cozy = "agent.cli:app"
 agent = "agent.cli:app"
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+[tool.hatch.version]
+path = "agent/__init__.py"
+
+# The four data families (knowledge/, profiles/, schemas/, templates/) ride hatchling's
+# whole-dir inclusion of the packages below; the packaging gate asserts they are present.
 [tool.hatch.build.targets.wheel]
 packages = ["agent", "cognitive"]
+
+[tool.hatch.build.targets.sdist]
+only-include = ["agent", "cognitive", "tests"]
+exclude = ["**/__pycache__"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -92,6 +103,7 @@ omit = ["tests/*"]
 [tool.coverage.report]
 show_missing = true
 skip_empty = true
+fail_under = 70
 
 [tool.ruff]
 line-length = 99

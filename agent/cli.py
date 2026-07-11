@@ -11,16 +11,20 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
+from . import __version__
 from ._conn_ctx import current_conn_session
 from .config import COMFYUI_URL, COMFYUI_DATABASE, LOG_DIR
 from .logging_config import setup_logging
 from .streaming import NullHandler
-from .tools import comfy_inspect, comfy_discover, session_tools
 
 log = logging.getLogger(__name__)
 
 app = typer.Typer(
     help="ComfyUI Agent -- AI co-pilot for ComfyUI workflows",
+    epilog=(
+        "Command names: comfy-cozy (primary) | cozy (alias) | "
+        "agent (deprecated, will be removed in a future major release)."
+    ),
     no_args_is_help=True,
 )
 console = Console()
@@ -97,6 +101,7 @@ def run(
       agent run -v                    # verbose: API timing + tool tracing
     """
     from . import config
+    from .tools import session_tools
 
     # Configure logging
     setup_logging(
@@ -128,7 +133,8 @@ def run(
         console.print(
             "[red]ANTHROPIC_API_KEY not set.[/red]\n"
             "Setup steps:\n"
-            "  1. Copy .env.example to .env\n"
+            "  1. Create a .env file (repo root for a checkout; "
+            "~/.comfy-cozy/.env for an installed package)\n"
             "  2. Get a key from https://console.anthropic.com/\n"
             "  3. Add: ANTHROPIC_API_KEY=sk-ant-...\n"
         )
@@ -151,7 +157,7 @@ def run(
         f"Model: {config.LLM_PROVIDER} / {config.AGENT_MODEL}\n"
         f"ComfyUI: {COMFYUI_URL}\n"
         f"Database: {COMFYUI_DATABASE}",
-        title="ComfyUI Agent v0.4",
+        title=f"ComfyUI Agent v{__version__}",
     ))
 
     # Load session context for system prompt injection
@@ -271,6 +277,8 @@ def inspect():
     Examples:
       agent inspect                   # full summary
     """
+    from .tools import comfy_inspect
+
     console.print("[bold]ComfyUI Installation Summary[/bold]\n")
 
     # Models summary
@@ -419,6 +427,8 @@ def sessions():
     Examples:
       agent sessions                  # list all saved sessions
     """
+    from .tools import session_tools
+
     result = json.loads(session_tools.handle("list_sessions", {}))
     if result["count"] == 0:
         console.print("[dim]No saved sessions. Use --session NAME with 'run' to create one.[/dim]")
@@ -470,6 +480,8 @@ def search(
       agent search "lora" --models --type lora # only LoRA models
       agent search "flux" --hf                 # HuggingFace search
     """
+    from .tools import comfy_discover
+
     # Build discover params
     params: dict = {"query": query}
 
@@ -560,7 +572,7 @@ def orchestrate(
         console.print(f"[red]File not found: {workflow}[/red]")
         raise typer.Exit(1)
 
-    from .tools import comfy_execute, workflow_parse
+    from .tools import comfy_execute, session_tools, workflow_parse
 
     # Step 1: Load
     console.print("[bold]Step 1/4:[/bold] Loading workflow...")
@@ -795,6 +807,8 @@ def autoresearch(
         raise typer.Exit(1)
 
     console.print(f"[bold]Researching:[/bold] {query} (category={category})\n")
+
+    from .tools import comfy_discover
 
     result = json.loads(
         comfy_discover.handle("discover", {"query": query, "category": category})

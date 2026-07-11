@@ -1,0 +1,95 @@
+name: Packaging Gate
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  gate:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build wheel
+        run: |
+          pip install build
+          python -m build --wheel
+
+      - name: Create gate venv and install the wheel
+        run: |
+          python -m venv gatevenv
+          if [ -x gatevenv/bin/python ]; then
+            VPY="$PWD/gatevenv/bin/python"
+            VBIN="$PWD/gatevenv/bin"
+          else
+            VPY="$PWD/gatevenv/Scripts/python.exe"
+            VBIN="$PWD/gatevenv/Scripts"
+          fi
+          echo "VPY=$VPY" >> "$GITHUB_ENV"
+          echo "VBIN=$VBIN" >> "$GITHUB_ENV"
+          WHEEL=$(ls dist/*.whl)
+          "$VPY" -m pip install "${WHEEL}[dev]"
+
+      - name: Wheel-import sanity (agent resolves from site-packages, not the checkout)
+        run: |
+          mkdir -p "$RUNNER_TEMP/gate"
+          cd "$RUNNER_TEMP/gate"
+          "$VPY" -c "import agent, pathlib, sys; p = pathlib.Path(agent.__file__).resolve(); sys.exit(0 if 'site-packages' in p.parts else 'agent imported from the checkout, not the wheel: ' + str(p))"
+
+      - name: Run suite against the installed package (non-repo cwd)
+        run: |
+          mkdir -p "$RUNNER_TEMP/gate"
+          cd "$RUNNER_TEMP/gate"
+          # --ignore: kept in parity with the release workflow's long-standing exclusion;
+          # not a wheel-specific carve-out.
+          "$VPY" -m pytest "$GITHUB_WORKSPACE/tests" -m "not integration" -q \
+            --import-mode=importlib \
+            --ignore="$GITHUB_WORKSPACE/tests/test_provisioner.py"
+
+      - name: Pollution check (site-packages grew no writable state)
+        run: |
+          cd "$RUNNER_TEMP/gate"
+          "$VPY" -c "import agent, pathlib, sys; sp = pathlib.Path(agent.__file__).resolve().parent.parent; bad = [n for n in ('sessions', 'logs', 'workflows') if (sp / n).exists()]; sys.exit('site-packages polluted: ' + ', '.join(bad) if bad else 0)"
+
+      - name: Console-script smokes
+        run: |
+          "$VBIN/comfy-cozy" --help > /dev/null
+          "$VBIN/cozy" --help > /dev/null
+          "$VBIN/agent" --help > /dev/null
+          "$VBIN/comfy-cozy" inspect --help > /dev/null
+
+      - name: Data families present in the wheel
+        run: |
+          cd "$RUNNER_TEMP/gate"
+          "$VPY" - <<'PY'
+          from importlib.resources import files
+          k = files("agent") / "knowledge"
+          assert (k / "triggers.yaml").is_file(), "agent/knowledge/triggers.yaml missing"
+          assert any(p.name.endswith(".md") for p in k.iterdir()), "agent/knowledge has no .md"
+          profiles = files("agent") / "profiles"
+          assert any(p.name.endswith(".yaml") for p in profiles.iterdir()), "agent/profiles has no .yaml"
+          templates = files("agent") / "templates"
+          assert any(p.name.endswith(".json") for p in templates.iterdir()), "agent/templates has no .json"
+          assert (files("agent") / "schemas").is_dir(), "agent/schemas missing"
+          ctempl = files("cognitive") / "templates"
+          assert any(p.name.endswith(".json") for p in ctempl.iterdir()), "cognitive/templates has no .json"
+          print("data families ok")
+          PY
+
+      - name: Version single-source
+        run: |
+          cd "$RUNNER_TEMP/gate"
+          "$VPY" -c "import agent, importlib.metadata as m; assert m.version('comfy-cozy') == agent.__version__, (m.version('comfy-cozy'), agent.__version__)"

@@ -13,6 +13,7 @@ import json
 import logging
 import threading
 import time
+from importlib.resources import files
 from pathlib import Path
 from typing import Any
 
@@ -273,10 +274,10 @@ def _load_template(
     template_name: str,
 ) -> tuple[dict | None, str | None]:
     """Load a workflow from the templates directory."""
-    templates_dir = Path(__file__).parent.parent / "templates"
+    templates_dir = files("agent") / "templates"
     path = templates_dir / f"{template_name}.json"
 
-    if not path.exists():
+    if not path.is_file():
         return None, f"Template '{template_name}' not found at {path}."
 
     try:

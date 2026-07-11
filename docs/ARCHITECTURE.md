@@ -8,7 +8,7 @@
 ## Architecture Diagram
 
 ```
-┌──────────────────── COMFY COZY AGENT v0.4.0 ──────────────────────┐
+┌──────────────────── COMFY COZY AGENT v5.7.0 ──────────────────────┐
 │                                                                    │
 │  BRAIN LAYER (27 tools)                                            │
 │  ┌────────┐ ┌────────┐ ┌────────┐ ┌───────┐ ┌───────┐ ┌───────┐ │
@@ -23,7 +23,7 @@
 │                   _protocol.py (BrainMessage)                     │
 │      ┌──────────────┬──┴───────┬──────────────┐                   │
 │                                                                    │
-│  INTELLIGENCE LAYERS (53 tools)                                    │
+│  INTELLIGENCE LAYERS (84 tools)                                    │
 │  ┌───────────┐  ┌───────────┐  ┌──────────┐  ┌──────────────┐    │
 │  │ UNDERSTAND│  │ DISCOVER  │  │  PILOT   │  │   VERIFY     │    │
 │  │ 13 tools  │  │  6 tools  │  │ 13 tools │  │  10 tools    │    │
@@ -39,6 +39,10 @@
                     │   (localhost:8188)   │
                     └─────────────────────┘
 ```
+
+*(The stage layer — 22 USD/LIVRPS tools in `agent/stage/` — joined after this diagram was
+drawn and is not pictured. Current dispatch totals: 84 intelligence + 27 brain + 22 stage
+= 133 tools, plus `ping`.)*
 
 ---
 
@@ -68,7 +72,7 @@
 | **BRAIN:INTENT** | `brain/intent_collector.py` | 2 | `capture_intent`, `get_current_intent` |
 | **BRAIN:ITERATION** | `brain/iteration_accumulator.py` | 3 | `start_iteration_tracking`, `record_iteration_step`, `finalize_iterations` |
 | **VERIFY** | `tools/image_metadata.py` | 3 | `write_image_metadata`, `read_image_metadata`, `reconstruct_context` |
-| **TRANSPORT** | `mcp_server.py` | -- | MCP server exposing all 80 tools via Model Context Protocol |
+| **TRANSPORT** | `mcp_server.py` | -- | MCP server exposing all 133 dispatched tools (+ `ping`) via Model Context Protocol |
 
 ---
 
@@ -142,7 +146,8 @@ Also provides instant perceptual hash comparison (`hash_compare_images`) via Pil
 ### Brain: Planner (`brain/planner.py`)
 Template-based goal decomposition -- 6 patterns (build_workflow, optimize_workflow,
 debug_workflow, swap_model, add_controlnet, explore_ecosystem) + generic fallback.
-State persists to `sessions/{name}_goals.json`. Supports step completion, replanning.
+State persists to `sessions/{name}_goals.json` (repo root in a checkout; `~/.comfy-cozy/`
+for installed packages — override with `COMFY_COZY_HOME`). Supports step completion, replanning.
 
 ### Brain: Memory (`brain/memory.py`)
 Append-only JSONL outcomes in `sessions/{name}_outcomes.jsonl`. Aggregation-based
@@ -204,16 +209,18 @@ Messages flow through three stages before each API call:
 
 **MCP is the primary interface. HTTP/WS is the transport underneath.**
 
-All 80 tools are exposed via Model Context Protocol using `mcp.server.Server`. MCP is a
-core dependency (`pip install -e "."`). Run `agent mcp` to start the stdio transport.
+All 133 dispatched tools (+ `ping`) are exposed via Model Context Protocol using
+`mcp.server.Server`. MCP is a core dependency (`pip install -e "."` from a checkout, or
+`pip install comfy-cozy` — PyPI publish pending). Run `comfy-cozy mcp` (alias: `cozy mcp`;
+`agent mcp` is a deprecated alias) to start the stdio transport.
 Schema conversion bridges Anthropic tool schemas to MCP JSON Schema format. Sync tool
 handlers are wrapped with `run_in_executor` for the async MCP runtime. Session isolation
 via `WorkflowSession` enables concurrent tool calls within a single Claude Code session.
 
 ### Supported Backends (Priority Order)
-1. **MCP stdio** -- `agent mcp` command, primary interface for Claude Code / Claude Desktop
+1. **MCP stdio** -- `comfy-cozy mcp` command, primary interface for Claude Code / Claude Desktop
 2. **Direct HTTP/WS** -- ComfyUI's native API (transport layer, always works)
-3. **CLI agent** -- `agent run` standalone fallback with built-in agent loop
+3. **CLI agent** -- `comfy-cozy run` standalone fallback with built-in agent loop
 
 ---
 

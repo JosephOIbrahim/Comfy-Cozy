@@ -20,9 +20,9 @@ import functools
 import logging
 import signal
 import threading
+import time
 import uuid
 
-import httpx
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
 import mcp.types as types
@@ -107,28 +107,51 @@ def _convert_schema(tool_def: dict) -> dict:
 
 
 def _check_comfyui_reachable() -> dict:
-    """Quick connectivity check to ComfyUI. Returns status dict."""
+    """Quick connectivity check to ComfyUI. Returns status dict.
+
+    Routes through the pooled keepalive client in agent.tools.comfy_api
+    (no fresh connection per probe) with a 3 s timeout — a health hint
+    does not need the full 5 s budget.
+    """
     from .config import COMFYUI_URL
+    from .tools.comfy_api import _get_client
     try:
-        with httpx.Client() as client:
-            resp = client.get(f"{COMFYUI_URL}/system_stats", timeout=5.0)
-            resp.raise_for_status()
-            stats = resp.json()
-            devices = stats.get("devices", [])
-            gpu = devices[0].get("name", "unknown") if devices else "no GPU"
-            version = stats.get("system", {}).get("comfyui_version", "unknown")
-            return {
-                "reachable": True,
-                "url": COMFYUI_URL,
-                "version": version,
-                "gpu": gpu,
-            }
+        resp = _get_client().get("/system_stats", timeout=3.0)
+        resp.raise_for_status()
+        stats = resp.json()
+        devices = stats.get("devices", [])
+        gpu = devices[0].get("name", "unknown") if devices else "no GPU"
+        version = stats.get("system", {}).get("comfyui_version", "unknown")
+        return {
+            "reachable": True,
+            "url": COMFYUI_URL,
+            "version": version,
+            "gpu": gpu,
+        }
     except Exception as e:
         return {
             "reachable": False,
             "url": COMFYUI_URL,
             "error": str(e),
         }
+
+
+# Reachability verdict cache: (verdict dict, monotonic timestamp). The boot
+# probe warms it; ping serves it while fresh so a warm ping never blocks on
+# the network.
+_PROBE_TTL_SECONDS = 20.0
+_probe_cache: tuple[dict, float] | None = None
+
+
+def _probe_comfyui() -> dict:
+    """Return the cached reachability verdict, re-probing when stale."""
+    global _probe_cache
+    cached = _probe_cache
+    if cached is not None and time.monotonic() - cached[1] < _PROBE_TTL_SECONDS:
+        return cached[0]
+    verdict = _check_comfyui_reachable()
+    _probe_cache = (verdict, time.monotonic())
+    return verdict
 
 
 # Default outer dispatch budget per tool call (seconds). Covers the slowest
@@ -344,7 +367,7 @@ def create_mcp_server() -> "Server":
                 log.debug("tool_count() unavailable during ping", exc_info=True)
                 intel_count, brain_count, total_count = "?", "?", "?"
             _loop = asyncio.get_running_loop()
-            comfyui = await _loop.run_in_executor(None, _check_comfyui_reachable)
+            comfyui = await _loop.run_in_executor(None, _probe_comfyui)
             return [types.TextContent(type="text", text=to_json({
                 "status": "ok",
                 "server": "comfyui-agent",
@@ -396,6 +419,7 @@ def create_mcp_server() -> "Server":
         # The _handler wrapper below sets the ContextVar inside the executor
         # thread so session_tools.current_conn_session() returns the right name.
         from ._conn_ctx import _conn_session as _cs
+        from .logging_config import set_correlation_id
         from .session_context import get_session_context
         conn_name = session_id or _SERVER_SESSION_ID
         ctx = get_session_context(conn_name)
@@ -413,9 +437,11 @@ def create_mcp_server() -> "Server":
 
         def _handler():
             _cs.set(_conn_name_local)
+            set_correlation_id(_conn_name_local)
             return _partial()
 
         budget = _tool_time_budget(name, arguments)
+        _t0 = time.monotonic()
         try:
             # Wrap in asyncio.wait_for so a hung tool handler (e.g. ComfyUI
             # unreachable, stuck lock) cannot block the MCP event loop
@@ -453,19 +479,18 @@ def create_mcp_server() -> "Server":
                 )],
             )
 
+        log.info("tool %s completed in %.3f s", name, time.monotonic() - _t0)
         return [types.TextContent(type="text", text=result)]
 
     return server
 
 
-async def run_stdio():
-    """Run the MCP server using stdio transport."""
-    server = create_mcp_server()
-
-    # Startup health check — run sync HTTP call in executor to avoid
-    # blocking the event loop during startup.
+async def _log_boot_probe():
+    """Startup health check — runs as a background task so the stdio
+    handshake never waits on ComfyUI reachability. Logs the verdict when
+    it lands and warms the probe cache for ping."""
     loop = asyncio.get_running_loop()
-    comfyui_status = await loop.run_in_executor(None, _check_comfyui_reachable)
+    comfyui_status = await loop.run_in_executor(None, _probe_comfyui)
     if comfyui_status["reachable"]:
         log.info(
             "ComfyUI Agent MCP server starting (stdio) — "
@@ -482,12 +507,23 @@ async def run_stdio():
             comfyui_status.get("error", "unknown"),
         )
 
+
+async def run_stdio():
+    """Run the MCP server using stdio transport."""
+    server = create_mcp_server()
+
     init_options = server.create_initialization_options()
     # Inject server instructions for MCP clients
     init_options.instructions = _SERVER_INSTRUCTIONS
 
+    # Transport opens FIRST; the reachability probe runs in the background
+    # and must never sit on the initialize/handshake path.
     async with stdio_server() as (read_stream, write_stream):
-        await server.run(read_stream, write_stream, init_options)
+        probe_task = asyncio.create_task(_log_boot_probe())
+        try:
+            await server.run(read_stream, write_stream, init_options)
+        finally:
+            probe_task.cancel()
 
 
 def _flush_all_sessions() -> None:

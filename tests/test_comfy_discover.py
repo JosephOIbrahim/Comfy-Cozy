@@ -2,6 +2,8 @@
 
 import json
 import time
+from pathlib import Path
+
 import pytest
 from unittest.mock import patch, MagicMock
 
@@ -1069,9 +1071,12 @@ class TestSearchUnifiedJsonGuard:
 class TestFindMissingNodesPathTraversal:
     """_handle_find_missing_nodes must reject path traversal before reading."""
 
-    def test_path_traversal_dotdot_rejected(self):
+    def test_path_traversal_dotdot_rejected(self, monkeypatch):
         """Paths containing '..' must be blocked, not followed."""
         from agent.tools import comfy_discover
+        # Pin the CWD: relative traversal resolves against it, and a CWD under
+        # the system temp dir would land inside the sandbox's temp allowance.
+        monkeypatch.chdir(Path(__file__).parent)
         result = json.loads(comfy_discover.handle("find_missing_nodes", {
             "path": "../../etc/passwd",
         }))

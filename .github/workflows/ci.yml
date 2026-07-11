@@ -52,4 +52,4 @@ jobs:
         # Integration tests are excluded EXPLICITLY — the marker definition in
         # pyproject.toml prescribes exactly this for CI (previously they were
         # excluded only by every one of them happening to skip).
-        run: python -m pytest tests/ -v -m "not integration"
+        run: python -m pytest tests/ -v -m "not integration" --cov=agent --cov-report=term-missing

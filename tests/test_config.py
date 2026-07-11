@@ -59,12 +59,20 @@ class TestApiKeyValidation:
 
 
 class TestDotenvOverride:
-    def test_env_loaded_with_override_true(self):
-        """config.py loads .env with override=True so the project .env wins
-        over pre-set OS/shell env vars (a stale shell var can't shadow .env)."""
+    def test_env_loaded_with_override_true(self, tmp_path):
+        """config.py loads each discovered .env with override=True so the most
+        specific file wins over pre-set OS/shell env vars.
+
+        A home-config .env is fabricated so at least one candidate exists even
+        when the suite runs against an installed wheel (no checkout .env).
+        """
         import importlib
 
         import agent.config as config_mod
+
+        home = tmp_path / "home"
+        (home / ".comfy-cozy").mkdir(parents=True)
+        (home / ".comfy-cozy" / ".env").write_text("", encoding="utf-8")
 
         seen: dict = {}
 
@@ -72,7 +80,8 @@ class TestDotenvOverride:
             seen.update(kwargs)
             return False
 
-        with patch("dotenv.load_dotenv", _spy):
+        with patch("dotenv.load_dotenv", _spy), \
+             patch("pathlib.Path.home", return_value=home):
             importlib.reload(config_mod)
         importlib.reload(config_mod)  # restore real config for subsequent tests
         assert seen.get("override") is True

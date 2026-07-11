@@ -125,11 +125,7 @@ def _get_metrics_summary() -> dict:
         error_rate = round(total_err / total_calls, 4) if total_calls > 0 else 0.0
 
         # Aggregate all observations across label keys for percentile calc
-        hist_data = tool_call_duration_seconds.get()
         all_obs: list[float] = []
-        for hinfo in hist_data.values():
-            # Reconstruct from count/sum is lossy; read raw observations instead
-            pass
         # Access raw observations thread-safely
         with tool_call_duration_seconds._lock:
             for obs_list in tool_call_duration_seconds._observations.values():

@@ -19,22 +19,120 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Assert tag matches package version (PyPI versions are immutable)
+        run: |
+          python - <<'PY'
+          import os, re, sys
+          src = open("agent/__init__.py", encoding="utf-8").read()
+          version = re.search(r'__version__\s*=\s*["\']([^"\']+)["\']', src).group(1)
+          tag = os.environ["GITHUB_REF_NAME"]
+          if "v" + version != tag:
+              sys.exit(f"tag {tag} does not match agent.__version__ {version} (expected v{version}); "
+                       "refusing to release a mismatched version")
+          print(f"tag {tag} matches __version__ {version}")
+          PY
+
       - name: Install dependencies
         run: |
-          pip install -e ".[dev]"
+          pip install -e ".[dev,stage,exr]"
           pip install build
+
+      - name: Verify the stage substrate imports
+        run: python -c "from pxr import Usd; print('usd-core OK:', Usd.GetVersion())"
 
       - name: Lint
         run: ruff check agent/ tests/
 
       - name: Test
-        run: python -m pytest tests/ -v --ignore=tests/test_provisioner.py
+        run: python -m pytest tests/ -v -m "not integration"
 
       - name: Build
         run: python -m build
+
+      - name: Wheel gate — install into a clean venv
+        run: |
+          python -m venv gatevenv
+          WHEEL=$(ls dist/*.whl)
+          gatevenv/bin/pip install "${WHEEL}[dev]"
+
+      - name: Wheel gate — import sanity (agent resolves from site-packages, not the checkout)
+        run: |
+          mkdir -p "$RUNNER_TEMP/gate"
+          cd "$RUNNER_TEMP/gate"
+          "$GITHUB_WORKSPACE/gatevenv/bin/python" -c "import agent, pathlib, sys; p = pathlib.Path(agent.__file__).resolve(); sys.exit(0 if 'site-packages' in p.parts else 'agent imported from the checkout, not the wheel: ' + str(p))"
+
+      - name: Wheel gate — suite against the installed package (non-repo cwd)
+        run: |
+          mkdir -p "$RUNNER_TEMP/gate"
+          cd "$RUNNER_TEMP/gate"
+          # --ignore: kept in parity with the release workflow's long-standing exclusion;
+          # not a wheel-specific carve-out.
+          "$GITHUB_WORKSPACE/gatevenv/bin/python" -m pytest "$GITHUB_WORKSPACE/tests" \
+            -m "not integration" -q --import-mode=importlib \
+            --ignore="$GITHUB_WORKSPACE/tests/test_provisioner.py"
+
+      - name: Wheel gate — pollution check
+        run: |
+          cd "$RUNNER_TEMP/gate"
+          "$GITHUB_WORKSPACE/gatevenv/bin/python" -c "import agent, pathlib, sys; sp = pathlib.Path(agent.__file__).resolve().parent.parent; bad = [n for n in ('sessions', 'logs', 'workflows') if (sp / n).exists()]; sys.exit('site-packages polluted: ' + ', '.join(bad) if bad else 0)"
+
+      - name: Wheel gate — console-script smokes
+        run: |
+          gatevenv/bin/comfy-cozy --help > /dev/null
+          gatevenv/bin/cozy --help > /dev/null
+          gatevenv/bin/agent --help > /dev/null
+          gatevenv/bin/comfy-cozy inspect --help > /dev/null
+
+      - name: Wheel gate — data families present in the wheel
+        run: |
+          cd "$RUNNER_TEMP/gate"
+          "$GITHUB_WORKSPACE/gatevenv/bin/python" - <<'PY'
+          from importlib.resources import files
+          k = files("agent") / "knowledge"
+          assert (k / "triggers.yaml").is_file(), "agent/knowledge/triggers.yaml missing"
+          assert any(p.name.endswith(".md") for p in k.iterdir()), "agent/knowledge has no .md"
+          profiles = files("agent") / "profiles"
+          assert any(p.name.endswith(".yaml") for p in profiles.iterdir()), "agent/profiles has no .yaml"
+          templates = files("agent") / "templates"
+          assert any(p.name.endswith(".json") for p in templates.iterdir()), "agent/templates has no .json"
+          assert (files("agent") / "schemas").is_dir(), "agent/schemas missing"
+          ctempl = files("cognitive") / "templates"
+          assert any(p.name.endswith(".json") for p in ctempl.iterdir()), "cognitive/templates has no .json"
+          print("data families ok")
+          PY
+
+      - name: Wheel gate — version single-source
+        run: |
+          cd "$RUNNER_TEMP/gate"
+          "$GITHUB_WORKSPACE/gatevenv/bin/python" -c "import agent, importlib.metadata as m; assert m.version('comfy-cozy') == agent.__version__, (m.version('comfy-cozy'), agent.__version__)"
+
+      - name: Upload gated dist artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/*
+          if-no-files-found: error
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: dist/*
           generate_release_notes: true
+
+  publish-pypi:
+    needs: release
+    if: ${{ vars.PYPI_PUBLISH == 'enabled' }}
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+
+    steps:
+      - name: Download gated dist artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+
+      - name: Publish to PyPI (OIDC trusted publishing)
+        uses: pypa/gh-action-pypi-publish@release/v1

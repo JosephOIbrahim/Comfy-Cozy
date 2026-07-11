@@ -6,11 +6,43 @@ import sys
 from pathlib import Path
 from dotenv import load_dotenv
 
-# Load .env from project root regardless of working directory (supports MCP server launch).
-# override=True makes the project .env authoritative — it wins over any pre-set OS/shell env
-# var, so a stale shell var (e.g. a leftover COMFYUI_DATABASE) can't silently shadow .env.
-_PROJECT_ROOT = Path(__file__).parent.parent
-load_dotenv(_PROJECT_ROOT / ".env", override=True)
+# Editable-aware layout: in a git checkout _PACKAGE_PARENT is the repo root; under a
+# wheel install it is site-packages. THIS project's pyproject.toml only exists in a
+# checkout, so its presence (verified by name, guarding against a stray pyproject.toml
+# at the site-packages root) distinguishes the two.
+_PACKAGE_PARENT = Path(__file__).parent.parent
+
+
+def _is_editable_install() -> bool:
+    marker = _PACKAGE_PARENT / "pyproject.toml"
+    try:
+        return marker.is_file() and 'name = "comfy-cozy"' in marker.read_text(encoding="utf-8")
+    except OSError:
+        return False
+
+
+# Public constant: True in a dev checkout (editable install / repo run), False under a
+# wheel. Writable state must never anchor to the package when this is False.
+IS_EDITABLE_INSTALL = _is_editable_install()
+
+# Load .env regardless of working directory (supports MCP server launch).
+# override=True makes each .env authoritative over pre-set OS/shell env vars, so a
+# stale shell var (e.g. a leftover COMFYUI_DATABASE) can't silently shadow .env.
+# Load order: user home dot-dir, then checkout root (silently absent under wheels) —
+# each with override=True so the most specific wins LAST. The checkout .env stays
+# authoritative for editable installs; wheel installs use ~/.comfy-cozy/.env. A CWD
+# .env is deliberately NOT read: a hostile .env in an untrusted directory could
+# override COMFYUI_DATABASE and hijack the validate_path sandbox roots.
+_env_loaded: set[Path] = set()
+for _env_candidate in (
+    Path.home() / ".comfy-cozy" / ".env",
+    _PACKAGE_PARENT / ".env",
+):
+    if _env_candidate.is_file():
+        _env_resolved = _env_candidate.resolve()
+        if _env_resolved not in _env_loaded:
+            _env_loaded.add(_env_resolved)
+            load_dotenv(_env_candidate, override=True)
 
 # LLM Provider selection — anthropic (default), openai, gemini, ollama, nvidia, custom
 LLM_PROVIDER = os.getenv("LLM_PROVIDER", "anthropic")
@@ -292,8 +324,20 @@ STAGE_AUTOSAVE_SECONDS = int(os.getenv("STAGE_AUTOSAVE_SECONDS", "300"))
 STAGE_AUTOLOAD_EXPERIENCE = os.getenv("STAGE_AUTOLOAD_EXPERIENCE", "false").lower() == "true"
 
 # Project paths
-PROJECT_DIR = Path(__file__).parent.parent
+# PROJECT_DIR kept for back-compat; under a wheel it is site-packages — never anchor
+# writable state to it.
+PROJECT_DIR = _PACKAGE_PARENT
 KNOWLEDGE_DIR = Path(__file__).parent / "knowledge"
-SESSIONS_DIR = PROJECT_DIR / "sessions"
-LOCAL_WORKFLOWS_DIR = PROJECT_DIR / "workflows"
-LOG_DIR = PROJECT_DIR / "logs"
+
+# Writable state root: COMFY_COZY_HOME env override > checkout root (dev behavior
+# unchanged) > ~/.comfy-cozy (wheel installs).
+_state_home = os.getenv("COMFY_COZY_HOME", "")
+if _state_home:
+    STATE_DIR = Path(_state_home)
+elif IS_EDITABLE_INSTALL:
+    STATE_DIR = _PACKAGE_PARENT
+else:
+    STATE_DIR = Path.home() / ".comfy-cozy"
+
+SESSIONS_DIR = STATE_DIR / "sessions"
+LOG_DIR = STATE_DIR / "logs"

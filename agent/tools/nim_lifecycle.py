@@ -16,7 +16,9 @@ NIM_GENERATE_NODES: set[str] = {"NIMFLUXNode"}
 
 
 import json
+import logging
 import os
+import shutil
 import socket
 import tempfile
 import threading
@@ -38,9 +40,29 @@ TIMEOUT_EVENT = "__timeout__"        # adapter sentinel, comfyui_adapter.py:243
 _STATE_PATH = Path(
     os.environ.get(
         "NIM_STATE_PATH",
-        str(Path.home() / ".comfy_cozy" / "nim_warm_state.jsonl"),
+        str(Path.home() / ".comfy-cozy" / "nim_warm_state.jsonl"),
     )
 )
+
+# One-shot legacy migration: the default moved from ~/.comfy_cozy to ~/.comfy-cozy.
+# Copy (never delete) the old file forward when the new default is absent and no
+# env override is in play.
+if "NIM_STATE_PATH" not in os.environ and not _STATE_PATH.exists():
+    _legacy_state = Path.home() / ".comfy_cozy" / "nim_warm_state.jsonl"
+    if _legacy_state.exists():
+        try:
+            _STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(_legacy_state, _STATE_PATH)
+            logging.getLogger(__name__).info(
+                "Migrated NIM warm state %s -> %s", _legacy_state, _STATE_PATH
+            )
+        except OSError as e:
+            logging.getLogger(__name__).warning(
+                "NIM warm-state migration %s -> %s failed: %s",
+                _legacy_state,
+                _STATE_PATH,
+                e,
+            )
 
 # Guards the read-prune-rewrite window in record_warm_state against in-process
 # lost updates. Cross-process races remain possible; atomic os.replace bounds

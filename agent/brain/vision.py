@@ -606,10 +606,23 @@ def _downscale_for_vision(raw: bytes, media_type: str) -> bytes:
         return raw
 
 
+def _flattened_pixels(img):
+    """Flattened pixel sequence across Pillow versions.
+
+    get_flattened_data() only exists on Pillow >= 12; the declared dependency
+    range starts at Pillow 10, where getdata() is the (non-deprecated) API.
+    Without this fallback, hash_compare_images and local-asset dedup silently
+    break on any install that resolves Pillow 10/11.
+    """
+    if hasattr(img, "get_flattened_data"):
+        return img.get_flattened_data()
+    return img.getdata()
+
+
 def _compute_average_hash(img, hash_size: int = 8) -> int:
     """Compute average hash (aHash) — resize to hash_size, compare to mean."""
     resized = img.convert("L").resize((hash_size, hash_size), Image.LANCZOS)
-    pixels = list(resized.get_flattened_data())
+    pixels = list(_flattened_pixels(resized))
     mean = sum(pixels) / len(pixels)
     bits = 0
     for i, p in enumerate(pixels):
@@ -634,8 +647,8 @@ def _pixel_diff(img_a, img_b) -> dict:
     a = img_a.resize(size).convert("RGB")
     b = img_b.resize(size).convert("RGB")
 
-    pixels_a = list(a.get_flattened_data())
-    pixels_b = list(b.get_flattened_data())
+    pixels_a = list(_flattened_pixels(a))
+    pixels_b = list(_flattened_pixels(b))
     total = len(pixels_a)
 
     if total == 0:

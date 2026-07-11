@@ -583,8 +583,9 @@ class CozyLoop:
         """
         import os
         try:
-            from ..config import PROJECT_DIR
-            path = PROJECT_DIR / "BLOCKER.md"
+            from ..config import STATE_DIR
+            STATE_DIR.mkdir(parents=True, exist_ok=True)
+            path = STATE_DIR / "BLOCKER.md"
             tmp_path = path.with_suffix(path.suffix + ".tmp")
             content = (
                 f"# Cozy Harness BLOCKER\n\n"

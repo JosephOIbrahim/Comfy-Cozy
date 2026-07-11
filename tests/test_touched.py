@@ -1,8 +1,17 @@
 """Tests for panel/server/touched.py — write-back v1 (L-1)."""
 
+import sys
+from pathlib import Path
+
 import pytest
 
-from panel.server.touched import (
+# Ensure the checkout-only panel package is importable when the suite runs
+# against an installed wheel (repo root is not on sys.path in importlib mode).
+project_root = str(Path(__file__).resolve().parent.parent)
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
+from panel.server.touched import (  # noqa: E402
     record_last_pushed,
     compute_touched,
     clear_session,

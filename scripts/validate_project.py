@@ -46,18 +46,25 @@ def warn(label: str, detail: str = ""):
 print("\n== Version Consistency ==")
 
 pyproject = (PROJECT_ROOT / "pyproject.toml").read_text(encoding="utf-8")
-pyproject_ver = re.search(r'version\s*=\s*"([^"]+)"', pyproject)
-pyproject_ver = pyproject_ver.group(1) if pyproject_ver else "NOT FOUND"
+dynamic_ok = re.search(r'dynamic\s*=\s*\[\s*"version"\s*\]', pyproject) is not None
+check(
+    'pyproject.toml declares dynamic = ["version"]',
+    dynamic_ok,
+    'add dynamic = ["version"] to [project] — version is single-sourced from agent/__init__.py',
+)
 
-# Import __version__ without loading full agent (deps might be missing)
+hatch_path = re.search(r'\[tool\.hatch\.version\]\s*path\s*=\s*"([^"]+)"', pyproject)
+hatch_path = hatch_path.group(1) if hatch_path else "NOT FOUND"
+
+# Read __version__ without loading full agent (deps might be missing)
 init_text = (PROJECT_ROOT / "agent" / "__init__.py").read_text(encoding="utf-8")
 init_ver = re.search(r'__version__\s*=\s*"([^"]+)"', init_text)
 init_ver = init_ver.group(1) if init_ver else "NOT FOUND"
 
 check(
-    f"pyproject.toml ({pyproject_ver}) == agent/__init__.py ({init_ver})",
-    pyproject_ver == init_ver,
-    f"Mismatch: pyproject={pyproject_ver}, __init__={init_ver}",
+    f"[tool.hatch.version] path ({hatch_path}) -> __version__ ({init_ver})",
+    hatch_path == "agent/__init__.py" and init_ver != "NOT FOUND",
+    f"path={hatch_path}, __version__={init_ver}",
 )
 
 # ---- 2. Tool counts ----
@@ -104,7 +111,9 @@ except ImportError as e:
 print("\n== Model Default ==")
 
 config_text = (PROJECT_ROOT / "agent" / "config.py").read_text(encoding="utf-8")
-config_model = re.search(r'AGENT_MODEL\s*=\s*os\.getenv\("AGENT_MODEL",\s*"([^"]+)"\)', config_text)
+config_model = re.search(
+    r'_DEFAULT_AGENT_MODELS\s*=\s*\{[^}]*"anthropic":\s*"([^"]+)"', config_text, re.S
+)
 config_model = config_model.group(1) if config_model else "NOT FOUND"
 
 env_example = (PROJECT_ROOT / ".env.example").read_text(encoding="utf-8")
@@ -112,7 +121,7 @@ env_model = re.search(r"#\s*AGENT_MODEL=([^\s]+)", env_example)
 env_model = env_model.group(1) if env_model else "NOT FOUND"
 
 check(
-    f"config.py default ({config_model}) == .env.example ({env_model})",
+    f"config.py anthropic default ({config_model}) == .env.example ({env_model})",
     config_model == env_model,
     f"config={config_model}, env.example={env_model}",
 )
@@ -127,7 +136,7 @@ try:
     )
     lint_ok = result.returncode == 0
     lint_count = len(result.stdout.strip().split("\n")) if result.stdout.strip() else 0
-    check(f"ruff check (0 errors)", lint_ok, f"{lint_count} lint issues found")
+    check("ruff check (0 errors)", lint_ok, f"{lint_count} lint issues found")
 except FileNotFoundError:
     warn("ruff not installed -- skipping lint check")
 
@@ -177,8 +186,8 @@ if warnings:
     for w in warnings:
         print(f"  - {w}")
 if not errors and not warnings:
-    print(f"\033[92mAll checks passed. Ready to share.\033[0m")
+    print("\033[92mAll checks passed. Ready to share.\033[0m")
 elif not errors:
-    print(f"\033[93mNo errors, but review warnings above.\033[0m")
+    print("\033[93mNo errors, but review warnings above.\033[0m")
 
 sys.exit(1 if errors else 0)
