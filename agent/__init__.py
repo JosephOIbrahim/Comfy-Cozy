@@ -4,9 +4,14 @@ __version__ = "5.6.0"
 
 
 def tool_count() -> tuple[int, int, int]:
-    """Return (intelligence_tools, brain_tools, total) from live registry."""
-    from .tools import _LAYER_TOOLS
-    from .brain import ALL_BRAIN_TOOLS
-    intel = len(_LAYER_TOOLS)
-    brain = len(ALL_BRAIN_TOOLS)
-    return intel, brain, intel + brain
+    """Return (intelligence_tools, brain_tools, total) from live registry.
+
+    Routes through the dispatcher's lazy registry: len(ALL_TOOLS) triggers
+    _ensure_brain(), which honors the BRAIN_ENABLED kill switch, so this
+    never imports agent.brain eagerly and reports 0 brain tools when the
+    brain layer is disabled or unavailable.
+    """
+    from .tools import ALL_TOOLS, _BRAIN_TOOL_NAMES
+    total = len(ALL_TOOLS)
+    brain = len(_BRAIN_TOOL_NAMES)
+    return total - brain, brain, total
