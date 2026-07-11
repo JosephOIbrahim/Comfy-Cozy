@@ -7,6 +7,7 @@ Thread-safe counters, histograms, and gauges with a global registry.
 import bisect
 import math
 import threading
+from collections import deque
 from typing import Sequence
 
 # ---------------------------------------------------------------------------
@@ -52,8 +53,18 @@ class Counter:
         return tuple(label_values.get(lb, "") for lb in self.labels)
 
 
+# Keep-last-N reservoir per label combination — bounds histogram RAM so
+# long-running processes don't grow without limit; percentile/summary
+# reads become approximations over the most recent window.
+_MAX_OBSERVATIONS_PER_LABEL = 1000
+
+
 class Histogram:
-    """Thread-safe histogram with configurable buckets."""
+    """Thread-safe histogram with configurable buckets.
+
+    Raw observations are bounded to the last _MAX_OBSERVATIONS_PER_LABEL
+    per label combination (reservoir approximation for percentiles).
+    """
 
     def __init__(
         self,
@@ -64,7 +75,7 @@ class Histogram:
         self.name = name
         self.labels = tuple(labels)
         self.buckets = tuple(sorted(buckets))
-        self._observations: dict[tuple[str, ...], list[float]] = {}
+        self._observations: dict[tuple[str, ...], deque[float]] = {}
         self._lock = threading.Lock()
 
     def observe(self, value: float, **label_values: str) -> None:
@@ -72,7 +83,7 @@ class Histogram:
         key = self._key(label_values)
         with self._lock:
             if key not in self._observations:
-                self._observations[key] = []
+                self._observations[key] = deque(maxlen=_MAX_OBSERVATIONS_PER_LABEL)
             self._observations[key].append(value)
 
     def percentile(self, p: float, **label_values: str) -> float:

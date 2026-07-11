@@ -15,7 +15,6 @@ from ._conn_ctx import current_conn_session
 from .config import COMFYUI_URL, COMFYUI_DATABASE, LOG_DIR
 from .logging_config import setup_logging
 from .streaming import NullHandler
-from .tools import comfy_inspect, comfy_discover, session_tools
 
 log = logging.getLogger(__name__)
 
@@ -101,6 +100,7 @@ def run(
       agent run -v                    # verbose: API timing + tool tracing
     """
     from . import config
+    from .tools import session_tools
 
     # Configure logging
     setup_logging(
@@ -276,6 +276,8 @@ def inspect():
     Examples:
       agent inspect                   # full summary
     """
+    from .tools import comfy_inspect
+
     console.print("[bold]ComfyUI Installation Summary[/bold]\n")
 
     # Models summary
@@ -424,6 +426,8 @@ def sessions():
     Examples:
       agent sessions                  # list all saved sessions
     """
+    from .tools import session_tools
+
     result = json.loads(session_tools.handle("list_sessions", {}))
     if result["count"] == 0:
         console.print("[dim]No saved sessions. Use --session NAME with 'run' to create one.[/dim]")
@@ -475,6 +479,8 @@ def search(
       agent search "lora" --models --type lora # only LoRA models
       agent search "flux" --hf                 # HuggingFace search
     """
+    from .tools import comfy_discover
+
     # Build discover params
     params: dict = {"query": query}
 
@@ -565,7 +571,7 @@ def orchestrate(
         console.print(f"[red]File not found: {workflow}[/red]")
         raise typer.Exit(1)
 
-    from .tools import comfy_execute, workflow_parse
+    from .tools import comfy_execute, session_tools, workflow_parse
 
     # Step 1: Load
     console.print("[bold]Step 1/4:[/bold] Loading workflow...")
@@ -800,6 +806,8 @@ def autoresearch(
         raise typer.Exit(1)
 
     console.print(f"[bold]Researching:[/bold] {query} (category={category})\n")
+
+    from .tools import comfy_discover
 
     result = json.loads(
         comfy_discover.handle("discover", {"query": query, "category": category})

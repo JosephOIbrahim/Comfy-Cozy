@@ -370,7 +370,7 @@ class TestCLISessionContextvar:
         runner = CliRunner()
         # Mock everything that would do real work — we only care about the
         # contextvar being set when run_interactive fires.
-        with patch("agent.cli.session_tools") as mock_session_tools, \
+        with patch("agent.tools.session_tools") as mock_session_tools, \
              patch("agent.main.run_interactive", side_effect=_capture_session), \
              patch("agent.main.create_client", return_value=MagicMock()), \
              patch("agent.config.ANTHROPIC_API_KEY", "sk-test"), \
@@ -475,7 +475,7 @@ class TestCLISessionContextvar:
             return '{}'
 
         runner = CliRunner()
-        with patch("agent.cli.session_tools") as mock_session_tools, \
+        with patch("agent.tools.session_tools") as mock_session_tools, \
              patch("agent.main.run_interactive", return_value=None), \
              patch("agent.main.create_client", return_value=MagicMock()), \
              patch("agent.config.ANTHROPIC_API_KEY", "sk-test"), \
@@ -526,7 +526,7 @@ class TestCLISessionContextvar:
         from agent.cli import app
 
         runner = CliRunner()
-        with patch("agent.cli.session_tools") as mock_session_tools, \
+        with patch("agent.tools.session_tools") as mock_session_tools, \
              patch("agent.main.run_interactive", return_value=None), \
              patch("agent.main.create_client", return_value=MagicMock()), \
              patch("agent.config.ANTHROPIC_API_KEY", "sk-test"), \
