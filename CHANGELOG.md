@@ -5,16 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [5.7.0] - 2026-07-11 — Local Twin
 
-`pip install comfy-cozy` now means what it says: the distribution takes the
-project's real name, the version has one source of truth, and an installed
-wheel behaves like a good citizen — state lives in `~/.comfy-cozy`, not in
-site-packages.
+The distribution becomes a pip-installable `comfy-cozy`: the project's real
+name, one source of truth for the version, and a packaging gate that proves
+every release wheel actually installs and passes the suite on Ubuntu and
+Windows. An installed wheel behaves like a good citizen — state lives in
+`~/.comfy-cozy`, not in site-packages. And the MCP handshake no longer waits
+on an unreachable ComfyUI — the server answers the host right away and
+reports ComfyUI's status instead of stalling the connection.
 
 ### Added
 - **`comfy-cozy` + `cozy` console scripts** — both launch the same Typer app;
   `agent` is kept as a deprecated alias (see Changed).
+- **Dependency upper bounds** — every runtime dependency now carries a
+  next-major ceiling (e.g. `anthropic<1`, `rich<15`) so a surprise major
+  release can't break a fresh install; lower bounds unchanged (`mcp` was
+  already bounded).
+- **Coverage floor in CI** — the test step now measures `--cov=agent` and
+  `[tool.coverage.report] fail_under = 70` fails the build if coverage drops
+  below the floor.
 - **Packaging gate** — CI builds the wheel, installs it into a clean venv, and
   runs the test suite against the *installed* package (data families
   knowledge/, profiles/, schemas/, templates/ asserted present; suite runs
@@ -41,6 +51,8 @@ site-packages.
 - `LOCAL_WORKFLOWS_DIR` config constant (dead — zero consumers).
 
 ### Fixed
+- CLI session header no longer announces a hardcoded `v0.4` — the panel title
+  reads the real `agent.__version__`.
 - Installed packages no longer write sessions/logs/`BLOCKER.md` into
   site-packages.
 - `validate_path` no longer whitelists site-packages when running from a wheel.

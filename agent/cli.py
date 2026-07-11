@@ -11,6 +11,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
+from . import __version__
 from ._conn_ctx import current_conn_session
 from .config import COMFYUI_URL, COMFYUI_DATABASE, LOG_DIR
 from .logging_config import setup_logging
@@ -156,7 +157,7 @@ def run(
         f"Model: {config.LLM_PROVIDER} / {config.AGENT_MODEL}\n"
         f"ComfyUI: {COMFYUI_URL}\n"
         f"Database: {COMFYUI_DATABASE}",
-        title="ComfyUI Agent v0.4",
+        title=f"ComfyUI Agent v{__version__}",
     ))
 
     # Load session context for system prompt injection
