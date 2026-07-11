@@ -18,7 +18,7 @@ pip install -e ".[dev]"                    # Install (dev checkout; dist name: c
 comfy-cozy run                             # CLI agent (standalone fallback; alias: cozy)
 comfy-cozy mcp                             # MCP server (primary interface)
 agent run / agent mcp                      # Deprecated alias (prints epilog notice)
-python -m pytest tests/ -v                 # All tests (~4540, all mocked, ~3 min)
+python -m pytest tests/ -v                 # All tests (~4750, all mocked, ~3 min)
 python -m pytest tests/test_workflow_patch.py -v          # Single file
 python -m pytest tests/test_workflow_patch.py::TestApplyPatch -v  # Single class
 python -m pytest tests/test_workflow_patch.py::TestApplyPatch::test_load_and_patch -v  # Single test
@@ -162,7 +162,7 @@ agent/
   mcp_server.py    # MCP server exposing all tools
   config.py        # .env loading (ANTHROPIC_API_KEY, COMFYUI_DATABASE, etc.)
   system_prompt.py # Session-aware prompt builder + knowledge detection
-  tools/           # Intelligence layer (~53 tools, TOOLS+handle() pattern)
+  tools/           # Intelligence layer (84 tools, TOOLS+handle() pattern)
     __init__.py    # Central dispatch: _HANDLERS map, lazy brain loading, gate integration
     workflow_patch.py  # Session-scoped workflow state, undo history, semantic build (add_node, connect_nodes)
     workflow_parse.py  # Load/analyze workflows (API/UI format detection)
@@ -172,7 +172,7 @@ agent/
     _util.py       # to_json() (deterministic), validate_path() (sandbox)
   brain/           # Brain layer (~27 tools, BrainAgent SDK pattern)
     _sdk.py        # BrainAgent base class, BrainConfig DI container, auto-registration
-  stage/           # Stage layer (~23 tools, USD/LIVRPS composition)
+  stage/           # Stage layer (22 tools, USD/LIVRPS composition)
     stage_tools.py     # stage_read, stage_write, stage_add_delta, stage_list_deltas
     provision_tools.py # Provision operations
     foresight_tools.py # Predictive analysis
@@ -189,7 +189,7 @@ cognitive/         # Standalone library — does NOT import agent.* (clean depen
   prediction/      # CWM, arbiter, counterfactuals
   tools/           # Standalone async functions (NOT in MCP registry, consumed by pipeline only)
   transport/       # Events, interrupts
-tests/             # ~4540 tests, all mocked, pytest + pytest-asyncio
+tests/             # ~4750 tests, all mocked, pytest + pytest-asyncio
   conftest.py      # autouse fixtures: _reset_conn_session, reset_workflow_state
   fixtures/        # Shared test data (sample workflows, fake images)
 ```
@@ -202,9 +202,9 @@ tests/             # ~4540 tests, all mocked, pytest + pytest-asyncio
 
 ```
 agent/tools/__init__.py:handle()  ←  Central dispatcher
-  ├── Intelligence layer (agent/tools/*.py)  — TOOLS+handle() pattern, ~53 tools
+  ├── Intelligence layer (agent/tools/*.py)  — TOOLS+handle() pattern, 84 tools
   ├── Brain layer (agent/brain/*.py)         — BrainAgent subclasses, ~27 tools, lazy-loaded
-  └── Stage layer (agent/stage/*.py)         — TOOLS+handle() pattern, ~23 tools
+  └── Stage layer (agent/stage/*.py)         — TOOLS+handle() pattern, 22 tools
 ```
 
 All tool modules export `TOOLS: list[dict]` (Anthropic schema) + `handle(name, tool_input) -> str`. Brain modules inherit from `BrainAgent` (in `brain/_sdk.py`) which auto-registers subclasses via `__init_subclass__`. Modules that fail to import are logged and skipped (graceful degradation).

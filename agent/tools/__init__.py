@@ -1,10 +1,11 @@
-"""Tool registry for the ComfyUI Comfy Cozy Agent.
+"""Tool registry for Comfy Cozy.
 
 Each tool module exports:
   TOOLS: list[dict]    -- Anthropic tool schemas
   handle(name, input)  -- Execute a tool call, return result string
 
-Intelligence layers (53 tools) + Brain layer (27 tools) + Stage layer (22 tools) = 103 tools total.
+Intelligence layer (84 tools) + Stage layer (22 tools, lazy) + Brain layer (27 tools)
+= 133 dispatched tools.
 Brain tools are lazily imported to avoid circular dependencies
 (brain modules import _util from this package).
 """
@@ -170,42 +171,6 @@ def _ensure_stage():
             _LAYER_TOOLS.extend(_mod.TOOLS)
         _stage_loaded = True
         log.info("tool dispatch: stage layer loaded (+%d tools)", len(_STAGE_TOOL_NAMES))
-
-
-# Capability registry (parallel index for smart routing)
-_CAPABILITY_REGISTRY = None
-_cap_lock = threading.Lock()
-
-
-def _ensure_capabilities():
-    """Lazily build capability registry (thread-safe)."""
-    global _CAPABILITY_REGISTRY
-    if _CAPABILITY_REGISTRY is not None:
-        return _CAPABILITY_REGISTRY
-    with _cap_lock:
-        if _CAPABILITY_REGISTRY is not None:
-            return _CAPABILITY_REGISTRY
-        try:
-            from .capability_registry import ToolCapabilityRegistry
-            from .capability_defaults import build_default_capabilities
-            reg = ToolCapabilityRegistry()
-            reg.register_batch(build_default_capabilities())
-            _CAPABILITY_REGISTRY = reg
-        except Exception:
-            log.debug("Capability registry not available", exc_info=True)
-    return _CAPABILITY_REGISTRY
-
-
-def select_tools(requirements: dict) -> list[str]:
-    """Select tools matching capability requirements. Returns tool names."""
-    reg = _ensure_capabilities()
-    if reg is None:
-        return []
-    try:
-        caps = reg.select(requirements)
-        return [c.tool_name for c in caps]
-    except Exception:
-        return []
 
 
 def _record_metric(name: str, status: str, elapsed: float) -> None:

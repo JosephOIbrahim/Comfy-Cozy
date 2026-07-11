@@ -506,10 +506,15 @@ class VisionAgent(BrainAgent):
         if not path_b.exists():
             return self.to_json({"error": f"Image not found: {image_b}"})
 
+        img_a = img_b = None
         try:
             img_a = _open_image_for_hash(path_a)
             img_b = _open_image_for_hash(path_b)
         except Exception as e:
+            if img_a is not None:
+                img_a.close()
+            if img_b is not None:
+                img_b.close()
             return self.to_json({"error": f"Failed to open images: {e}"})
 
         try:

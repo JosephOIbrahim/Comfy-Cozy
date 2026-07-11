@@ -12,6 +12,7 @@ Sources (in priority order):
 import copy
 import json
 import logging
+from collections import deque
 from importlib.resources import files
 from pathlib import Path
 
@@ -349,12 +350,12 @@ def _handle_get_template(tool_input: dict) -> str:
             fmt = "ui_only"
 
     # Load into workflow_patch state so the agent can edit it
-    from .workflow_patch import _get_state
+    from .workflow_patch import _MAX_HISTORY, _get_state
     _s = _get_state()
     _s["loaded_path"] = str(path)
     _s["base_workflow"] = copy.deepcopy(workflow_data)
     _s["current_workflow"] = copy.deepcopy(workflow_data)
-    _s["history"] = []
+    _s["history"] = deque(maxlen=_MAX_HISTORY)
     _s["format"] = fmt.split()[0]  # "api" or "ui_only"
 
     info = _TEMPLATE_INFO.get(template_name, {})

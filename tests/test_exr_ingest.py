@@ -134,7 +134,7 @@ class TestExrToDisplayPng:
         from agent.brain import exr_ingest
 
         monkeypatch.setattr(exr_ingest, "_HAS_EXR", False)
-        with pytest.raises(ValueError, match=r"comfyui-agent\[exr\]"):
+        with pytest.raises(ValueError, match=r"comfy-cozy\[exr\]"):
             exr_to_display_png(str(tmp_path / "any.exr"))
 
 

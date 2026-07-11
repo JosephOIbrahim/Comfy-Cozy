@@ -81,7 +81,7 @@ def exr_to_display_png(path: str, exposure: float = 0.0) -> bytes:
     """
     if not _HAS_EXR:
         raise ValueError(
-            "EXR support needs the optional dependency — pip install 'comfyui-agent[exr]'"
+            "EXR support needs the optional dependency — pip install 'comfy-cozy[exr]'"
         )
     from PIL import Image
 

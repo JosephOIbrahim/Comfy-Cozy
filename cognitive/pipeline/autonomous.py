@@ -550,6 +550,17 @@ class AutonomousPipeline:
 
             break  # quality OK or retries exhausted
 
+        # Retries rewrote steps/cfg in workflow_data (_adjust_params_for_retry);
+        # overlay the final values so the recorded chunk matches what actually ran.
+        if result.retry_count > 0:
+            for node_data in result.workflow_data.values():
+                inputs = node_data.get("inputs", {}) if isinstance(node_data, dict) else {}
+                if not isinstance(inputs, dict):
+                    continue
+                for k in ("steps", "cfg"):
+                    if k in params and k in inputs and not isinstance(inputs[k], list):
+                        params = {**params, k: inputs[k]}
+
         # Stage 7: LEARN
         result.stage = PipelineStage.LEARN
         # §0b: capture the resolved-LIVRPS-stack produced on the autonomous path
