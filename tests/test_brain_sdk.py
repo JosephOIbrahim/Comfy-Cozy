@@ -20,7 +20,8 @@ class TestBrainConfig:
     def test_default_values(self):
         cfg = BrainConfig()
         assert cfg.comfyui_url == "http://127.0.0.1:8188"
-        assert cfg.sessions_dir == Path("./sessions")
+        from agent.config import SESSIONS_DIR
+        assert cfg.sessions_dir == SESSIONS_DIR
         assert cfg.tool_dispatcher is None
         assert cfg.get_workflow_state is None
         assert cfg.patch_handle is None

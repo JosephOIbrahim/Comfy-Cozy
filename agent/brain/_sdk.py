@@ -53,6 +53,16 @@ def _null_limiter_factory() -> _NullLimiter:
     return _NULL_LIMITER
 
 
+def _config_path(attr: str, fallback: str) -> Path:
+    """Read a path from agent.config when available; relative fallback for
+    true standalone construction (no agent.* import path)."""
+    try:
+        from .. import config
+        return getattr(config, attr)
+    except ImportError:
+        return Path(fallback)
+
+
 def _default_agent_model() -> str:
     """Read AGENT_MODEL from agent.config when available; fall back to the
     Anthropic-tier literal for true standalone construction (no agent.*
@@ -81,10 +91,12 @@ class BrainConfig:
 
     to_json: Callable[..., str] = field(default_factory=lambda: _default_to_json)
     validate_path: Callable[..., str | None] = field(default_factory=lambda: _default_validate_path)
-    sessions_dir: Path = field(default_factory=lambda: Path("./sessions"))
+    sessions_dir: Path = field(
+        default_factory=lambda: _config_path("SESSIONS_DIR", "./sessions"))
     comfyui_url: str = "http://127.0.0.1:8188"
-    custom_nodes_dir: Path = field(default_factory=lambda: Path("./Custom_Nodes"))
-    models_dir: Path = field(default_factory=lambda: Path("./models"))
+    custom_nodes_dir: Path = field(
+        default_factory=lambda: _config_path("CUSTOM_NODES_DIR", "./Custom_Nodes"))
+    models_dir: Path = field(default_factory=lambda: _config_path("MODELS_DIR", "./models"))
     agent_model: str = field(default_factory=_default_agent_model)
     # Optional separate model for image analysis. If None, vision tools fall back
     # to agent_model. Wired from VISION_MODEL env (see config.py).
