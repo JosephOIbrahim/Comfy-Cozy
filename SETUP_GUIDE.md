@@ -101,8 +101,7 @@ pip install -e .
 
 This tells Python where the agent code lives so you can run it from anywhere.
 
-> You can also `pip install comfy-cozy` directly (PyPI publish is pending — until
-> `comfy-cozy` goes live on PyPI, install from the source checkout as above).
+> You can also `pip install comfy-cozy` directly from PyPI.
 
 **If it worked:** You'll see `Successfully installed comfy-cozy-5.7.0` (or similar) near the end.
 

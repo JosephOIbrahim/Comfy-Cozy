@@ -21,7 +21,6 @@ You need:
 pip install comfy-cozy
 ```
 
-> (PyPI publish is pending — until `comfy-cozy` goes live on PyPI, install from source below.)
 
 **From source:**
 

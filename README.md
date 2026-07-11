@@ -25,7 +25,6 @@ pip install comfy-cozy        # the package
 uvx comfy-cozy mcp            # or zero-install, straight to the MCP server
 ```
 
-*(PyPI listing lands with the first published release — until then install from a [GitHub Release](https://github.com/JosephOIbrahim/Comfy-Cozy/releases) wheel or a checkout: `pip install -e .`)*
 
 ### 60 seconds to Claude Code
 
@@ -202,7 +201,7 @@ flowchart LR
 pip install comfy-cozy
 ```
 
-*(PyPI listing lands with the first published release — until then install from a [GitHub Release](https://github.com/JosephOIbrahim/Comfy-Cozy/releases) wheel, or from a checkout — the dev path:)*
+*(Prefer working from source? The dev path:)*
 
 ```bash
 git clone https://github.com/JosephOIbrahim/Comfy-Cozy.git
