@@ -1,4 +1,4 @@
-# ComfyUI Agent -- Setup Guide
+# Comfy-Cozy -- Setup Guide
 
 **Your AI co-pilot for ComfyUI.** You type what you want in plain English. It talks to ComfyUI for you -- finding models, tweaking settings, running generations, and explaining what's happening along the way.
 
@@ -14,7 +14,7 @@ You say: *"Make it dreamier"* -- it lowers the CFG, adjusts the sampler, and exp
 You say: *"Find me a good anime LoRA"* -- it searches CivitAI and tells you what's trending.
 You say: *"What's in this workflow?"* -- it reads the JSON and explains it like a colleague would.
 
-77 tools. All through natural language. Nothing to memorize.
+133 tools. All through natural language. Nothing to memorize.
 
 ---
 
@@ -62,7 +62,7 @@ Here's how to get one:
 2. Sign up for an account (or log in)
 3. Click **API Keys** in the left sidebar
 4. Click **Create Key**
-5. Give it a name like "comfyui-agent"
+5. Give it a name like "comfy-cozy"
 6. Copy the key -- it starts with `sk-ant-`
 
 **Save this key somewhere.** You'll paste it during setup. You won't be able to see it again on Anthropic's site.
@@ -74,18 +74,18 @@ Here's how to get one:
 Open a terminal. Navigate to where you want the agent to live (your home folder is fine).
 
 ```bash
-git clone https://github.com/JosephOIbrahim/comfyui-agent.git
+git clone https://github.com/JosephOIbrahim/Comfy-Cozy.git
 ```
 
 Then move into that folder:
 
 ```bash
-cd comfyui-agent
+cd Comfy-Cozy
 ```
 
 > `cd` means "change directory" -- it tells the terminal to look inside that folder from now on.
 
-**If you don't have git:** Click the green **Code** button on the [GitHub page](https://github.com/JosephOIbrahim/comfyui-agent), choose **Download ZIP**, unzip it, and open a terminal inside that folder.
+**If you don't have git:** Click the green **Code** button on the [GitHub page](https://github.com/JosephOIbrahim/Comfy-Cozy), choose **Download ZIP**, unzip it, and open a terminal inside that folder.
 
 You should see files like `README.md`, `CLAUDE.md`, and an `agent/` folder. If you do, you're in the right place.
 
@@ -93,7 +93,7 @@ You should see files like `README.md`, `CLAUDE.md`, and an `agent/` folder. If y
 
 ## 3. Install It
 
-From inside the `comfyui-agent` folder, run:
+From inside the `Comfy-Cozy` folder, run:
 
 ```bash
 pip install -e .
@@ -101,7 +101,10 @@ pip install -e .
 
 This tells Python where the agent code lives so you can run it from anywhere.
 
-**If it worked:** You'll see `Successfully installed comfyui-agent-0.4.0` (or similar) near the end.
+> You can also `pip install comfy-cozy` directly (PyPI publish is pending — until
+> `comfy-cozy` goes live on PyPI, install from the source checkout as above).
+
+**If it worked:** You'll see `Successfully installed comfy-cozy-5.7.0` (or similar) near the end.
 
 **If you see red text about permissions:** Try this instead:
 
@@ -171,7 +174,7 @@ Pick which AI model powers the CLI chat mode.
 
 Start with Sonnet. You can change it later in the `.env` file.
 
-> This only affects `agent run` (CLI mode). If you use Claude Code, it picks its own model.
+> This only affects `comfy-cozy run` (CLI mode). If you use Claude Code, it picks its own model.
 
 ---
 
@@ -202,12 +205,14 @@ It does three things:
 
 1. Start ComfyUI however you normally do
 2. Wait until it's loaded (you can see the web UI at `http://127.0.0.1:8188`)
-3. Open a new terminal in the `comfyui-agent` folder
+3. Open a new terminal
 4. Run:
 
 ```bash
-agent run
+comfy-cozy run
 ```
+
+> `cozy` works as a short alias. The old `agent` command still works but is deprecated.
 
 **If it worked:** You'll see a prompt waiting for your input.
 
@@ -259,17 +264,17 @@ Executes the workflow, waits for the render, then uses vision analysis to commen
 
 ## 7. Using with Claude Code (Power Users)
 
-Claude Code is a terminal app where Claude can use all 77 agent tools **and** write code at the same time. It's the best way to use the agent.
+Claude Code is a terminal app where Claude can use all 133 agent tools **and** write code at the same time. It's the best way to use the agent.
 
 1. Install [Claude Code](https://docs.anthropic.com/en/docs/claude-code)
-2. Open a terminal in the `comfyui-agent` folder
+2. Open a terminal in the `Comfy-Cozy` folder
 3. Run:
 
 ```bash
 claude
 ```
 
-That's it. The MCP tools are already configured in `.claude/settings.json`. Claude Code sees all 77 tools automatically.
+That's it. The MCP tools are already configured in `.claude/settings.json`. Claude Code sees all 133 tools automatically.
 
 > **Pro tip:** In Claude Code mode, you can do things like "write a Python script that generates 10 variations of this prompt and runs them all" -- it combines coding ability with ComfyUI control.
 
@@ -281,7 +286,7 @@ That's it. The MCP tools are already configured in `.claude/settings.json`. Clau
 
 **Why:** The `.env` file is missing or doesn't have your key.
 
-**Fix:** Make sure you're running the agent from inside the `comfyui-agent` folder. Check that `.env` exists and contains `ANTHROPIC_API_KEY=sk-ant-your-actual-key`.
+**Fix:** The agent reads `.env` from `~/.comfy-cozy/.env` first, then the `Comfy-Cozy` checkout root -- it deliberately does *not* read one from your current directory. Check that a `.env` exists in one of those two places and contains `ANTHROPIC_API_KEY=sk-ant-your-actual-key`. (Installed from PyPI with no checkout? Use `~/.comfy-cozy/.env`.)
 
 ---
 
@@ -317,7 +322,7 @@ That's it. The MCP tools are already configured in `.claude/settings.json`. Clau
 
 ---
 
-Still stuck? Ask the coworker who sent you this link. Or [open an issue on GitHub](https://github.com/JosephOIbrahim/comfyui-agent/issues).
+Still stuck? Ask the coworker who sent you this link. Or [open an issue on GitHub](https://github.com/JosephOIbrahim/Comfy-Cozy/issues).
 
 ---
 
@@ -326,10 +331,10 @@ Still stuck? Ask the coworker who sent you this link. Or [open an issue on GitHu
 Changed your mind? No hard feelings.
 
 ```bash
-pip uninstall comfyui-agent
+pip uninstall comfy-cozy
 ```
 
-Then delete the `comfyui-agent` folder. That's it. It didn't touch your ComfyUI installation.
+Then delete the `Comfy-Cozy` folder (and `~/.comfy-cozy`, if you want your sessions and config gone too). That's it. It didn't touch your ComfyUI installation.
 
 ---
 

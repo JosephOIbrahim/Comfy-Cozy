@@ -14,9 +14,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Commands
 
 ```bash
-pip install -e ".[dev]"                    # Install
-agent run                                  # CLI agent (standalone fallback)
-agent mcp                                  # MCP server (primary interface)
+pip install -e ".[dev]"                    # Install (dev checkout; dist name: comfy-cozy)
+comfy-cozy run                             # CLI agent (standalone fallback; alias: cozy)
+comfy-cozy mcp                             # MCP server (primary interface)
+agent run / agent mcp                      # Deprecated alias (prints epilog notice)
 python -m pytest tests/ -v                 # All tests (~4540, all mocked, ~3 min)
 python -m pytest tests/test_workflow_patch.py -v          # Single file
 python -m pytest tests/test_workflow_patch.py::TestApplyPatch -v  # Single class
@@ -32,8 +33,8 @@ ruff format agent/ tests/                  # Format
 ```json
 {
   "mcpServers": {
-    "comfyui-agent": {
-      "command": "agent",
+    "comfy-cozy": {
+      "command": "comfy-cozy",
       "args": ["mcp"],
       "cwd": "G:/Comfy-Cozy"
     }
@@ -231,7 +232,7 @@ Brain agents (`brain/*.py`) inherit from `BrainAgent` (`brain/_sdk.py`). Depende
 - **Deterministic JSON**: `sort_keys=True` everywhere (He2025 pattern). Use `_util.py:to_json()`.
 - **Line length**: 99 chars (ruff config in pyproject.toml)
 - **All tests mocked**: No ComfyUI server or API key needed. HTTP via `unittest.mock.patch`.
-- **Config via .env**: `ANTHROPIC_API_KEY` (required), `COMFYUI_DATABASE` (default `G:/COMFYUI_Database`), `COMFYUI_HOST`/`COMFYUI_PORT`, `LLM_PROVIDER` (anthropic|openai|gemini|ollama|nvidia|custom), `AGENT_MODEL`, `BRAIN_ENABLED`, `GATE_ENABLED`.
+- **Config via .env**: `ANTHROPIC_API_KEY` (required), `COMFYUI_DATABASE` (default `G:/COMFYUI_Database`), `COMFYUI_HOST`/`COMFYUI_PORT`, `LLM_PROVIDER` (anthropic|openai|gemini|ollama|nvidia|custom), `AGENT_MODEL`, `BRAIN_ENABLED`, `GATE_ENABLED`. Search order: `~/.comfy-cozy/.env` first, then checkout root (CWD deliberately excluded). Installed-package state lives at `~/.comfy-cozy` (override `COMFY_COZY_HOME`); checkouts keep repo-root sessions/logs.
 - **Custom_Nodes**: Capital C, capital N (ComfyUI convention).
 - **asyncio_mode = "auto"**: In pyproject.toml for pytest-asyncio.
 - **Python 3.10+**: Matches `pyproject.toml` `requires-python`. Type hints everywhere. `httpx` for HTTP.

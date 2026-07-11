@@ -1,3 +1,8 @@
+> ⚠️ **INTERNAL MoE-team reference — STALE.** Not user-facing. References
+> `bootstrap_hardening.py` / `.claude/agents/orchestrate.py` (removed) and the
+> pre-4,744-test "497+ pass" count. Kept for archaeology; do not follow its
+> commands. User quickstart lives at repo-root `QUICKSTART.md`.
+
 # MoE AGENT TEAM — QUICK REFERENCE
 
 ## INSTALL (run from comfyui-agent/)

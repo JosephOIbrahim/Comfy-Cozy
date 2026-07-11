@@ -8,9 +8,79 @@
 
 # Comfy Cozy
 
+**The production-grade local counterpart to Comfy Cloud MCP — your GPU, your models, reversible, provable.**
+
 **Talk to ComfyUI like a colleague. It talks back.**
 
-**You describe. It does. You never touch JSON.**
+- **Local execution** — renders on *your* GPU, against *your* models, on *your* disk
+- **Surgical, validated edits** — small reversible changes, never rewrites; every edit is one `undo` away
+- **Zero-LLM recipes** — "dreamier", "sharper", "faster" apply as instant, deterministic macros
+- **Provenance** — `workflow.lock` pins model SHA-256s + pack commits; drift warns at validate
+- **6 swappable LLM brains** — Claude, GPT-4o, Gemini, Ollama, NVIDIA Nemotron, or any OpenAI-compatible endpoint
+
+### Install
+
+```bash
+pip install comfy-cozy        # the package
+uvx comfy-cozy mcp            # or zero-install, straight to the MCP server
+```
+
+*(PyPI listing lands with the first published release — until then install from a [GitHub Release](https://github.com/JosephOIbrahim/Comfy-Cozy/releases) wheel or a checkout: `pip install -e .`)*
+
+### 60 seconds to Claude Code
+
+1. **Install** — `pip install comfy-cozy` (above).
+2. **Register the MCP server** — add this to your Claude Code / Claude Desktop MCP config:
+
+   ```json
+   {
+     "mcpServers": {
+       "comfy-cozy": {
+         "command": "comfy-cozy",
+         "args": ["mcp"]
+       }
+     }
+   }
+   ```
+
+3. **Start ComfyUI** (if it isn't already running).
+4. **Talk to it** — *"load my portrait workflow and make it dreamier."* Claude drives all 133 tools from there.
+
+<!-- demo video: Week-3 slot -->
+
+### The local twin, in one picture
+
+```mermaid
+flowchart LR
+    Client["Claude Code /<br/>any MCP client"] --> Cozy["comfy-cozy MCP server<br/>133 tools · validate-first gate · undo"]
+    Cozy --> GPU["ComfyUI on YOUR GPU<br/>your models · your disk"]
+    Client -.->|"the cloud twin"| Cloud["Comfy Cloud MCP"]
+    Cloud -.-> CGPU["cloud GPUs"]
+
+    classDef orange fill:#d99458,color:#1a1a1a,stroke:#1a1a1a
+    classDef yellow fill:#d9c958,color:#1a1a1a,stroke:#1a1a1a
+    class Client,Cloud,CGPU orange
+    class Cozy,GPU yellow
+```
+
+### Where it sits
+
+*No swipes — all three solve real problems. This is about where your pixels get made.*
+
+| | Comfy Cloud MCP | **Comfy-Cozy** | raw comfy-cli |
+|---|---|---|---|
+| **Execution locus** | cloud GPUs | **your local GPU** | your local GPU |
+| **Custom workflow edits** | runs your saved workflows (converted for cloud) | **surgical, validated edits — 133 tools** | manual JSON / CLI flags |
+| **Undo / reversibility** | — | **full undo stack + reversible delta layers** | — |
+| **Provenance (`workflow.lock`)** | — | **model SHA-256s + pack commits, drift warnings** | — |
+| **Works offline** | no — cloud service (OAuth / API key) | **yes** | yes |
+| **Cost model** | cloud compute | **free — your hardware, MIT** | free — your hardware |
+
+*— = not part of that tool's documented surface. Cloud MCP's outputs come back via download; Comfy-Cozy's never leave your disk.*
+
+---
+
+## You describe. It does. You never touch JSON.
 
 - Say what you want in plain English — it loads workflows, swaps models, tweaks parameters, installs missing nodes, runs generations, analyzes outputs.
 - **Edits don't wait for permission.** It makes the change, tells you what it did. Everything is undoable.
@@ -39,7 +109,7 @@ graph LR
 > - **Zero-LLM recipes.** "Dreamier", "sharper", "faster" — common intents apply as instant, deterministic parameter macros. No API call, no wait, fully undoable.
 > - **Everything is undoable.** Reversible delta layers (LIVRPS), full undo stack, nothing destructive without your say-so.
 > - **It learns you.** ~30 runs in, it starts biasing toward what actually worked for *your* renders. Crash-safe, append-only.
-> - **Fast edit loop.** Validate → fix → re-validate: ~7 s down to ~0.5 s (measured). Re-validate after a fix: ~1 ms. Downloads resume from the dead byte.
+> - **Fast edit loop.** Validate → fix → re-validate without re-fetching the node registry — cached, instant. Downloads resume from the dead byte.
 > - **Built for the VFX floor.** Linear EXR into the vision loop · `workflow.lock` provenance sidecars · multi-worker endpoint pooling with failover.
 > - **Ships three ways:** inside Claude Code/Desktop (MCP) · standalone CLI · native ComfyUI sidebar.
 
@@ -48,6 +118,7 @@ graph LR
 | You want to... | Go to |
 |---|---|
 | Get running in 2 minutes | [Get Running](#get-running) |
+| Compare with the cloud twin | [Where it sits](#where-it-sits) |
 | See what talking to it looks like | [See It In Action](#see-it-in-action) |
 | Put it inside ComfyUI | [Connect the Sidebar](#connect-the-sidebar-to-comfyui) |
 | Pick / swap your LLM | [Pick Your LLM](#pick-your-llm) |
@@ -106,17 +177,16 @@ A separate Pro tier with additional offerings is planned. Details when it's read
 
 ```mermaid
 flowchart LR
-    A["Clone"] -->|30 sec| B["Install"]
-    B -->|10 sec| C["Paste key"]
-    C -->|done| D(["agent run"])
+    A["Install"] -->|30 sec| B["Paste key"]
+    B -->|done| C(["comfy-cozy run"])
 
     classDef orange fill:#d99458,color:#1a1a1a,stroke:#1a1a1a
     classDef yellow fill:#d9c958,color:#1a1a1a,stroke:#1a1a1a
-    class D orange
-    class A,B,C yellow
+    class C orange
+    class A,B yellow
 ```
 
-**Three prerequisites, four copy-paste steps. Under 2 minutes start to finish.**
+**Three prerequisites, three copy-paste steps. Under 2 minutes start to finish.**
 
 | | What you need | Where to get it | Time |
 |---|------|-----------------|------|
@@ -124,18 +194,19 @@ flowchart LR
 | 2 | **ComfyUI running** | [github.com/comfyanonymous/ComfyUI](https://github.com/comfyanonymous/ComfyUI) | already have it? skip |
 | 3 | **One LLM backend** | API key (Anthropic / OpenAI / Google / [NVIDIA](https://build.nvidia.com)) OR [Ollama](https://ollama.com) (free, local, no key) | 1 min to grab a key |
 
-**Already have all three? Copy-paste these four blocks. That's it.**
+**Already have all three? Copy-paste these three blocks. That's it.**
 
-### 1. Clone
+### 1. Install
+
+```bash
+pip install comfy-cozy
+```
+
+*(PyPI listing lands with the first published release — until then install from a [GitHub Release](https://github.com/JosephOIbrahim/Comfy-Cozy/releases) wheel, or from a checkout — the dev path:)*
 
 ```bash
 git clone https://github.com/JosephOIbrahim/Comfy-Cozy.git
 cd Comfy-Cozy
-```
-
-### 2. Install
-
-```bash
 pip install -e .
 ```
 
@@ -151,17 +222,23 @@ pip install -e ".[dev,stage]"     # + USD stage subsystem (~200MB, most users sk
 
 </details>
 
-### 3. API key
+### 2. API key
+
+**Installed from PyPI / a wheel?** Create `~/.comfy-cozy/.env`.
+
+**Running from a checkout?**
 
 ```bash
 cp .env.example .env
 ```
 
-Open `.env` in any text editor, paste your key on the first line:
+Either way, open `.env` in any text editor and paste your key on the first line:
 
 ```bash
 ANTHROPIC_API_KEY=sk-ant-your-key-here
 ```
+
+> The agent looks for `.env` in `~/.comfy-cozy/` first, then the checkout root. Your current directory is deliberately not searched.
 
 <details>
 <summary>Using OpenAI, Gemini, or Ollama instead? (click to expand)</summary>
@@ -198,13 +275,15 @@ COMFYUI_DATABASE=C:/path/to/your/ComfyUI
 
 </details>
 
-### Step 4 of 4 -- Go
+### 3. Go
 
 ```bash
-agent run
+comfy-cozy run
 ```
 
 Type what you want. Type `quit` when you're done.
+
+> `cozy` is the short alias for the same command. The old `agent` entry point still works but is **deprecated** — it prints a migration notice.
 
 ---
 
@@ -316,7 +395,7 @@ ANTHROPIC_API_KEY=sk-ant-your-key-here
 #   VISION_THINKING_BUDGET=2000                  -- vision reasoning budget
 
 # Run
-agent run
+comfy-cozy run
 ```
 
 Ships as the default with **Opus 4.7 + extended thinking + three-tier prompt caching**.
@@ -336,7 +415,7 @@ OPENAI_API_KEY=sk-your-key-here
 AGENT_MODEL=gpt-4o           # or gpt-4o-mini for faster/cheaper
 
 # Run
-agent run
+comfy-cozy run
 ```
 
 Full tool-use support with streaming. Works with any OpenAI-compatible endpoint.
@@ -353,7 +432,7 @@ GEMINI_API_KEY=your-key-here
 AGENT_MODEL=gemini-2.5-flash  # or gemini-2.5-pro
 
 # Run
-agent run
+comfy-cozy run
 ```
 
 Function declarations mapped automatically. Supports Gemini's thinking mode.
@@ -370,7 +449,7 @@ LLM_PROVIDER=ollama
 AGENT_MODEL=llama3.1          # or any model you've pulled
 
 # Run (no API key needed)
-agent run
+comfy-cozy run
 ```
 
 Uses Ollama's OpenAI-compatible endpoint at `localhost:11434`. Override with `OLLAMA_BASE_URL` if running remotely. **No data leaves your machine.**
@@ -388,7 +467,7 @@ NVIDIA_API_KEY=nvapi-your-key-here
 AGENT_MODEL=nvidia/nemotron-3-super-120b-a12b         # super (default) / ultra / nano
 
 # Run
-agent run --model nemotron
+comfy-cozy run --model nemotron
 ```
 
 Endpoint-agnostic, OpenAI-compatible provider for NVIDIA's **Nemotron-3** reasoning models — grab a key + free credits at [build.nvidia.com](https://build.nvidia.com). The same provider serves NVIDIA NIM cloud, OpenRouter, and a self-hosted vLLM/SGLang endpoint; the model id picks the backend. Nemotron streams `<think>` reasoning, which the provider strips from both the visible output **and** the replayed history by default (reasoning is off unless you set `NVIDIA_EMIT_REASONING=true`). Vision stays on a multimodal provider (`VISION_PROVIDER`, default `anthropic`), so swapping the loop to a text-only Nemotron never breaks `analyze_image`.
@@ -406,7 +485,7 @@ CUSTOM_API_KEY=                            # optional -- many local servers need
 CUSTOM_MODEL=my-local-model                # the model id your endpoint serves
 
 # Run (LLM_PROVIDER=custom is already set above)
-agent run
+comfy-cozy run
 ```
 
 Point it at **anything that speaks the OpenAI chat-completions API** -- a self-hosted vLLM/SGLang server, LM Studio, LiteLLM, OpenRouter, or your own gateway. It's a plain passthrough (no Nemotron `<think>` handling), so a local endpoint isn't mislabeled `nvidia` anymore. Vision stays on `VISION_PROVIDER`, so `analyze_image` keeps working.
@@ -416,10 +495,10 @@ Point it at **anything that speaks the OpenAI chat-completions API** -- a self-h
 Beyond the `LLM_PROVIDER` env var, switch the reasoning model per launch or mid-conversation — no restart, and it reaches the live loop immediately:
 
 ```bash
-agent run --model nemotron        # alias -> nvidia/nemotron-3-super-120b-a12b
-agent run --model claude          # back to the default
-agent run --provider openai --model gpt-4o
-agent run --model custom          # your custom OpenAI-compatible endpoint (needs CUSTOM_MODEL)
+comfy-cozy run --model nemotron        # alias -> nvidia/nemotron-3-super-120b-a12b
+comfy-cozy run --model claude          # back to the default
+comfy-cozy run --provider openai --model gpt-4o
+comfy-cozy run --model custom          # your custom OpenAI-compatible endpoint (needs CUSTOM_MODEL)
 ```
 
 In conversation, the `swap_model` and `list_models_available` tools do the same thing. Three things happen for free:
@@ -546,22 +625,22 @@ Add this to your Claude Code or Claude Desktop MCP config:
 ```json
 {
   "mcpServers": {
-    "comfyui-agent": {
-      "command": "agent",
+    "comfy-cozy": {
+      "command": "comfy-cozy",
       "args": ["mcp"]
     }
   }
 }
 ```
 
-Now talk to Claude about your ComfyUI workflows. It has full access.
+Now talk to Claude about your ComfyUI workflows. It has full access. (`uvx comfy-cozy mcp` works too, once the PyPI listing is live — no install step at all.)
 
 ### B. Standalone CLI
 
 ```bash
-agent run                        # Start a conversation
-agent run --session my-project   # Auto-saves so you can pick up later
-agent run --verbose              # See what's happening under the hood
+comfy-cozy run                        # Start a conversation
+comfy-cozy run --session my-project   # Auto-saves so you can pick up later
+comfy-cozy run --verbose              # See what's happening under the hood
 ```
 
 ### C. One-click launcher (ComfyUI + agent together)
@@ -580,9 +659,9 @@ Select **4** (or wait 10 seconds) -- ComfyUI starts in a background window, then
 ### Handy CLI Commands (no API key needed)
 
 ```bash
-agent inspect                    # See your installed models and nodes
-agent parse workflow.json        # Analyze a workflow file
-agent sessions                   # List your saved sessions
+comfy-cozy inspect               # See your installed models and nodes
+comfy-cozy parse workflow.json   # Analyze a workflow file
+comfy-cozy sessions              # List your saved sessions
 ```
 
 ---
@@ -655,7 +734,7 @@ graph TB
     end
     subgraph Disk ["Persistence"]
         EXP[("experience.jsonl<br/>append-only, fsync'd<br/>cross-session learning")]
-        Sessions[("sessions/<br/>workflow state")]
+        Sessions[("sessions/ in a checkout<br/>~/.comfy-cozy when installed<br/>workflow state")]
         Lock[("workflow.lock<br/>model SHA-256s -- pack commits<br/>drift warnings at validate")]
     end
 
@@ -880,7 +959,7 @@ flowchart TD
     class Try,execute_fn,Ratchet,Class,classify,Backoff,Repair,Counter,Halt yellow
 ```
 
-Run it: `agent autonomous --execute-mode real --workflow path/to/wf.json --hours 24`. Per-iteration checkpoint to `STAGE_DEFAULT_PATH` (atomic via `.tmp` + `os.replace`). On TERMINAL halt, `BLOCKER.md` is written with the full classification trail. See `CLAUDE.md` "Cozy Autonomous Harness" for the full CLI surface.
+Run it: `comfy-cozy autonomous --execute-mode real --workflow path/to/wf.json --hours 24`. Per-iteration checkpoint to `STAGE_DEFAULT_PATH` (atomic via `.tmp` + `os.replace`). On TERMINAL halt, `BLOCKER.md` is written with the full classification trail. See `CLAUDE.md` "Cozy Autonomous Harness" for the full CLI surface.
 
 ---
 
@@ -1155,14 +1234,14 @@ flowchart LR
 
 ### Per-Connection Session Isolation (all 4 transports)
 
-Every sidebar conversation, every panel chat, every MCP client connection, and every `agent run --session foo` invocation gets its own isolated `WorkflowSession` + `CognitiveWorkflowStage`. State never leaks across tabs, clients, or named sessions. Isolation is propagated via a single `_conn_session` `ContextVar` set at every entry point — and by the per-session dicts inside the four stage modules (`provision`, `foresight`, `compositor`, `hyperagent`).
+Every sidebar conversation, every panel chat, every MCP client connection, and every `comfy-cozy run --session foo` invocation gets its own isolated `WorkflowSession` + `CognitiveWorkflowStage`. State never leaks across tabs, clients, or named sessions. Isolation is propagated via a single `_conn_session` `ContextVar` set at every entry point — and by the per-session dicts inside the four stage modules (`provision`, `foresight`, `compositor`, `hyperagent`).
 
 ```mermaid
 flowchart LR
     SB["Sidebar tabs<br/>conv.id"] --> H1["_spawn_with_session<br/>(shared helper)"]
     PNL["Panel chats<br/>conv.id"] --> H1
     MCP["MCP clients<br/>conn_xxxxxxxx"] --> H2["mcp_server._handler<br/>sets _conn_session"]
-    CLI["agent run --session foo<br/>(CLI)"] --> H3["cli.run<br/>+ _save_and_exit"]
+    CLI["comfy-cozy run --session foo<br/>(CLI)"] --> H3["cli.run<br/>+ _save_and_exit"]
     H1 --> CV[("_conn_ctx<br/>ContextVar")]
     H2 --> CV
     H3 --> CV
@@ -1486,7 +1565,7 @@ tests/                4,680+ pytest + 87 Vitest, all mocked, ~8min + ~250ms
 | Domain | What it means |
 |--------|-------------|
 | **Safety** | 5-check default-deny gate that **fails closed** if the gate itself can't import. Risk levels 0-4; every dispatched tool explicitly classified (a completeness test pins the registry against drift). Installs/downloads escalate for your confirmation. Session-workflow execution requires a passing validation since the last change. Destructive ops never auto-execute. |
-| **Fault Isolation** | Each subsystem fails independently. Circuit breakers prevent cascading failures. `brain` (threshold=3, timeout=30s) and `comfyui_http` (threshold=5, timeout=60s) registered; `BRAIN_ENABLED=0` kill switch fully enforced in tool registry. Session isolation: each `agent mcp` process gets a unique `conn_XXXXXXXX` namespace; ContextVar set in executor thread before dispatch. Parallel tool dispatch routes through `agent.tools.handle` live module reference -- monkey-patch visible to all ThreadPoolExecutor workers. |
+| **Fault Isolation** | Each subsystem fails independently. Circuit breakers prevent cascading failures. `brain` (threshold=3, timeout=30s) and `comfyui_http` (threshold=5, timeout=60s) registered; `BRAIN_ENABLED=0` kill switch fully enforced in tool registry. Session isolation: each `comfy-cozy mcp` process gets a unique `conn_XXXXXXXX` namespace; ContextVar set in executor thread before dispatch. Parallel tool dispatch routes through `agent.tools.handle` live module reference -- monkey-patch visible to all ThreadPoolExecutor workers. |
 | **Determinism** | Pure computation DAG. Deterministic JSON. Ordinal state enums. Same input = same output. |
 | **Audit Trail** | Every mutation logged: who changed what, when, and what got overridden. |
 | **Security** | Bearer token auth on all routes including WebSocket — **constant-time `hmac.compare_digest`** comparison (no timing-attack leakage). **WebSocket Origin allowlist** on sidebar + panel (rejects cross-origin connects from `evil.com`; same-origin LAN browsers pass). Path traversal blocked. **`download_model` symlink-bypass guard**: resolves the full target path (parent + filename) and re-checks against `MODELS_DIR` so a planted symlink in a `Custom_Nodes` subdirectory can't escape. SSRF prevented on initial URL and every redirect hop (RFC 1918 + loopback + link-local + CGNAT rejected via DNS resolution). MCP tool errors return `isError=True` per protocol. Gate exceptions deny by default (no silent allow). 10 MB + chunked-transfer size guards. Max 20 concurrent WebSocket connections. Atomic file writes with `flush()`+`os.fsync()` before rename (session.py + workflow_patch.py). Thread-safe token bucket rate limiter. **Handler exception guard**: stream callbacks wrapped with `_wrap_safe` so a misbehaving custom renderer can't crash the agent loop. **Config sanitization**: `COMFYUI_HOST` stripped of whitespace and trailing slashes to prevent malformed URLs. |
@@ -1535,7 +1614,7 @@ graph TB
 
 ## Configuration
 
-All settings live in your `.env` file:
+All settings live in your `.env` file — `~/.comfy-cozy/.env` for an installed package, the repo root for a checkout (searched in that order; the current directory is deliberately excluded):
 
 | Setting | Default | What it does |
 |---------|---------|-------------|
@@ -1553,6 +1632,7 @@ All settings live in your `.env` file:
 | `CUSTOM_API_KEY` | | Key for the `custom` endpoint (optional -- many local servers need none) |
 | `CUSTOM_MODEL` | | Model id your `custom` endpoint serves |
 | `MODEL_SELECTION_PATH` | `~/.comfy-cozy/model_selection.json` | Where your last model pick is remembered across restarts |
+| `COMFY_COZY_HOME` | `~/.comfy-cozy` | Where an installed package keeps its state (`.env`, sessions, logs); checkouts keep repo-root `sessions/` and `logs/` |
 | `COMFYUI_HOST` | `127.0.0.1` | Where ComfyUI runs |
 | `COMFYUI_PORT` | `8188` | ComfyUI port |
 | `COMFYUI_DATABASE` | `~/ComfyUI` | Your ComfyUI folder (models, nodes, workflows) |
