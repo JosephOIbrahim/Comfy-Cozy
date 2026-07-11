@@ -1,14 +1,22 @@
 """Tests for panel/server/chat.py — ConversationState, brain loading, agent runner."""
 
 import queue
+import sys
 import threading
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 pytest.importorskip("aiohttp", reason="panel tests require aiohttp")
 
-from panel.server.chat import (
+# Ensure the checkout-only panel package is importable when the suite runs
+# against an installed wheel (repo root is not on sys.path in importlib mode).
+project_root = str(Path(__file__).resolve().parent.parent)
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
+from panel.server.chat import (  # noqa: E402
     ConversationState,
     _conversations,
     _MAX_WS_CONNECTIONS,
