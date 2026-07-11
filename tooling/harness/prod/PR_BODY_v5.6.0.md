@@ -1,32 +1,65 @@
-## v5.6.0 — Production Hardening
+# [release] v5.6.0 — production hardening: solo-critical fixes + community docs
 
-Turns an external production-readiness audit into a verified fix set. The advertised
-`pip install -e ".[dev]"` + `pytest` command now runs with **zero errors** (it used to
-throw 27), model swaps to current-generation Claude no longer 400, installs are
-deterministic, and the repo finally has a security-disclosure path.
+## Summary
 
-### Fixed
-- **F-S1** — `.[dev]` test promise: 27 collection errors → clean skip (`pytest.importorskip("pxr")` guard; the audit's "unguarded import" diagnosis was wrong — the errors were fixture setup).
-- **F-API1** — model-swap 400 trap: the thinking-config gate was a frozen allowlist, so Opus 4.8 / Sonnet 5 / Fable 5 fell through to the legacy `budget_tokens` shape those models reject with HTTP 400. Inverted to a legacy denylist; new models now work unmodified.
-- **F-S2** — deterministic installs: `uv.lock` committed; the self-contradicting `requirements.txt` (omitted `networkx`, cited a nonexistent `[mcp]` extra) deleted.
-- **F-S3** — cross-platform `agent doctor`; retires the Windows-only, `G:\`-hardcoded `_find_comfyui.ps1`.
-- **F-S4** — honest MCP docs: the unshipped SSE/`--sse` transport promise removed (stdio-only; `MCP_AUTH_TOKEN` protects the panel/UI/bridge HTTP surfaces, where it is enforced).
-- **F-API2** — dead example model ids fixed (`claude-sonnet-5` / `claude-opus-4-8`).
-- version metadata drift: `agent/__init__.py` was `5.4.0` while pyproject said `5.5.0`; both now `5.6.0`.
+Converts an external production-readiness audit into a verified fix set, plus two
+defects the audit missed (found by a claude-API pass). 10 commits over `origin/master
+(9d35b0e)`, Gate-A green under independent verification. The advertised
+`pip install -e ".[dev]"` + `pytest` now runs with **zero errors** (it threw 27),
+model swaps to current-generation Claude no longer 400, installs are deterministic,
+and the repo finally has a security-disclosure path.
 
-### Added
-- `SECURITY.md`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md` — drafted and adversarially red-teamed.
-- `agent doctor` diagnostic (offline-safe; tests cover the ComfyUI-down path).
-- mypy in CI (non-blocking; baseline 126 errors, ratchet to blocking when clean).
+## What ships
 
-### Changed
-- README + reading materials: ADHD-friendly TL;DR pass, `agent doctor` woven through setup, Community section, adaptive-thinking label in the provider diagram.
-- 24 working docs moved to `docs/archive/` (root: 32 → 11 markdown files).
-- Counts trued: 84 intelligence / 133 dispatched tools; test count corrected to the verified **4,640+**.
+| Commit | Finding | One-liner |
+|---|---|---|
+| `eeab902` | F-S1 | `.[dev]` suite: 27 collection errors → clean module skip (`importorskip("pxr")`) |
+| `ae1bff8` | F-API1/2 | Thinking gate inverted to a legacy denylist — Opus 4.8 / Sonnet 5 / Fable 5 no longer 400; dead example model ids fixed |
+| `3b11b72` | F-S4 | Unshipped SSE/`--sse` transport promise removed (stdio-only; `MCP_AUTH_TOKEN` is enforced on the panel/UI/bridge HTTP surfaces, where it belongs) |
+| `e28a7f8` | F-M1 | mypy in CI, non-blocking (baseline: 126 errors / 42 files; ratchet to blocking when clean) |
+| `da05048` | F-S3 | Cross-platform `agent doctor`; retires the Windows-only, `G:\`-hardcoded `_find_comfyui.ps1` |
+| `1665d01` | F-S2 | `uv.lock` committed (124 pkgs, universal); self-contradicting `requirements.txt` deleted |
+| `a98cb26` | F-D0/1/2 | `SECURITY.md` + `CONTRIBUTING.md` + `CODE_OF_CONDUCT.md` (drafted, adversarially red-teamed) |
+| `6a5a411` | F-M2 | Root: 32 → 11 markdown files (24 working docs → `docs/archive/`) |
+| `cef56bd` | F-M3p1 | Tool counts trued to 84 intelligence / 133 dispatched; `.[dev]` story made truthful |
+| `a0cc6c2` | F-M3p2 | Test count corrected to verified **4,640+** (was overclaiming 4,680+) |
 
-### Verified
-Independent fresh-venv run (`.[dev,stage,exr]`, Python 3.13): **4,646 passed / 0 failed / 0 errors**, ruff clean, `uv lock --check` clean, `agent doctor` exits 0 offline. The `.[dev]`-only path (the audit's broken promise) runs **4,236 passed / 0 errors**.
+Two release-prep commits on top (version bump `5.5.0→5.6.0`, `__init__` drift
+`5.4.0→5.6.0`, CHANGELOG). Tip `f90fea9`.
 
-The `Development Status :: 4 - Beta` classifier and the Patent-Pending block are untouched — those are separate human decisions, not part of this SemVer bump.
+## Verification
+
+Independent fresh-venv run (Python 3.13, read-only verifier, on the final tip):
+
+- `pip install -e ".[dev,stage,exr]"` → exit 0 (usd-core 26.5, openexr 3.4.13)
+- **4,646 passed / 0 failed / 0 errors / 9 skipped / 46 deselected** (~8 min)
+- `ruff check` — all checks passed
+- `uv lock --check` — exit 0 (lockfile matches pyproject)
+- `agent doctor` — exit 0 offline; graceful WARN rows; single local ping
+- Honesty greps all zero: no `run_sse`/`--sse`, no `requirements.txt`, no `_find_comfyui.ps1`, root `.md` = 11
+- Brightline disclosure scan: **CLEAN** on all 10 commits
+- 5-lens adversarial pre-push verify: **0 blockers**
+
+The `.[dev]`-only path (the audit's broken promise) runs **4,236 passed / 0 errors**.
+
+## What's NOT in this PR
+
+Deliberately left for separate human decisions, not part of this SemVer bump:
+
+- **`Development Status :: 4 - Beta` classifier** (`pyproject.toml:17`) — flipping to
+  `5 - Production/Stable` + the README "production software" phrasing is the owner's
+  edit, gated on this merge + Wave 3.
+- **Patent-Pending block** (`README.md:6`, `:1594`) — counsel-adjacent; not agent-touched.
+- A separate, pre-existing public-content question that is independent of this diff and
+  counsel-gated — out of scope here by design.
+
+## Merge notes
+
+- `release.yml` is **tag-triggered** (`v*`); this PR does not produce a release artifact
+  until the tag is cut.
+- **Local `master` is stale at v5.3.1** — fast-forward after merge (`git checkout master
+  && git pull`) before branching anything new off it.
+- Post-F-S1, `release.yml`'s `--ignore=tests/test_provisioner.py` is vestigial (the file
+  skips cleanly); optional follow-up to drop the flag, not blocking.
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)
