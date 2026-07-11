@@ -56,7 +56,12 @@ class TestDefaultHelpers:
         result = _default_to_json({"c": 3, "a": 1, "b": 2})
         assert result == '{"a": 1, "b": 2, "c": 3}'
 
-    def test_default_validate_path_valid(self):
+    def test_default_validate_path_valid(self, tmp_path, monkeypatch):
+        # CWD validity is not an invariant: the packaging gate runs the suite
+        # from $RUNNER_TEMP/gate, which is neither a safe dir nor under
+        # tempfile.gettempdir() on Linux. Anchor in tmp_path (always under
+        # gettempdir), where the canonical temp allowance holds on every OS.
+        monkeypatch.chdir(tmp_path)
         assert _default_validate_path(".") is None
 
     def test_default_validate_path_rejects_unsandboxed(self):
