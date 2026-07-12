@@ -8,6 +8,7 @@ watched-fail proves the rejection teeth live in the invariant clause.
 
 import copy
 import json
+from pathlib import Path
 
 import pytest
 from jsonschema import Draft202012Validator
@@ -15,7 +16,10 @@ from pydantic import ValidationError
 
 from agent.diagnosis.diagnosis import Diagnosis, canonical_json
 
-from conftest import GOLDEN_DIR, SCHEMA_PATH
+# File-relative, not conftest-imported: the packaging gate runs this suite
+# from a non-repo cwd where 'conftest' is not importable as a module.
+GOLDEN_DIR = Path(__file__).parent / "fixtures" / "golden"
+SCHEMA_PATH = Path(__file__).parents[2] / "schema" / "diagnosis.schema.json"
 
 VALID_GOLDENS = ["clean_run", "env_warn_clean_run", "vram_trigger", "error_run"]
 

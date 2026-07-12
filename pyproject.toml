@@ -87,7 +87,7 @@ path = "agent/__init__.py"
 packages = ["agent", "cognitive"]
 
 [tool.hatch.build.targets.sdist]
-only-include = ["agent", "cognitive", "tests"]
+only-include = ["agent", "cognitive", "tests", "schema"]
 exclude = ["**/__pycache__"]
 
 [tool.pytest.ini_options]

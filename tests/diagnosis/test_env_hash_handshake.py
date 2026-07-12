@@ -6,10 +6,13 @@ the same file is mirrored into any consuming repo, so drift here is a treaty bre
 
 import json
 import re
+from pathlib import Path
 
 from agent.diagnosis.diagnosis import env_hash
 
-from conftest import VECTORS_PATH
+# File-relative, not conftest-imported: the packaging gate runs this suite
+# from a non-repo cwd where 'conftest' is not importable as a module.
+VECTORS_PATH = Path(__file__).parents[2] / "schema" / "handshake" / "env_hash_vectors.json"
 
 
 def _vectors() -> list[dict]:
