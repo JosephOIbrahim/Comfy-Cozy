@@ -104,8 +104,9 @@ graph LR
 
 > **TL;DR** *(each line stands alone — take what you need)*
 > - **Plain-English co-pilot for ComfyUI.** You describe the change; the agent does it.
-> - **133 MCP tools · 6 LLM providers** — Claude, GPT-4o, Gemini, Ollama, NVIDIA Nemotron, or *any* OpenAI-compatible endpoint (`custom`). Swap with one env var or mid-session — your pick sticks across restarts, and it won't switch you to a model that can't run the tools.
+> - **134 MCP tools · 6 LLM providers** — Claude, GPT-4o, Gemini, Ollama, NVIDIA Nemotron, or *any* OpenAI-compatible endpoint (`custom`). Swap with one env var or mid-session — your pick sticks across restarts, and it won't switch you to a model that can't run the tools.
 > - **Zero-LLM recipes.** "Dreamier", "sharper", "faster" — common intents apply as instant, deterministic parameter macros. No API call, no wait, fully undoable.
+> - **Keyless run reports.** Every render leaves a structured report — env fingerprint, per-node timings, and an *explained* finding for every anomaly. `agent diagnose --last`. No API key in that path, ever.
 > - **Everything is undoable.** Reversible delta layers (LIVRPS), full undo stack, nothing destructive without your say-so.
 > - **It learns you.** ~30 runs in, it starts biasing toward what actually worked for *your* renders. Crash-safe, append-only.
 > - **Fast edit loop.** Validate → fix → re-validate without re-fetching the node registry — cached, instant. Downloads resume from the dead byte.
@@ -122,6 +123,7 @@ graph LR
 | Put it inside ComfyUI | [Connect the Sidebar](#connect-the-sidebar-to-comfyui) |
 | Pick / swap your LLM | [Pick Your LLM](#pick-your-llm) |
 | Instant parameter macros | [Zero-LLM Recipes](#zero-llm-recipes-instant-artist-speak) |
+| Know why a render was slow/broken | [Run Reports](#run-reports-why-was-that-slow--keyless) |
 | Let it run overnight | [Autonomous Mode](#autonomous-mode) |
 | Understand the machinery | [How It Works](#how-it-works) · Architecture Deep Dive (expandable, below) |
 
@@ -661,6 +663,8 @@ Select **4** (or wait 10 seconds) -- ComfyUI starts in a background window, then
 comfy-cozy inspect               # See your installed models and nodes
 comfy-cozy parse workflow.json   # Analyze a workflow file
 comfy-cozy sessions              # List your saved sessions
+comfy-cozy diagnose --last       # Why was that render slow/broken?
+comfy-cozy diagnose --last --json | jq '.findings'   # Same, for scripts/CI
 ```
 
 ---
@@ -708,6 +712,44 @@ Agent: applied recipe 'dreamier' — CFG 8.0 → 6.0, sampler → DPM++ 2M Karra
 ```
 
 Two tools drive it: `list_recipes` (see what's available) and `apply_recipe` (fire one). The LLM stays in the loop for everything a recipe *can't* express — recipes just make the common path free.
+
+---
+
+## Run Reports ("why was that slow?" — keyless)
+
+Recipes made common **edits** instant and deterministic.
+Run reports do the same for common **diagnoses**.
+
+**Every render leaves a report on disk.** Automatically. No setup, no key.
+
+```bash
+comfy-cozy diagnose --last
+```
+
+```
+env 59a135a4 · 127.0.0.1:8188 · 2026-07-12T20:31:06Z
+run error · 3.4s · workflow aaaaaaaa · baseline 4 clean runs
+triggers: execution_error, oom
+  CRITICAL vram_pressure — the workflow's VRAM demand exceeded the device.
+    fix: reduce resolution or batch size, enable offload, or tile the VAE decode.
+```
+
+**What's in a report** *(each line stands alone)*:
+
+- **Environment fingerprint** — one hash for *os · python · torch · CUDA · driver · ComfyUI*. A torch upgrade = a new fingerprint. No more "what changed?"
+- **Per-node timings** — which node ate the render (needs the [Agent Bridge](#optional-the-agent-bridge-node-pack-live-canvas--render-timing); degrades gracefully without it).
+- **An explained finding for every anomaly.** The contract *refuses* silence — a fired trigger with zero findings is a structurally **invalid** document, rejected by the schema itself.
+- **Self-building baseline.** Your first clean runs quietly become "normal" for that workflow on that machine. A run 25% past its own median gets flagged.
+
+**Three ways in:**
+
+| Path | Command | For |
+|---|---|---|
+| Terminal | `comfy-cozy diagnose --last` | you, after a weird render |
+| Scripts / CI | `diagnose --last --json \| jq` · `--strict` exits 1 on critical | render-farm gates |
+| Agent | `diagnose` MCP tool | the co-pilot, before it optimizes |
+
+**Zero LLM involvement.** The whole path is deterministic code — run it on a box with no API key, pipe it to `jq`, gate a pipeline on it. Findings *point*; the agent's repair tools *act*.
 
 ---
 
