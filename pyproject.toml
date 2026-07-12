@@ -1,7 +1,7 @@
 [project]
 name = "comfy-cozy"
 dynamic = ["version"]
-description = "AI co-pilot for VFX artists using ComfyUI: 133 MCP tools across 6 swappable LLM providers (incl. any OpenAI-compatible endpoint), zero-LLM artist recipes, a default-deny safety gate, reversible LIVRPS edits, EXR-aware vision, workflow.lock provenance, and durable cross-session learning."
+description = "AI co-pilot for VFX artists using ComfyUI: 134 MCP tools across 6 swappable LLM providers (incl. any OpenAI-compatible endpoint), zero-LLM artist recipes, a default-deny safety gate, reversible LIVRPS edits, EXR-aware vision, workflow.lock provenance, and durable cross-session learning."
 readme = "README.md"
 license = {text = "MIT"}
 authors = [{name = "Joseph Ibrahim"}]
@@ -36,6 +36,7 @@ dependencies = [
     "typer>=0.12.0,<1",
     "rich>=13.0.0,<15",
     "mcp>=1.20.0,<2.0",
+    "pydantic>=2.7,<3",
     "pyyaml>=6.0,<7",
     "aiohttp>=3.9.0,<4",
     "networkx>=3.0,<4",
@@ -86,7 +87,7 @@ path = "agent/__init__.py"
 packages = ["agent", "cognitive"]
 
 [tool.hatch.build.targets.sdist]
-only-include = ["agent", "cognitive", "tests"]
+only-include = ["agent", "cognitive", "tests", "schema"]
 exclude = ["**/__pycache__"]
 
 [tool.pytest.ini_options]

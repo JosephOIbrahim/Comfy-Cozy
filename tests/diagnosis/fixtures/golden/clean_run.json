@@ -1,0 +1,28 @@
+{
+  "schemaVersion": "0.1.0",
+  "diagnosisId": "3f2b8c1e-9d4a-4f6b-8a2c-1e5d7f9b0a3c",
+  "createdAt": "2026-07-12T18:00:01Z",
+  "nodeId": "127.0.0.1:8188",
+  "envHash": "59a135a492c27143ee3fa31ce8a09481",
+  "env": {
+    "os": "Windows-11",
+    "python": "3.12.10",
+    "torch": "2.7.1+cu128",
+    "torchCuda": "cu128",
+    "driver": "576.88",
+    "comfyuiVersion": "0.3.44"
+  },
+  "run": {
+    "promptId": "a1b2c3d4-0001-4000-8000-000000000001",
+    "workflowHash": "0ba8e9025f6c0524e0c6a63766a31b8f",
+    "status": "completed",
+    "durationS": 41.2,
+    "vramPeakGb": null,
+    "stages": [
+      { "stage": "9:KSampler", "ms": 36900.0 },
+      { "stage": "8:VAEDecode", "ms": 2100.0 }
+    ]
+  },
+  "triggers": [],
+  "findings": []
+}

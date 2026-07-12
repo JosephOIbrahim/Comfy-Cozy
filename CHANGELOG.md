@@ -5,6 +5,43 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.8.0] - 2026-07-12 — Every Gap Explained
+
+The agent learns to answer the question every ComfyUI user lives with:
+*"why is my render slow/broken?"* — deterministically, structurally, and
+without an API key. Every execution now emits a validated run report; a
+fired anomaly trigger with no explanation is not a missing bug report,
+it is a structurally invalid document. `agent diagnose --last --strict`
+turns that contract into a CI gate the same afternoon.
+
+### Added
+- **Keyless run diagnosis (Mile 1-A)** — every execution now leaves a
+  deterministic, structured run report on disk: environment fingerprint
+  (`envHash`, sha256 of the six-field worker env block), per-node stage
+  timings (bridge-sourced, `stages: []` when absent), fired anomaly
+  triggers, and an explained finding for every trigger. The contract
+  (`schema/diagnosis.schema.json`, frozen 0.1.0) makes silence structurally
+  invalid: a fired trigger with no findings fails validation.
+- **`agent diagnose` CLI verb** — `--last` pretty terminal report,
+  `--json` raw pipeable document (stdout stays JSON-pure), `--strict`
+  exits 1 on any critical finding (CI-gate friendly). No API key anywhere
+  in the path — deterministic code only.
+- **`diagnose` MCP tool** (read-only, tool #134) — `latest` / `env` /
+  `<diagnosisId>` / `<promptId>` queries over the on-disk documents.
+- **Three deterministic checkers** (pinned registry, pure functions):
+  `vram_pressure` (OOM mapping → critical, threshold → warn),
+  `env_torch_cuda_mismatch` (measured facts only — NVIDIA driver present
+  while torch carries no CUDA tag), and the `unknown_gap` guard floor.
+- **Read-time baselines** — medians computed lazily from the newest clean
+  documents per env × workflow; a slow run past 1.25× median (after 3
+  clean runs) fires `duration_regression`. No reference store; the
+  documents are the database.
+- **Handshake vectors** (`schema/handshake/env_hash_vectors.json`) —
+  cross-implementation `env_hash` parity proven by shared test vectors.
+- **Fail-soft guarantee, tested** — with the diagnosis package force-broken,
+  the execution result is byte-identical to a healthy run (60 new tests,
+  including a permanently-encoded watched-fail of the schema invariant).
+
 ## [5.7.0] - 2026-07-11 — Local Twin
 
 The distribution becomes a pip-installable `comfy-cozy`: the project's real

@@ -1,0 +1,107 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/JosephOIbrahim/Comfy-Cozy/schema/diagnosis.schema.json",
+  "title": "CozyDiagnosis",
+  "description": "One execution invocation: what was observed, which anomaly triggers fired, and an explanation for every fired trigger.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "diagnosisId", "createdAt", "nodeId", "envHash", "env", "run", "triggers", "findings"],
+  "properties": {
+
+    "schemaVersion": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$" },
+    "diagnosisId":   { "type": "string", "format": "uuid" },
+    "createdAt":     { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$" },
+    "nodeId":        { "type": "string", "minLength": 1, "description": "Serving worker identity: host:port from the endpoint pool." },
+    "envHash":       { "type": "string", "pattern": "^[a-f0-9]{32}$", "description": "sha256[:32] of the canonical env block. Cross-implementation parity proven by the handshake vectors." },
+
+    "env": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["os", "python", "torch", "torchCuda", "driver", "comfyuiVersion"],
+      "properties": {
+        "os":             { "type": "string" },
+        "python":         { "type": "string" },
+        "torch":          { "type": "string" },
+        "torchCuda":      { "type": "string", "description": "e.g. cu130 — the trap lives here." },
+        "driver":         { "type": "string", "description": "Literal 'unknown' permitted when the worker cannot report it (DIAG.C4)." },
+        "comfyuiVersion": { "type": "string" }
+      }
+    },
+
+    "run": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["promptId", "workflowHash", "status", "durationS", "stages"],
+      "properties": {
+        "promptId":     { "type": "string", "minLength": 1 },
+        "workflowHash": { "type": "string", "pattern": "^[a-f0-9]{32}$", "description": "sha256[:32] of the canonical resolved graph queued to /prompt (post-LIVRPS)." },
+        "status":       { "enum": ["completed", "error", "interrupted"] },
+        "durationS":    { "type": "number", "minimum": 0 },
+        "vramPeakGb":   { "type": ["number", "null"], "minimum": 0 },
+        "stages": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["stage", "ms"],
+            "properties": {
+              "stage": { "type": "string", "pattern": "^[^:]+:.+$", "description": "Token format '{nodeId}:{classType}', e.g. '12:KSampler'. One string — stable across schema versions." },
+              "ms":    { "type": "number", "minimum": 0 }
+            }
+          }
+        }
+      }
+    },
+
+    "triggers": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "enum": ["duration_regression", "stage_regression", "vram_threshold", "oom", "execution_error"]
+      }
+    },
+
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["code", "severity", "actionable", "explanation"],
+        "properties": {
+          "code": {
+            "enum": [
+              "env_torch_cuda_mismatch",
+              "precision_suboptimal",
+              "precision_unsupported_fallback",
+              "offload_disabled",
+              "pinned_memory_disabled",
+              "vram_pressure",
+              "thermal_or_power_limit",
+              "reference_missing",
+              "stage_anomaly",
+              "unknown_gap"
+            ]
+          },
+          "severity":    { "enum": ["info", "warn", "critical"] },
+          "actionable":  { "type": "boolean" },
+          "explanation": { "type": "string", "minLength": 8 },
+          "fixHint":     { "type": "string" },
+          "context":     { "type": "object" }
+        }
+      }
+    }
+  },
+
+  "allOf": [
+    {
+      "$comment": "THE INVARIANT: a fired trigger requires explanation.",
+      "if":   { "properties": { "triggers": { "minItems": 1 } } },
+      "then": { "properties": { "findings": { "minItems": 1 } } }
+    },
+    {
+      "$comment": "An execution error is always a trigger — and therefore always explained.",
+      "if":   { "properties": { "run": { "properties": { "status": { "const": "error" } } } } },
+      "then": { "properties": { "triggers": { "contains": { "const": "execution_error" } } } }
+    }
+  ]
+}

@@ -1,0 +1,51 @@
+{
+  "$comment": "Cross-repo handshake vectors for env_hash parity (DIAG.C4). Recipe: envHash = sha256(canonical_json(env)).hexdigest()[:32], lowercase hex, where canonical_json = json.dumps(env, sort_keys=True, separators=(',',':')) encoded UTF-8, and env is exactly the six-field block {os, python, torch, torchCuda, driver, comfyuiVersion}. This exact file is mirrored into any consuming repo; every env_hash implementation must pass every vector.",
+  "recipe": {
+    "hash": "sha256",
+    "truncation": 32,
+    "case": "lowercase-hex",
+    "canonicalization": "json.dumps(env, sort_keys=True, separators=(',', ':')) encoded UTF-8",
+    "fields": ["os", "python", "torch", "torchCuda", "driver", "comfyuiVersion"]
+  },
+  "vectors": [
+    {
+      "name": "nominal",
+      "$comment": "A typical Windows 4090 box.",
+      "env": {
+        "os": "Windows-11",
+        "python": "3.12.10",
+        "torch": "2.7.1+cu128",
+        "torchCuda": "cu128",
+        "driver": "576.88",
+        "comfyuiVersion": "0.3.44"
+      },
+      "expected": "59a135a492c27143ee3fa31ce8a09481"
+    },
+    {
+      "name": "reordered-keys",
+      "$comment": "Same block, keys deliberately out of order — canonicalization must make it hash identically to 'nominal'.",
+      "env": {
+        "comfyuiVersion": "0.3.44",
+        "driver": "576.88",
+        "torchCuda": "cu128",
+        "torch": "2.7.1+cu128",
+        "python": "3.12.10",
+        "os": "Windows-11"
+      },
+      "expected": "59a135a492c27143ee3fa31ce8a09481"
+    },
+    {
+      "name": "driver-unknown",
+      "$comment": "The literal token 'unknown' is an honest state (DIAG.C4) and hashes as such.",
+      "env": {
+        "os": "posix",
+        "python": "3.11.9",
+        "torch": "2.4.1+cu124",
+        "torchCuda": "cu124",
+        "driver": "unknown",
+        "comfyuiVersion": "0.3.40"
+      },
+      "expected": "b2e88ab6c78e6624bf14de67520a90a0"
+    }
+  ]
+}
