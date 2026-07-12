@@ -21,7 +21,7 @@ log = logging.getLogger(__name__)
 # Lazy-import trigger dispatch so failures can't break execution
 try:
     from cognitive.transport.triggers import dispatch as _trigger_dispatch
-    from cognitive.transport.events import ExecutionEvent as _ExecEvent
+    from cognitive.transport.events import EventType as _EventType, ExecutionEvent as _ExecEvent
     _HAS_TRIGGERS = True
 except ImportError:
     _HAS_TRIGGERS = False
@@ -381,6 +381,7 @@ def _execute_with_websocket(
     current_node = None
     nodes_done = 0
     start_time = time.monotonic()
+    _terminal_dispatched = False  # did the ws stream already fire a terminal trigger?
 
     try:
         with engine.subscribe_ws(client_id=_CLIENT_ID) as events:
@@ -405,6 +406,8 @@ def _execute_with_websocket(
                     try:
                         _evt = _ExecEvent.from_ws_message(msg, started_at=start_time)
                         _trigger_dispatch(_evt)
+                        if _evt.is_terminal:
+                            _terminal_dispatched = True
                     except Exception:
                         pass  # trigger dispatch must never interrupt execution
 
@@ -551,6 +554,17 @@ def _execute_with_websocket(
     except Exception as _oe:
         _outputs_fetch_error = str(_oe)
         log.warning("Failed to fetch outputs from history for prompt %s", prompt_id, exc_info=True)
+
+    # Guarantee exactly-one terminal event for trigger consumers (e.g. the diagnosis
+    # subscriber). The ws loop can break on the status message (queue_remaining==0)
+    # before "executing: null" is dispatched, so on_execution_complete would otherwise
+    # never fire on a real render (live-verified 2026-07-12). Fires only if the stream
+    # did not already send a terminal event; history is populated by this point.
+    if _HAS_TRIGGERS and not _terminal_dispatched:
+        try:
+            _trigger_dispatch(_ExecEvent(event_type=_EventType.EXECUTION_COMPLETE, prompt_id=prompt_id))
+        except Exception:
+            pass
 
     # Build node timing summary
     timing = []

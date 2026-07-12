@@ -15,6 +15,7 @@ import json
 import logging
 import os
 import statistics
+import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -32,6 +33,10 @@ DURATION_REGRESSION_RATIO = 1.25
 MIN_HISTORY_RUNS = 3
 BASELINE_WINDOW = 20  # read-time baseline: newest N clean docs (Cherny cut #1)
 OOM_SIGNATURES = ("out of memory", "cuda out of memory", "allocation on device", "oom")
+# ComfyUI signals EXECUTION_COMPLETE slightly before /history is written; the
+# subscriber tolerates that window with a bounded retry (live-verified 2026-07-12).
+HISTORY_SETTLE_RETRIES = 6
+HISTORY_SETTLE_DELAY_S = 0.4
 
 FindingCode = Literal[
     "env_torch_cuda_mismatch", "precision_suboptimal", "precision_unsupported_fallback",
@@ -296,29 +301,75 @@ def _stages_from_bridge(base_url: str, prompt_id: str, workflow: dict) -> list[d
     return stages
 
 
+def _fetch_history_entry(base_url: str, prompt_id: str) -> dict | None:
+    """/history entry for prompt_id, tolerating the brief window where ComfyUI has
+    signalled completion but not yet written history (bounded retry; fail-soft —
+    returns None if it never appears, so no fabricated document is emitted)."""
+    for attempt in range(HISTORY_SETTLE_RETRIES):
+        try:
+            history = httpx.get(f"{base_url}/history/{prompt_id}", timeout=5.0).json()
+        except Exception:
+            return None
+        entry = history.get(prompt_id) if isinstance(history, dict) else None
+        if entry:
+            return entry
+        if attempt + 1 < HISTORY_SETTLE_RETRIES:
+            time.sleep(HISTORY_SETTLE_DELAY_S)
+    return None
+
+
+def _run_facts_from_history(entry: dict, event) -> tuple[str, float, str]:
+    """Status, duration, and error text from ComfyUI's own history messages —
+    worker-authoritative (DIAG.C6), immune to the agent's clock. The ws event's
+    elapsed_ms mixes epoch/monotonic clocks and must not be trusted for duration.
+    Falls back to 0.0s (honest 'unmeasured') only when the worker gives no timing."""
+    status_block = entry.get("status") or {}
+    status = {"success": "completed", "error": "error"}.get(status_block.get("status_str"))
+    if status is None:  # bridge/older worker without status_str
+        status = "error" if getattr(event, "is_error", False) else "completed"
+    start = end = None
+    error_text = ""
+    for msg in status_block.get("messages") or []:
+        if not (isinstance(msg, (list, tuple)) and len(msg) == 2 and isinstance(msg[1], dict)):
+            continue
+        name, payload = msg
+        ts = payload.get("timestamp")
+        if name == "execution_start" and ts is not None:
+            start = ts
+        elif name in ("execution_success", "execution_error", "execution_interrupted"):
+            if ts is not None:
+                end = ts
+            if name == "execution_error":
+                error_text = " ".join(str(payload.get(k, ""))
+                                      for k in ("exception_type", "exception_message"))
+    duration_s = round((end - start) / 1000.0, 2) if (
+        start is not None and end is not None and end >= start) else 0.0
+    if not error_text.strip():  # fall back to the ws error event payload
+        data = getattr(event, "data", {}) or {}
+        error_text = " ".join(str(data.get(k, "")) for k in ("exception_type", "exception_message"))
+    return status, duration_s, error_text.strip()
+
+
 def _diagnose_event(event) -> Path | None:
     from ..config import COMFYUI_URL
     prompt_id = getattr(event, "prompt_id", "") or ""
     if not prompt_id:
         return None
-    history = httpx.get(f"{COMFYUI_URL}/history/{prompt_id}", timeout=5.0).json()
-    entry = history.get(prompt_id) if isinstance(history, dict) else None
+    entry = _fetch_history_entry(COMFYUI_URL, prompt_id)
     if not entry:
         return None  # no resolved graph -> no honest workflowHash -> no document
     workflow = entry.get("prompt", [None, None, {}])[2] or {}
-    status = "error" if getattr(event, "is_error", False) else "completed"
-    data = getattr(event, "data", {}) or {}
-    error_text = " ".join(str(data.get(k, "")) for k in ("exception_type", "exception_message"))
+    status, duration_s, error_text = _run_facts_from_history(entry, event)
     env = collect_env(COMFYUI_URL)
     run = {
         "promptId": prompt_id,
         "workflowHash": workflow_hash(workflow),
         "status": status,
-        "durationS": max(0.0, getattr(event, "elapsed_ms", 0.0) / 1000.0),
+        "durationS": duration_s,
         "vramPeakGb": None,  # confirmed absent from every live source (scout U2)
         "stages": _stages_from_bridge(COMFYUI_URL, prompt_id, workflow),
     }
-    diag = build_diagnosis(env, run, _node_id_from_url(COMFYUI_URL), error_text.strip())
+    diag = build_diagnosis(env, run, _node_id_from_url(COMFYUI_URL), error_text)
     return emit(diag)
 
 
