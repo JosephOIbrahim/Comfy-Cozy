@@ -739,7 +739,7 @@ triggers: execution_error, oom
 - **Environment fingerprint** — one hash for *os · python · torch · CUDA · driver · ComfyUI*. A torch upgrade = a new fingerprint. No more "what changed?"
 - **Per-node timings** — which node ate the render (needs the [Agent Bridge](#optional-the-agent-bridge-node-pack-live-canvas--render-timing); degrades gracefully without it).
 - **An explained finding for every anomaly.** The contract *refuses* silence — a fired trigger with zero findings is a structurally **invalid** document, rejected by the schema itself.
-- **Self-building baseline.** Your first clean runs quietly become "normal" for that workflow on that machine. A run 25% past its own median gets flagged.
+- **Self-building baseline.** Your first clean runs quietly become "normal" for that workflow on that machine. A run 25% past its own median gets flagged. *A fresh machine's first sessions produce clean, empty-trigger reports and quietly build your baseline — the tool bootstraps its own normal.*
 
 **Three ways in:**
 

@@ -69,9 +69,41 @@ def render(doc: dict, console: Console) -> None:
         console.print("findings: [green]none — every gap explained, nothing fired[/green]")
 
 
+def _assert_env(expected: str, console: Console, as_json: bool) -> int:
+    """Assert the box's environment fingerprint still matches a recorded hash —
+    'we use the tool to protect the demo of the tool'. Prefers a FRESH worker
+    reading (has the box drifted?), falls back to the last report when the worker
+    is unreachable. Exit 0 = match · 3 = drift · 2 = can't determine. Keyless."""
+    from .diagnosis import collect_env, env_hash
+    expected = expected.strip().lower()
+    try:
+        actual = env_hash(collect_env())
+        source = "live worker"
+    except Exception:
+        doc = _find_doc()
+        if not doc:
+            msg = "cannot assert env: worker unreachable and no prior report on disk"
+            print(json.dumps({"error": msg})) if as_json else console.print(f"[yellow]{msg}[/yellow]")
+            return 2
+        actual = doc["envHash"]
+        source = "last report"
+    match = actual == expected
+    if as_json:
+        print(json.dumps({"assertEnv": expected, "actual": actual, "match": match, "source": source}))
+    elif match:
+        console.print(f"[green]✓ env matches {expected[:8]}[/green] — unchanged since recorded ({source})")
+    else:
+        console.print(f"[bold red]✗ env DRIFTED[/bold red] — recorded {expected[:8]}, "
+                      f"now {actual[:8]} ({source}). The box is not the one you froze.")
+    return 0 if match else 3
+
+
 def run_diagnose(workflow: str | None = None, last: bool = False,
-                 as_json: bool = False, strict: bool = False) -> int:
+                 as_json: bool = False, strict: bool = False,
+                 assert_env: str | None = None) -> int:
     console = Console()
+    if assert_env:
+        return _assert_env(assert_env, console, as_json)
     whash = None
     if workflow and not last:
         try:

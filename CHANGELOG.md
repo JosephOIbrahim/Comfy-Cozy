@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.8.2] - 2026-07-12 — Demo Ready
+
+### Added
+- **`agent diagnose --assert-env <hash>`** — protect a frozen box with its own
+  tool: exit 0 if the environment fingerprint is unchanged, 3 if it drifted, 2
+  if undeterminable. Reads a fresh worker fingerprint (falling back to the last
+  report when the worker is unreachable). Keyless; live-verified.
+- **Offline demo kit** (`demo/`) — `seed_diagnosis_demo.py` reproduces the run
+  report store keyless (3 clean baselines + 1 OOM break; no ComfyUI, no API
+  key), and `DIAGNOSIS_RUNBOOK.md` is the five-beat runbook rewritten to
+  rehearse fully offline, each beat tagged offline-reproducible vs server-gated,
+  with real captured output. README run-reports section gains the
+  baseline-bootstrap line.
+
 ## [5.8.1] - 2026-07-12 — Live Hardening
 
 Three bugs the mocked suite couldn't see, found and fixed by running the

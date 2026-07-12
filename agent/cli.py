@@ -318,15 +318,20 @@ def diagnose(
     last: bool = typer.Option(False, "--last", help="Show the most recent run report"),
     json_out: bool = typer.Option(False, "--json", help="Raw document (pipeable, jq-able)"),
     strict: bool = typer.Option(False, "--strict", help="Exit 1 if any critical finding"),
+    assert_env: str = typer.Option(
+        None, "--assert-env", help="Assert the env fingerprint matches this hash (exit 3 on drift)"),
 ):
     """Show the latest run report — keyless, deterministic, CI-safe.
 
     Environment fingerprint, per-node timings, and an explained finding for
     every fired trigger. No API key is involved anywhere in this path.
+    `--assert-env <hash>` protects a frozen box: exit 0 if the fingerprint is
+    unchanged, 3 if it drifted.
     """
     from .diagnosis.cli import run_diagnose
 
-    raise typer.Exit(run_diagnose(workflow=workflow, last=last, as_json=json_out, strict=strict))
+    raise typer.Exit(run_diagnose(workflow=workflow, last=last, as_json=json_out,
+                                  strict=strict, assert_env=assert_env))
 
 
 @app.command()
