@@ -1,0 +1,37 @@
+{
+  "schemaVersion": "0.1.0",
+  "diagnosisId": "5b4d0e3a-9f6c-4b8d-ac4e-3a7f9b1d2c5e",
+  "createdAt": "2026-07-12T18:11:47Z",
+  "nodeId": "127.0.0.1:8188",
+  "envHash": "59a135a492c27143ee3fa31ce8a09481",
+  "env": {
+    "os": "Windows-11",
+    "python": "3.12.10",
+    "torch": "2.7.1+cu128",
+    "torchCuda": "cu128",
+    "driver": "576.88",
+    "comfyuiVersion": "0.3.44"
+  },
+  "run": {
+    "promptId": "a1b2c3d4-0003-4000-8000-000000000003",
+    "workflowHash": "0ba8e9025f6c0524e0c6a63766a31b8f",
+    "status": "completed",
+    "durationS": 63.9,
+    "vramPeakGb": 22.6,
+    "stages": [
+      { "stage": "9:KSampler", "ms": 58200.0 },
+      { "stage": "8:VAEDecode", "ms": 4900.0 }
+    ]
+  },
+  "triggers": ["vram_threshold"],
+  "findings": [
+    {
+      "code": "vram_pressure",
+      "severity": "warn",
+      "actionable": true,
+      "explanation": "VRAM peak 22.6 GB reached 94% of the 24.0 GB total — the run completed but is one resolution bump from OOM.",
+      "fixHint": "Reduce resolution or batch size, enable model offload, or use tiled VAE decode.",
+      "context": { "cozy": { "vramPeakGb": 22.6, "vramTotalGb": 24.0, "ratio": 0.94 } }
+    }
+  ]
+}

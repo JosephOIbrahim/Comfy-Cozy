@@ -313,6 +313,23 @@ def inspect():
 
 
 @app.command()
+def diagnose(
+    workflow: str = typer.Argument(None, help="Workflow JSON file — show its latest run report"),
+    last: bool = typer.Option(False, "--last", help="Show the most recent run report"),
+    json_out: bool = typer.Option(False, "--json", help="Raw document (pipeable, jq-able)"),
+    strict: bool = typer.Option(False, "--strict", help="Exit 1 if any critical finding"),
+):
+    """Show the latest run report — keyless, deterministic, CI-safe.
+
+    Environment fingerprint, per-node timings, and an explained finding for
+    every fired trigger. No API key is involved anywhere in this path.
+    """
+    from .diagnosis.cli import run_diagnose
+
+    raise typer.Exit(run_diagnose(workflow=workflow, last=last, as_json=json_out, strict=strict))
+
+
+@app.command()
 def parse(
     workflow: str = typer.Argument(..., help="Path to workflow JSON file"),
 ):

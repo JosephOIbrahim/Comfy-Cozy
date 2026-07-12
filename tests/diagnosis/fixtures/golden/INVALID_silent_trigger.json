@@ -1,0 +1,26 @@
+{
+  "$comment": "MUST FAIL validation (watched-fail): a fired trigger with no findings violates THE INVARIANT (allOf[0]). If this fixture ever validates, the contract has lost its teeth.",
+  "schemaVersion": "0.1.0",
+  "diagnosisId": "7d6f2a5c-1b8e-4daf-ce6a-5c9b1d3f4e7a",
+  "createdAt": "2026-07-12T18:25:00Z",
+  "nodeId": "127.0.0.1:8188",
+  "envHash": "59a135a492c27143ee3fa31ce8a09481",
+  "env": {
+    "os": "Windows-11",
+    "python": "3.12.10",
+    "torch": "2.7.1+cu128",
+    "torchCuda": "cu128",
+    "driver": "576.88",
+    "comfyuiVersion": "0.3.44"
+  },
+  "run": {
+    "promptId": "a1b2c3d4-0005-4000-8000-000000000005",
+    "workflowHash": "0ba8e9025f6c0524e0c6a63766a31b8f",
+    "status": "completed",
+    "durationS": 63.9,
+    "vramPeakGb": 22.6,
+    "stages": []
+  },
+  "triggers": ["vram_threshold"],
+  "findings": []
+}

@@ -40,6 +40,8 @@ TOOL_RISK_LEVELS: dict[str, RiskLevel] = {
     "get_system_stats": RiskLevel.READ_ONLY,
     "get_queue_status": RiskLevel.READ_ONLY,
     "get_history": RiskLevel.READ_ONLY,
+    # Diagnosis (keyless read of on-disk diagnosis documents)
+    "diagnose": RiskLevel.READ_ONLY,
     # Filesystem reads
     "list_custom_nodes": RiskLevel.READ_ONLY,
     "list_models": RiskLevel.READ_ONLY,

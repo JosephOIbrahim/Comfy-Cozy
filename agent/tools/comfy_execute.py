@@ -26,6 +26,14 @@ try:
 except ImportError:
     _HAS_TRIGGERS = False
 
+# Diagnosis subscriber (DIAG.C1): best-effort registration on the trigger
+# registry — a broken diagnosis package must never touch execution.
+try:
+    from ..diagnosis import install_subscriber as _install_diagnosis
+    _install_diagnosis()
+except Exception:
+    pass
+
 try:
     import websockets  # noqa: F401  # presence-check for _HAS_WS; actual WS calls live in agent.engine.comfyui_adapter
     _HAS_WS = True

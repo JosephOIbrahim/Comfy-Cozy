@@ -1,0 +1,26 @@
+{
+  "$comment": "MUST FAIL validation: status 'error' without an execution_error trigger violates allOf[1] — an error is never allowed to be silent.",
+  "schemaVersion": "0.1.0",
+  "diagnosisId": "8e7a3b6d-2c9f-4eba-df7b-6da02e4a5f8b",
+  "createdAt": "2026-07-12T18:30:00Z",
+  "nodeId": "127.0.0.1:8188",
+  "envHash": "59a135a492c27143ee3fa31ce8a09481",
+  "env": {
+    "os": "Windows-11",
+    "python": "3.12.10",
+    "torch": "2.7.1+cu128",
+    "torchCuda": "cu128",
+    "driver": "576.88",
+    "comfyuiVersion": "0.3.44"
+  },
+  "run": {
+    "promptId": "a1b2c3d4-0006-4000-8000-000000000006",
+    "workflowHash": "0ba8e9025f6c0524e0c6a63766a31b8f",
+    "status": "error",
+    "durationS": 1.1,
+    "vramPeakGb": null,
+    "stages": []
+  },
+  "triggers": [],
+  "findings": []
+}

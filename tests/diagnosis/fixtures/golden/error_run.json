@@ -1,0 +1,36 @@
+{
+  "schemaVersion": "0.1.0",
+  "diagnosisId": "6c5e1f4b-0a7d-4c9e-bd5f-4b8a0c2e3d6f",
+  "createdAt": "2026-07-12T18:20:09Z",
+  "nodeId": "127.0.0.1:8188",
+  "envHash": "b2e88ab6c78e6624bf14de67520a90a0",
+  "env": {
+    "os": "posix",
+    "python": "3.11.9",
+    "torch": "2.4.1+cu124",
+    "torchCuda": "cu124",
+    "driver": "unknown",
+    "comfyuiVersion": "0.3.40"
+  },
+  "run": {
+    "promptId": "a1b2c3d4-0004-4000-8000-000000000004",
+    "workflowHash": "0ba8e9025f6c0524e0c6a63766a31b8f",
+    "status": "error",
+    "durationS": 3.4,
+    "vramPeakGb": null,
+    "stages": []
+  },
+  "triggers": ["execution_error"],
+  "findings": [
+    {
+      "code": "unknown_gap",
+      "severity": "warn",
+      "actionable": false,
+      "explanation": "Execution failed and no checker could attribute the failure; the raw error is preserved in context for the model to interpret.",
+      "context": {
+        "trigger": "execution_error",
+        "signals": { "cozy": { "error": { "class": "EngineExecutionError", "message": "Node 9 (KSampler): mat1 and mat2 shapes cannot be multiplied" } } }
+      }
+    }
+  ]
+}
