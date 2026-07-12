@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.8.1] - 2026-07-12 — Live Hardening
+
+Three bugs the mocked suite couldn't see, found and fixed by running the
+diagnosis loop against a real ComfyUI 0.27.0 + RTX 4090 render. The auto-report
+now actually lands on every render, with a truthful duration.
+
+### Fixed
+- **Auto-report now fires on every render.** The websocket execute loop could
+  break on the `status` message (`queue_remaining == 0`) before the
+  `executing: null` completion was dispatched, so the diagnosis subscriber's
+  `on_execution_complete` (and any webhook consumer) never fired on a real
+  render and the report was silently dropped. The loop now guarantees exactly
+  one terminal event per execution.
+- **Duration is worker-measured, not agent-clock garbage.** `durationS` was
+  derived from the ws event's `elapsed_ms`, which subtracted a `monotonic`
+  start from an epoch `time()` stamp — yielding a ~1.78e9-second nonsense
+  value. It is now computed from ComfyUI's own `/history` execution
+  timestamps (worker-authoritative, per the measure-at-the-worker principle),
+  falling back to `0.0` only when the worker reports no timing.
+- **Subscriber tolerates the history-write window.** ComfyUI signals
+  completion slightly before `/history` is written; the subscriber fetched it
+  once, got nothing, and dropped the report. It now retries with a bounded,
+  fail-soft backoff. Status and error text are also read from the worker's
+  history messages.
+
 ## [5.8.0] - 2026-07-12 — Every Gap Explained
 
 The agent learns to answer the question every ComfyUI user lives with:
