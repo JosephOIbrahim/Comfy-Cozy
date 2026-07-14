@@ -226,7 +226,7 @@ class TestSchemaVersioning:
         session_tools.handle("save_session", {"name": "version-test"})
         path = use_tmp_sessions / "version-test.json"
         data = json.loads(path.read_text(encoding="utf-8"))
-        assert data["schema_version"] == 2
+        assert data["schema_version"] == session_mod.SCHEMA_VERSION
 
     def test_migrate_v0_to_v2(self, use_tmp_sessions):
         """Loading a v0 session (no schema_version) should migrate it to current."""
@@ -246,7 +246,7 @@ class TestSchemaVersioning:
         # Use the internal load_session (not the tool handler which wraps the result)
         result = session_mod.load_session("old-session")
         assert "error" not in result
-        assert result.get("schema_version") == 2
+        assert result.get("schema_version") == session_mod.SCHEMA_VERSION
 
 
 class TestAtomicWrites:
