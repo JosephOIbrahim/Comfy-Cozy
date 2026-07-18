@@ -6,8 +6,8 @@ the graph in their browser; this engine ingests those edits under ORCH.L8:
 1. Acquire the artist's graph — the live canvas buffer (``get_canvas_state``,
    loopback only) or a saved workflow file (UI-format files convert through
    ``_ui_to_api``, which needs live ``/object_info``).
-2. If a session workflow is loaded, re-enter the edits ONLY as
-   ``jsonpatch.make_patch(current, artist_graph)`` applied through the
+2. If a session workflow is loaded, re-enter the edits ONLY as a
+   whole-value RFC6902 patch list (``_build_patch_ops``) applied through the
    ``apply_workflow_patch`` handler — validated, one undo step, diff
    continuity intact. ``load_workflow_from_data`` is never called on a live
    session: it would wipe the undo history, the base workflow, and the
@@ -30,7 +30,6 @@ import json
 from pathlib import Path
 
 import httpx
-import jsonpatch
 
 from ..tools import canvas_bridge, ui_api_parser, workflow_patch
 from ..tools._util import validate_path
@@ -110,6 +109,56 @@ def _summarize_changes(current: dict, artist: dict) -> dict:
         "params_changed": params_changed,
         "links_rewired": links_rewired,
     }
+
+
+def _esc(segment: str) -> str:
+    """Escape a JSON-pointer path segment per RFC6901 (~ then /)."""
+    return segment.replace("~", "~0").replace("/", "~1")
+
+
+def _build_patch_ops(current: dict, artist: dict) -> list[dict]:
+    """Whole-value RFC6902 ops turning ``current`` into ``artist``, sorted order.
+
+    Never element-level (defect A1): a changed input is replaced as its FULL
+    value at ``/node/inputs/key`` — max 3 path segments — so a rewire like
+    ``["4", 0] -> ["3", 0]`` lands as one whole-list replace. Raw
+    ``jsonpatch.make_patch`` instead emits per-element paths like
+    ``/2/inputs/model/0``, which the patch engine's mutation converter used
+    to flatten into a bogus literal parameter named ``model/0`` — the rewire
+    silently never landed. Node adds carry the whole node dict; deletes are
+    plain removes; a same-id class_type change (summary: removed + added)
+    swaps the whole node dict in one op. Ordering is deterministic: one pass
+    over sorted node ids, inputs sorted within each node.
+    """
+    ops: list[dict] = []
+    for nid in sorted(set(current) | set(artist)):
+        if nid not in current:
+            ops.append({"op": "add", "path": f"/{_esc(nid)}", "value": artist[nid]})
+            continue
+        if nid not in artist:
+            ops.append({"op": "remove", "path": f"/{_esc(nid)}"})
+            continue
+        cur_node, art_node = current[nid], artist[nid]
+        if cur_node == art_node:
+            continue
+        cur_rest = {k: v for k, v in cur_node.items() if k != "inputs"}
+        art_rest = {k: v for k, v in art_node.items() if k != "inputs"}
+        cur_in = cur_node.get("inputs")
+        art_in = art_node.get("inputs")
+        if cur_rest != art_rest or not isinstance(cur_in, dict) or not isinstance(art_in, dict):
+            # class_type (or any non-input member) changed, or inputs aren't
+            # a plain dict on one side — swap the whole node in one honest op.
+            ops.append({"op": "replace", "path": f"/{_esc(nid)}", "value": art_node})
+            continue
+        for key in sorted(set(cur_in) | set(art_in)):
+            path = f"/{_esc(nid)}/inputs/{_esc(key)}"
+            if key not in art_in:
+                ops.append({"op": "remove", "path": path})
+            elif key not in cur_in:
+                ops.append({"op": "add", "path": path, "value": art_in[key]})
+            elif cur_in[key] != art_in[key]:
+                ops.append({"op": "replace", "path": path, "value": art_in[key]})
+    return ops
 
 
 def _summary_phrase(summary: dict) -> str:
@@ -328,8 +377,9 @@ def pull_canvas(source: str = "canvas", file: str | None = None) -> dict:
             ),
         )
 
-    # Live session: edits re-enter ONLY as a validated patch (ORCH.L8).
-    patch_ops = jsonpatch.make_patch(current, artist_graph).patch
+    # Live session: edits re-enter ONLY as a validated patch (ORCH.L8),
+    # built at whole-value granularity — never element-level (defect A1).
+    patch_ops = _build_patch_ops(current, artist_graph)
     if not patch_ops:
         return _result(
             ok=True,
@@ -370,8 +420,9 @@ def pull_canvas(source: str = "canvas", file: str | None = None) -> dict:
         summary=summary,
         message=(
             f"Pulled your canvas edits into the session: {phrase}. It all landed as "
-            "one validated patch, so the whole pull is one undo away — tell the agent "
-            '"undo" (undo_workflow_patch) and the session steps back to before it.'
+            "one validated patch, so the whole pull is one undo away — run it back "
+            'with the agent\'s "undo" (undo_workflow_patch); the undo history lives '
+            "with your cozy session and survives between commands."
         ),
     )
 

@@ -447,7 +447,7 @@ def _patches_to_mutations(patches: list[dict]) -> dict[str, dict[str, object]] |
     """Try to convert RFC6902 patches to engine mutation format.
 
     Returns {node_id: {param: value}} or None if patches can't be cleanly
-    converted (e.g. remove ops, non-input paths).
+    converted (e.g. remove ops, non-input paths, element-level input paths).
     """
     mutations: dict[str, dict[str, object]] = {}
     for patch in patches:
@@ -462,9 +462,13 @@ def _patches_to_mutations(patches: list[dict]) -> dict[str, dict[str, object]] |
         parts = path.strip("/").split("/")
         if len(parts) < 3 or parts[1] != "inputs":
             return None
+        if len(parts) > 3:
+            # Element-level paths (e.g. /2/inputs/model/0) must not flatten
+            # into a bogus literal param name — force the jsonpatch fallback.
+            return None
 
         node_id = parts[0]
-        param_name = "/".join(parts[2:])  # Handle nested paths
+        param_name = parts[2]
         mutations.setdefault(node_id, {})[param_name] = value
 
     return mutations if mutations else None
@@ -1272,6 +1276,91 @@ def load_workflow_from_data(data: dict, source: str = "<sidebar>") -> str | None
             _set_engine(_create_engine(nodes))
         except Exception as exc:  # load already succeeded, engine is optional
             log.warning("Could not create engine on load: %s. Engine disabled.", exc)
+            _set_engine(None)
+
+    return None
+
+
+def export_session_state() -> dict:
+    """Deterministic snapshot of the live workflow session for persistence.
+
+    Returns ``{"current_workflow", "base_workflow", "history" (last 10
+    entries), "validated_since_mutation", "schema": 1}``. When no workflow
+    is loaded the snapshot collapses to ``{"current_workflow": None,
+    "schema": 1}``. All values are deep copies — mutating the snapshot
+    never touches the live session.
+    """
+    state = _get_state()
+    with state._lock:
+        current = state["current_workflow"]
+        if current is None:
+            return {"current_workflow": None, "schema": 1}
+        return {
+            "current_workflow": copy.deepcopy(current),
+            "base_workflow": copy.deepcopy(state["base_workflow"]),
+            "history": [copy.deepcopy(entry) for entry in list(state["history"])[-10:]],
+            "validated_since_mutation": bool(state.get("validated_since_mutation", False)),
+            "schema": 1,
+        }
+
+
+def import_session_state(snapshot: dict) -> str | None:
+    """Restore a session snapshot produced by ``export_session_state``.
+
+    Replaces the live session's ``current_workflow``, ``base_workflow``,
+    ``history`` (undo stack), and ``validated_since_mutation`` — the same
+    private state the tool handlers use. Mirrors ``load_workflow_from_data``'s
+    engine sync: a fresh engine is built from the restored graph (the delta
+    stack is not reconstructed; history-based undo still works, and the
+    engine re-syncs from state on the next mutation).
+
+    Returns an error string in artist words on malformed input (the live
+    session is left untouched), else None.
+    """
+    if not isinstance(snapshot, dict):
+        return "That session snapshot isn't readable — expected a saved-session object."
+    if snapshot.get("schema") != 1:
+        return (
+            "That session snapshot uses an unknown format version, "
+            "so it can't be restored safely."
+        )
+    current = snapshot.get("current_workflow")
+    if current is not None and not isinstance(current, dict):
+        return "That session snapshot is damaged: the workflow inside it isn't a graph."
+    base = snapshot.get("base_workflow")
+    if base is not None and not isinstance(base, dict):
+        return "That session snapshot is damaged: its original workflow isn't a graph."
+    history = snapshot.get("history", [])
+    if not isinstance(history, list) or any(not isinstance(h, dict) for h in history):
+        return "That session snapshot is damaged: its undo history isn't readable."
+
+    state = _get_state()
+    with state._lock:
+        if current is None:
+            state["current_workflow"] = None
+            state["base_workflow"] = None
+            state["history"] = deque(maxlen=_MAX_HISTORY)
+            state["validated_since_mutation"] = False
+            _set_engine(None)
+            return None
+
+        state["current_workflow"] = copy.deepcopy(current)
+        state["base_workflow"] = (
+            copy.deepcopy(base) if base is not None else copy.deepcopy(current)
+        )
+        restored = deque(maxlen=_MAX_HISTORY)
+        for entry in history:
+            restored.append(copy.deepcopy(entry))
+        state["history"] = restored
+        state["validated_since_mutation"] = bool(
+            snapshot.get("validated_since_mutation", False)
+        )
+
+        # Mirror load_workflow_from_data: fresh engine from the restored graph.
+        try:
+            _set_engine(_create_engine(state["current_workflow"]))
+        except Exception as exc:  # import already succeeded, engine is optional
+            log.warning("Could not create engine on import: %s. Engine disabled.", exc)
             _set_engine(None)
 
     return None

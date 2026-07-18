@@ -17,6 +17,7 @@ from unittest.mock import patch
 import httpx
 import pytest
 
+from agent.tools import workflow_patch
 from agent.tools.workflow_patch import _get_state
 from agent.verbs.pull_canvas import pull_canvas, render_pull_result
 
@@ -82,9 +83,10 @@ class TestDiffAndApplyHappyPath:
         assert {"node": "2", "param": "steps", "old": 20, "new": 30} in summary["params_changed"]
         assert summary["links_rewired"] == 1
 
-        # The message names the honest undo path.
+        # The message names the honest undo path — and where the undo lives.
         assert "undo" in result["message"]
         assert "one undo away" in result["message"]
+        assert "survives between commands" in result["message"]
 
     def test_render_celebrates_adds_and_deletes(self, loaded_session: dict) -> None:
         """Adds/deletes render as accepted freedom, not warnings."""
@@ -112,6 +114,77 @@ class TestDiffAndApplyHappyPath:
         undone = json.loads(workflow_patch.handle("undo_workflow_patch", {}))
         assert undone.get("undone") is True
         assert _get_state()["current_workflow"] == loaded_session
+
+
+def _no_flat_input_keys(workflow: dict) -> bool:
+    """True when no node carries a bogus flattened input key like 'model/0'."""
+    return all(
+        "/" not in key
+        for node in workflow.values()
+        for key in (node.get("inputs") or {})
+    )
+
+
+@pytest.mark.skipif(
+    not workflow_patch._HAS_COGNITIVE, reason="cognitive engine not installed"
+)
+class TestEngineActiveRewire:
+    """Defect A1 regression: with the CognitiveGraphEngine ACTIVE (un-mocked).
+
+    The old tests set session state directly, so the engine was None and the
+    jsonpatch fallback always ran — hiding that raw ``make_patch`` emitted
+    element-level paths (``/2/inputs/negative/0``) which the engine's
+    mutation converter flattened into a bogus literal param named
+    ``negative/0``: the rewire never landed while pull reported success.
+    """
+
+    @pytest.fixture
+    def engine_session(self, sample_workflow: dict) -> dict:
+        """Load through the real loader so the session gets a LIVE engine."""
+        err = workflow_patch.load_workflow_from_data(sample_workflow, source="<test>")
+        assert err is None
+        assert _get_state()["_engine"] is not None  # the un-mocked seam
+        return sample_workflow
+
+    def test_pure_rewire_actually_lands(self, engine_session: dict) -> None:
+        """A rewire-only pull changes the connection — no flat 'key/idx' param."""
+        artist = copy.deepcopy(engine_session)
+        artist["2"]["inputs"]["negative"] = ["3", 0]  # was ["4", 0]
+
+        result = _pull_with_canvas(canvas_reply(artist))
+
+        assert result["ok"] is True and result["applied"] is True
+        current = _get_state()["current_workflow"]
+        assert current["2"]["inputs"]["negative"] == ["3", 0]
+        assert "negative/0" not in current["2"]["inputs"]
+        assert _no_flat_input_keys(current)
+        assert current == artist
+
+    def test_mixed_param_and_rewire_both_land(self, engine_session: dict) -> None:
+        """A param change AND a rewire in one pull both reach the session."""
+        artist = copy.deepcopy(engine_session)
+        artist["2"]["inputs"]["steps"] = 30
+        artist["2"]["inputs"]["negative"] = ["3", 0]
+
+        result = _pull_with_canvas(canvas_reply(artist))
+
+        assert result["ok"] is True and result["applied"] is True
+        current = _get_state()["current_workflow"]
+        assert current["2"]["inputs"]["steps"] == 30
+        assert current["2"]["inputs"]["negative"] == ["3", 0]
+        assert _no_flat_input_keys(current)
+        assert current == artist
+
+    def test_rewire_pull_is_still_one_undo_away(self, engine_session: dict) -> None:
+        """Undo after an engine-path rewire restores the pre-pull graph."""
+        artist = copy.deepcopy(engine_session)
+        artist["2"]["inputs"]["negative"] = ["3", 0]
+        result = _pull_with_canvas(canvas_reply(artist))
+        assert result["applied"] is True
+
+        undone = json.loads(workflow_patch.handle("undo_workflow_patch", {}))
+        assert undone.get("undone") is True
+        assert _get_state()["current_workflow"]["2"]["inputs"]["negative"] == ["4", 0]
 
 
 class TestEmptyDiff:

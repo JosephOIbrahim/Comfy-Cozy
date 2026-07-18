@@ -1336,3 +1336,142 @@ class TestGraphSurgery:
             if isinstance(v, list) and len(v) == 2 and v[0] == "2"
         ]
         assert dangling == []
+
+
+class TestElementLevelPathGuard:
+    """Defect A1 regression: element-level input paths must never flatten.
+
+    ``jsonpatch.make_patch`` emits per-element paths like ``/3/inputs/model/0``
+    on a rewire. The engine's mutation converter used to join the trailing
+    segments into a flat literal param named ``model/0`` — the engine set a
+    bogus input and the rewire never landed, while the tool reported success.
+    These tests run with the REAL engine (created by the path-load), un-mocking
+    what the old tests never exercised.
+    """
+
+    def test_patches_to_mutations_rejects_element_level_paths(self):
+        patches = [{"op": "replace", "path": "/3/inputs/model/0", "value": "2"}]
+        assert workflow_patch._patches_to_mutations(patches) is None
+
+    def test_patches_to_mutations_still_converts_whole_value_paths(self):
+        patches = [{"op": "replace", "path": "/3/inputs/model", "value": ["2", 0]}]
+        assert workflow_patch._patches_to_mutations(patches) == {"3": {"model": ["2", 0]}}
+
+    def test_element_level_patch_lands_via_fallback(self, sample_workflow):
+        """An element-level rewire applies correctly — no flat 'model/0' key."""
+        result = json.loads(workflow_patch.handle("apply_workflow_patch", {
+            "path": str(sample_workflow),
+            "patches": [{"op": "replace", "path": "/3/inputs/model/0", "value": "2"}],
+        }))
+        assert result.get("applied") == 1
+        current = workflow_patch.get_current_workflow()
+        assert current["3"]["inputs"]["model"] == ["2", 0]
+        assert "model/0" not in current["3"]["inputs"]
+
+    def test_whole_value_rewire_lands_through_engine(self, sample_workflow):
+        """A whole-value connection replace lands with the engine active."""
+        result = json.loads(workflow_patch.handle("apply_workflow_patch", {
+            "path": str(sample_workflow),
+            "patches": [{"op": "replace", "path": "/3/inputs/model", "value": ["2", 0]}],
+        }))
+        assert result.get("applied") == 1
+        current = workflow_patch.get_current_workflow()
+        assert current["3"]["inputs"]["model"] == ["2", 0]
+        assert all("/" not in k for nd in current.values() for k in nd.get("inputs", {}))
+
+
+class TestSessionSeam:
+    """export_session_state / import_session_state — the persistence contract."""
+
+    def _load(self, sample_workflow):
+        workflow_patch.handle("apply_workflow_patch", {
+            "path": str(sample_workflow),
+            "patches": [{"op": "replace", "path": "/3/inputs/seed", "value": 100}],
+        })
+
+    def test_export_without_workflow_is_minimal(self):
+        assert workflow_patch.export_session_state() == {
+            "current_workflow": None,
+            "schema": 1,
+        }
+
+    def test_round_trip_preserves_current_base_history_and_flag(self, sample_workflow):
+        self._load(sample_workflow)
+        workflow_patch.handle("apply_workflow_patch", {
+            "patches": [{"op": "replace", "path": "/3/inputs/steps", "value": 50}],
+        })
+        state = workflow_patch._get_state()
+        state["validated_since_mutation"] = True
+
+        snapshot = workflow_patch.export_session_state()
+        assert snapshot["schema"] == 1
+        expected_current = snapshot["current_workflow"]
+        expected_base = snapshot["base_workflow"]
+        expected_depth = len(snapshot["history"])
+        assert expected_depth == 2
+
+        # Simulate a fresh process: wipe the live session entirely.
+        state["current_workflow"] = None
+        state["base_workflow"] = None
+        state["history"] = []
+        state["validated_since_mutation"] = False
+        state["_engine"] = None
+
+        assert workflow_patch.import_session_state(snapshot) is None
+        assert workflow_patch.get_current_workflow() == expected_current
+        assert workflow_patch._get_state()["base_workflow"] == expected_base
+        assert len(workflow_patch._get_state()["history"]) == expected_depth
+        assert workflow_patch._get_state()["validated_since_mutation"] is True
+
+    def test_undo_works_after_import(self, sample_workflow):
+        self._load(sample_workflow)
+        snapshot = workflow_patch.export_session_state()
+
+        state = workflow_patch._get_state()
+        state["current_workflow"] = None
+        state["base_workflow"] = None
+        state["history"] = []
+        state["_engine"] = None
+
+        assert workflow_patch.import_session_state(snapshot) is None
+        undone = json.loads(workflow_patch.handle("undo_workflow_patch", {}))
+        assert undone.get("undone") is True
+        assert workflow_patch.get_current_workflow()["3"]["inputs"]["seed"] == 42
+
+    def test_export_caps_history_at_ten(self, sample_workflow):
+        self._load(sample_workflow)
+        for i in range(14):
+            workflow_patch.handle("apply_workflow_patch", {
+                "patches": [{"op": "replace", "path": "/3/inputs/seed", "value": i}],
+            })
+        snapshot = workflow_patch.export_session_state()
+        assert len(snapshot["history"]) == 10
+
+    def test_export_snapshot_is_detached_from_live_state(self, sample_workflow):
+        self._load(sample_workflow)
+        snapshot = workflow_patch.export_session_state()
+        snapshot["current_workflow"]["3"]["inputs"]["seed"] = 777
+        assert workflow_patch.get_current_workflow()["3"]["inputs"]["seed"] == 100
+
+    def test_import_none_workflow_clears_session(self, sample_workflow):
+        self._load(sample_workflow)
+        assert workflow_patch.import_session_state(
+            {"current_workflow": None, "schema": 1}
+        ) is None
+        assert workflow_patch.get_current_workflow() is None
+        assert len(workflow_patch._get_state()["history"]) == 0
+
+    def test_import_rejects_malformed_snapshots(self, sample_workflow):
+        self._load(sample_workflow)
+        before = workflow_patch.get_current_workflow()
+
+        assert workflow_patch.import_session_state("nope") is not None
+        assert workflow_patch.import_session_state({"schema": 99}) is not None
+        assert workflow_patch.import_session_state(
+            {"current_workflow": "not-a-graph", "schema": 1}
+        ) is not None
+        assert workflow_patch.import_session_state(
+            {"current_workflow": {"1": {"class_type": "X"}}, "history": "bad", "schema": 1}
+        ) is not None
+        # Rejections leave the live session untouched.
+        assert workflow_patch.get_current_workflow() == before
