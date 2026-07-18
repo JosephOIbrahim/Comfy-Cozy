@@ -1314,6 +1314,36 @@ def open_cmd(
 
 
 # ---------------------------------------------------------------------------
+# OPEN-IN — `cozy pull`
+# ---------------------------------------------------------------------------
+
+
+@app.command("pull")
+def pull_cmd(
+    file: str = typer.Option(
+        None,
+        "--file",
+        help="Pull from a saved workflow JSON file instead of the live canvas.",
+    ),
+):
+    """Pull your canvas edits back into the session as one undoable change.
+
+    Reads the graph you edited in the browser (or a saved workflow file with
+    --file) and folds it into the session as a single validated patch --
+    node adds, deletes, rewires and tweaks all land together, one undo away.
+
+    Examples:
+      cozy pull                      # ingest the live canvas edits
+      cozy pull --file shot_020.json # ingest a saved workflow (UI or API format)
+    """
+    from .verbs.pull_canvas import pull_canvas, render_pull_result
+
+    result = pull_canvas(source="file" if file else "canvas", file=file)
+    console.print(render_pull_result(result), markup=False, highlight=False)
+    raise typer.Exit(0 if result["ok"] else 1)
+
+
+# ---------------------------------------------------------------------------
 # SEE — `cozy see` (run with live telemetry, then a terminal summary)
 # ---------------------------------------------------------------------------
 
