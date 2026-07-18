@@ -76,6 +76,37 @@ def live_session(ksampler_workflow):
         yield workflow
 
 
+@pytest.fixture
+def partial_session(ksampler_workflow):
+    """Live session whose dispatch REJECTS the scheduler step.
+
+    dreamier's 4th step (KSampler.scheduler) fails, so the REAL executor
+    returns a partial result: applied=True, steps_run=3, error set. This
+    un-mocks what the old tests never exercised — a mid-recipe failure.
+    """
+    workflow = ksampler_workflow
+
+    def fake_dispatch(name, args):
+        assert name == "set_input", f"unexpected tool in param recipe: {name}"
+        if args["input_name"] == "scheduler":
+            return json.dumps({"error": "that scheduler isn't available on this sampler"})
+        workflow[args["node_id"]]["inputs"][args["input_name"]] = args["value"]
+        return json.dumps({"success": True})
+
+    def get_workflow():
+        return workflow
+
+    def snapshot():
+        return json.loads(json.dumps(workflow))
+
+    with (
+        patch("agent.recipes._prod_dispatch", fake_dispatch),
+        patch("agent.recipes._prod_workflow", get_workflow),
+        patch("agent.verbs.intend._session_workflow", snapshot),
+    ):
+        yield workflow
+
+
 # ---------------------------------------------------------------------------
 # resolve_recipe — hits
 # ---------------------------------------------------------------------------
@@ -192,6 +223,48 @@ class TestApplyRecipeToSession:
         assert result["applied"] is False
         assert result["error"] == "recipe engine failure"
         assert "unexpected problem" in result["message"]
+
+
+# ---------------------------------------------------------------------------
+# Partial failure honesty (defects D2 + D3)
+# ---------------------------------------------------------------------------
+
+
+class TestPartialFailureHonesty:
+    def test_partial_result_carries_applied_and_error(self, partial_session):
+        result = intend.apply_recipe_to_session("dreamier")
+        # CONTRACT (Lane B): error set means the CLI exits 1 and does NOT execute.
+        assert result["applied"] is True
+        assert result["error"] is not None
+        assert result["steps_run"] == 3
+        assert result["recipe"]["total_steps"] == 4
+        assert len(result["changes"]) == 3  # cfg, steps, sampler_name landed
+
+    def test_render_partial_failure_never_shows_success_header(self, partial_session):
+        result = intend.apply_recipe_to_session("dreamier")
+        text = intend.render_recipe_result(result)
+        assert text.startswith("Applied 3 of 4 steps, then stopped:")
+        assert "scheduler" in text  # the stop reason is not dropped
+        assert "Applied 'dreamier' —" not in text  # never the success header
+
+    def test_render_partial_failure_keeps_landed_changes(self, partial_session):
+        result = intend.apply_recipe_to_session("dreamier")
+        text = intend.render_recipe_result(result)
+        assert "cfg: 8.0 -> 6.0" in text
+        assert "steps: 20 -> 28" in text
+        assert "sampler_name: euler -> dpmpp_2m" in text
+        assert "3 undo steps" in text  # honest undo count for what DID apply
+
+    def test_render_multi_step_success_reports_honest_undo_count(self, live_session):
+        result = intend.apply_recipe_to_session("dreamier")
+        text = intend.render_recipe_result(result)
+        assert "Reversible — this recipe is 4 undo steps." in text
+        assert "puts it right back" not in text  # the one-undo claim is false here
+
+    def test_render_single_change_keeps_simple_undo_phrasing(self, live_session):
+        result = intend.apply_recipe_to_session("faster")  # 1 step, 1 change
+        text = intend.render_recipe_result(result)
+        assert "Every change is reversible — undo puts it right back." in text
 
 
 # ---------------------------------------------------------------------------

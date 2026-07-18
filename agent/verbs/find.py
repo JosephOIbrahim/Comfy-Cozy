@@ -28,6 +28,7 @@ from pathlib import PurePath
 from ..tools import comfy_inspect
 from ..tools.comfy_inspect import _MODEL_EXTENSIONS
 from ..tools.model_compat import MODEL_FAMILIES, _identify_family
+from ..tools.workflow_parse import _extract_api_format
 
 GLYPH_OK = "✓"  # ✓ installed / usable
 GLYPH_MISSING = "✗"  # ✗ missing
@@ -296,7 +297,18 @@ def _check_workflow_models(report: dict, workflow: dict | None, use_session: boo
         )
         return
 
-    refs = extract_model_references(wf)
+    # Honest-format gate: artists usually save with ComfyUI's default Save,
+    # which produces UI-format JSON. Normalize to the API graph before
+    # scanning; a UI-only file has no scannable inputs, so say so instead of
+    # a false "references no models" all-clear.
+    api_nodes, wf_format = _extract_api_format(wf)
+    if wf_format == "ui_only":
+        report["workflow"]["note"] = (
+            "UI-format file — re-export with Save (API Format) to check its models."
+        )
+        return
+
+    refs = extract_model_references(api_nodes)
     if not refs:
         report["workflow"]["checked"] = True
         report["workflow"]["note"] = "The loaded workflow does not reference any model files."

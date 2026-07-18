@@ -152,6 +152,58 @@ class TestBuildModelsReport:
         assert "No workflow loaded" in report["workflow"]["note"]
 
 
+class TestUiFormatHonesty:
+    """Regression: UI-format saves (ComfyUI default Save) must never get a
+    false 'references no models' all-clear (defect D1)."""
+
+    def test_ui_with_api_resolves_references(self, fake_models, sd15_workflow):
+        ui_workflow = {
+            "nodes": [
+                {
+                    "id": 1,
+                    "type": "CheckpointLoaderSimple",
+                    "widgets_values": ["dreamshaper_v8.safetensors"],
+                }
+            ],
+            "links": [],
+            "extra": {"prompt": sd15_workflow},
+        }
+        with patch.object(comfy_inspect, "MODELS_DIR", fake_models):
+            report = find.build_models_report(workflow=ui_workflow)
+        wf = report["workflow"]
+        assert wf["checked"] is True
+        assert [r["name"] for r in wf["references"]] == ["dreamshaper_v8.safetensors"]
+        assert wf["references"][0]["status"] == "ok"
+        assert wf["references"][0]["model_type"] == "checkpoints"
+
+    def test_ui_only_gets_honest_note_never_all_clear(self, fake_models):
+        ui_only = {
+            "nodes": [
+                {
+                    "id": 1,
+                    "type": "CheckpointLoaderSimple",
+                    "widgets_values": ["dreamshaper_v8.safetensors"],
+                }
+            ],
+            "links": [],
+        }
+        with patch.object(comfy_inspect, "MODELS_DIR", fake_models):
+            report = find.build_models_report(workflow=ui_only)
+        wf = report["workflow"]
+        assert wf["checked"] is False
+        assert wf["references"] == []
+        assert "Save (API Format)" in wf["note"]
+        assert "does not reference" not in wf["note"]
+
+    def test_ui_only_note_survives_rendering(self, fake_models):
+        ui_only = {"nodes": [{"id": 1, "type": "KSampler", "widgets_values": []}], "links": []}
+        with patch.object(comfy_inspect, "MODELS_DIR", fake_models):
+            report = find.build_models_report(workflow=ui_only)
+        text = find.render_models_report(report)
+        assert "Save (API Format)" in text
+        assert "does not reference" not in text
+
+
 class TestExtractModelReferences:
     def test_dedupes_and_sorts(self, sd15_workflow):
         sd15_workflow["3"] = {

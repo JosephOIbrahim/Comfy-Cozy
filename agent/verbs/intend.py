@@ -44,6 +44,7 @@ def _recipe_info(recipe: Any) -> dict:
         "description": recipe.description,
         "category": recipe.category,
         "requires_workflow": recipe.requires_workflow,
+        "total_steps": len(recipe.steps),
     }
 
 
@@ -241,21 +242,45 @@ def render_recipe_result(result: dict) -> str:
 
     recipe = result.get("recipe") or {}
     lines: list[str] = []
-    if result.get("applied"):
+    error = result.get("error")
+    if error:
+        # Partial (or zero-step) failure — never the success header, and the
+        # stop reason survives even when result["applied"] is True.
+        steps_run = int(result.get("steps_run") or 0)
+        total = int(recipe.get("total_steps") or 0)
+        lines.append(f"Applied {steps_run} of {total} steps, then stopped: {error}")
+        _append_change_lines(lines, result)
+        undo_steps = len(result.get("changes") or []) + len(result.get("nodes_added") or [])
+        if undo_steps:
+            lines.append(_reversible_line(undo_steps))
+    elif result.get("applied"):
         lines.append(f"Applied '{recipe.get('name', '?')}' — {recipe.get('description', '')}")
-        for change in result.get("changes", []):
-            lines.append(
-                f"  {change['class_type'] or change['node_id']} {change['param']}: "
-                f"{_fmt_value(change['old'])} -> {_fmt_value(change['new'])}"
-            )
-        for node in result.get("nodes_added", []):
-            lines.append(f"  + added {node['class_type'] or 'node'} (node {node['node_id']})")
+        _append_change_lines(lines, result)
         if not result.get("changes") and not result.get("nodes_added"):
             lines.append("  (parameters were already at the recipe's values)")
-        lines.append("Every change is reversible — undo puts it right back.")
+        undo_steps = len(result.get("changes") or []) + len(result.get("nodes_added") or [])
+        lines.append(_reversible_line(undo_steps))
     else:
         lines.append(result.get("message") or "The recipe couldn't be applied.")
     return "\n".join(lines)
+
+
+def _append_change_lines(lines: list[str], result: dict) -> None:
+    """Itemize the input changes and added nodes that DID land."""
+    for change in result.get("changes", []):
+        lines.append(
+            f"  {change['class_type'] or change['node_id']} {change['param']}: "
+            f"{_fmt_value(change['old'])} -> {_fmt_value(change['new'])}"
+        )
+    for node in result.get("nodes_added", []):
+        lines.append(f"  + added {node['class_type'] or 'node'} (node {node['node_id']})")
+
+
+def _reversible_line(undo_steps: int) -> str:
+    """Honest reversibility phrasing: one undo entry per applied mutation."""
+    if undo_steps <= 1:
+        return "Every change is reversible — undo puts it right back."
+    return f"Reversible — this recipe is {undo_steps} undo steps."
 
 
 def render_recipe_list(registry: RecipeRegistry | None = None) -> str:
