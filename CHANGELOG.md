@@ -5,6 +5,51 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.9.0] - 2026-07-18 — The Artist Verbs
+
+The local-first CLI surface: five verbs an artist can drive without an account,
+a network connection, or an API key — plus a browser canvas round-trip that
+hands the graph to the artist and takes their edits back as validated,
+undoable patches. All offline for core operation; the only sockets are
+loopback to the local ComfyUI.
+
+### Added
+- **FIND** — `cozy models list` / `cozy nodes list` (✓/✗/⚠ health marks, pure
+  disk reads; degrades in plain words when ComfyUI is down) and `cozy find`,
+  a fuzzy command palette over the verb surface.
+- **INTEND** — `cozy run --recipe dreamier|sharper|faster|…` applies a named
+  recipe to the session workflow as validated patches (keyless rail — recipe
+  runs never touch LLM credentials), reports every change old→new, then
+  validates and executes on the telemetry rail. `--recipe list` names the goal
+  vocabulary.
+- **SEE** — `cozy see [workflow]` runs and renders what happened: braille
+  step-time sparkline, slowest nodes, VRAM bar. Partial telemetry still renders
+  when a run fails. New pure renderer in `agent/_render.py`.
+- **OWN** — `cozy doctor` (one-key health sweep, CI-gateable exit codes),
+  `cozy stats` (on-device model/session/GPU numbers), `cozy model search`
+  (fuzzy, local disk only).
+- **OPEN** — the canvas round-trip. `cozy open` pushes the session workflow
+  onto the live ComfyUI canvas and opens the browser; `cozy pull` folds the
+  artist's edits back in as ONE validated patch — node adds, deletes, rewires
+  and tweaks together, one undo away. The only refusal is a wire that goes
+  nowhere, named exactly, with the session untouched.
+- **Cross-process session sidecar** — the cozy session (workflow, undo
+  history, baseline) survives between CLI invocations via an atomic snapshot
+  in `sessions/`, so open → edit → pull works across separate commands.
+- `execute_with_progress` gains opt-in `include_progress_log` (downsampled,
+  truncation-marked) for telemetry consumers; success results stay compact by
+  default.
+
+### Fixed (pre-release, caught by adversarial review before merge)
+- Element-level RFC6902 paths no longer flatten into bogus literal inputs in
+  the patch engine fast-path — connection rewires land correctly everywhere.
+- Glyph and sparkline output no longer dies in a UnicodeEncodeError on
+  redirected/piped stdout (cp1252): streams reconfigure to UTF-8/replace.
+- UI-format workflow files report honestly in `models list` instead of a
+  false "no model references" all-clear.
+- Partially-applied recipes render the stop reason and refuse to execute the
+  half-applied graph; multi-step recipes state their real undo depth.
+
 ## [5.8.2] - 2026-07-12 — Demo Ready
 
 ### Added
