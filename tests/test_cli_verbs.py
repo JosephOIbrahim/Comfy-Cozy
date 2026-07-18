@@ -7,6 +7,7 @@ exit codes. All mocked: no ComfyUI server, no network, no API key.
 """
 
 import json
+import re
 from unittest.mock import patch
 
 import pytest
@@ -15,7 +16,7 @@ from typer.testing import CliRunner
 import agent.config as config
 from agent.cli import app
 
-runner = CliRunner()
+runner = CliRunner(env={"NO_COLOR": "1"})
 
 
 @pytest.fixture(autouse=True)
@@ -79,36 +80,42 @@ def _nodes_report(wf_note: str | None = None) -> dict:
 # ---------------------------------------------------------------------------
 
 
+def _plain(output: str) -> str:
+    """Strip ANSI styles so flag assertions survive color-rendering CI envs
+    (rich splits option names into styled spans, breaking substring checks)."""
+    return re.sub(r"\x1b\[[0-9;]*m", "", output)
+
+
 class TestHelp:
     def test_models_group_help(self):
         result = runner.invoke(app, ["models", "--help"])
         assert result.exit_code == 0
-        assert "list" in result.output
+        assert "list" in _plain(result.output)
 
     def test_models_list_help(self):
         result = runner.invoke(app, ["models", "list", "--help"])
         assert result.exit_code == 0
-        assert "--workflow" in result.output
+        assert "--workflow" in _plain(result.output)
 
     def test_nodes_list_help(self):
         result = runner.invoke(app, ["nodes", "list", "--help"])
         assert result.exit_code == 0
-        assert "--workflow" in result.output
+        assert "--workflow" in _plain(result.output)
 
     def test_open_help(self):
         result = runner.invoke(app, ["open", "--help"])
         assert result.exit_code == 0
-        assert "--no-push" in result.output
+        assert "--no-push" in _plain(result.output)
 
     def test_see_help(self):
         result = runner.invoke(app, ["see", "--help"])
         assert result.exit_code == 0
-        assert "--timeout" in result.output
+        assert "--timeout" in _plain(result.output)
 
     def test_find_help(self):
         result = runner.invoke(app, ["find", "--help"])
         assert result.exit_code == 0
-        assert "--limit" in result.output
+        assert "--limit" in _plain(result.output)
 
     def test_existing_commands_still_registered(self):
         """Additive-only guarantee: the pre-existing commands keep their names."""

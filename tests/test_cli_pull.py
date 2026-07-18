@@ -9,13 +9,15 @@ ComfyUI server, no network, no API key.
 
 from unittest.mock import patch
 
+import re
+
 import pytest
 from typer.testing import CliRunner
 
 import agent.config as config
 from agent.cli import app
 
-runner = CliRunner()
+runner = CliRunner(env={"NO_COLOR": "1"})
 
 
 @pytest.fixture(autouse=True)
@@ -27,8 +29,9 @@ def _isolated_sessions_dir(tmp_path, monkeypatch):
 
 
 def _flat(output: str) -> str:
-    """Collapse console line-wrapping so phrase assertions survive any width."""
-    return " ".join(output.split())
+    """Strip ANSI styles and collapse line-wrapping so assertions survive any
+    console width or color environment (release CI renders styled help)."""
+    return " ".join(re.sub(r"\x1b\[[0-9;]*m", "", output).split())
 
 
 # ---------------------------------------------------------------------------
@@ -73,7 +76,7 @@ class TestPullHelp:
     def test_pull_help_mentions_file_flag(self):
         result = runner.invoke(app, ["pull", "--help"])
         assert result.exit_code == 0
-        assert "--file" in result.output
+        assert "--file" in _flat(result.output)
 
     def test_pull_listed_in_top_level_help(self):
         result = runner.invoke(app, ["--help"])

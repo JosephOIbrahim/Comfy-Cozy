@@ -22,7 +22,7 @@ from agent.cli import app
 from agent.tools import workflow_patch
 from agent.verbs import _cli_state
 
-runner = CliRunner()
+runner = CliRunner(env={"NO_COLOR": "1"})
 
 
 CANVAS_GRAPH = {
