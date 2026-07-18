@@ -137,6 +137,16 @@ TOOLS: list[dict] = [
                     "type": "string",
                     "description": "Goal ID from planner, for linking outcome to a goal.",
                 },
+                "include_progress_log": {
+                    "type": "boolean",
+                    "description": (
+                        "Include the full per-event progress log in a successful result "
+                        "(downsampled to the last 500 entries; progress_log_truncated "
+                        "is set when downsampled). Default false — success results stay "
+                        "compact with progress_events count + node_timing only. Error "
+                        "and timeout results always carry the full log."
+                    ),
+                },
             },
             "required": [],
         },
@@ -343,12 +353,27 @@ def _poll_completion(
 # WebSocket progress monitoring
 # ---------------------------------------------------------------------------
 
+# Cap on progress_log entries returned in a SUCCESS dict when the caller
+# opts in via include_progress_log. Long video/tiled renders emit thousands
+# of ticks (~99 bytes each) — unbounded, that is hundreds of KB of JSON
+# pushed straight into the host model context per successful call.
+_PROGRESS_LOG_MAX_ENTRIES = 500
+
+
 def _execute_with_websocket(
     workflow: dict,
     timeout: float = 300,
     progress: ProgressCallback | None = None,
+    include_progress_log: bool = False,
 ) -> dict:
-    """Execute workflow with real-time WebSocket progress updates."""
+    """Execute workflow with real-time WebSocket progress updates.
+
+    ``include_progress_log`` controls whether a *successful* result carries the
+    per-event ``progress_log`` (downsampled to the last
+    ``_PROGRESS_LOG_MAX_ENTRIES`` entries, with ``progress_log_truncated: True``
+    when downsampled). Error and timeout results always carry the full log —
+    those are rare and bounded, and the detail matters there.
+    """
     progress = progress or ProgressReporter.noop()
     total_nodes = sum(
         1 for v in workflow.values()
@@ -586,11 +611,18 @@ def _execute_with_websocket(
         "node_timing": timing[:10],
         "slowest_node": timing[0] if timing else None,
         "progress_events": len(progress_log),
-        # Additive (WP-SEE): the full log the error/timeout dicts already carry,
-        # so a post-hoc telemetry render works from the success dict alone.
-        "progress_log": progress_log,
         "monitoring": "websocket",
     }
+    # Opt-in (WP-SEE follow-up): the full log stays out of success results by
+    # default so the JSON entering the host model context stays compact. When
+    # requested, downsample to the newest entries so long renders stay bounded.
+    if include_progress_log:
+        if len(progress_log) > _PROGRESS_LOG_MAX_ENTRIES:
+            result_log = progress_log[-_PROGRESS_LOG_MAX_ENTRIES:]
+            result["progress_log"] = result_log
+            result["progress_log_truncated"] = True
+        else:
+            result["progress_log"] = progress_log
     if _outputs_fetch_error:
         result["outputs_warning"] = (
             f"Execution completed but output filenames could not be retrieved "
@@ -842,6 +874,12 @@ def _handle_execute_with_progress(
     auto_verify = _raw_verify if isinstance(_raw_verify, bool) else str(_raw_verify).lower() not in ("false", "0", "no", "")
     session = tool_input.get("session", "default")
     goal_id = tool_input.get("goal_id")
+    _raw_log = tool_input.get("include_progress_log", False)  # same coercion as auto_verify
+    include_progress_log = (
+        _raw_log
+        if isinstance(_raw_log, bool)
+        else str(_raw_log).lower() not in ("false", "0", "no", "")
+    )
 
     if path_str:
         workflow, err = _load_workflow_from_file(path_str)
@@ -855,7 +893,12 @@ def _handle_execute_with_progress(
                 "error": "No workflow loaded. Provide a 'path' or load one first.",
             })
 
-    result = _execute_with_websocket(workflow, timeout=timeout, progress=progress)
+    result = _execute_with_websocket(
+        workflow,
+        timeout=timeout,
+        progress=progress,
+        include_progress_log=include_progress_log,
+    )
 
     # Auto-verify if requested and execution completed successfully
     if auto_verify and result.get("status") == "complete" and result.get("prompt_id"):

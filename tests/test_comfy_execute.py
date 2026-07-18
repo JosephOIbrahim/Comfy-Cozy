@@ -346,6 +346,127 @@ class TestExecuteWithProgress:
             assert len(result["node_timing"]) >= 1
 
 
+class TestProgressLogGating:
+    """Success dicts must not carry progress_log unless opted in (Lane C / C1).
+
+    The pre-fix branch embedded the FULL progress_log in every success dict of
+    execute_with_progress — hundreds of KB of JSON entering the host model
+    context on long renders. These tests exercise the real websocket loop
+    (mocked transport only), so the gating logic itself is un-mocked.
+    """
+
+    def _run_ws(self, sample_workflow, tool_input: dict, n_progress: int = 3,
+                error: bool = False) -> dict:
+        """Drive the real ws loop with mocked transport; return parsed result."""
+        queue_resp = MagicMock()
+        queue_resp.json.return_value = {"prompt_id": "ws_gate"}
+        queue_resp.raise_for_status = MagicMock()
+
+        history_resp = MagicMock()
+        history_resp.json.return_value = {
+            "ws_gate": {
+                "status": {"status_str": "success", "completed": True},
+                "outputs": {"2": {"images": [{"filename": "out.png", "subfolder": ""}]}},
+            },
+        }
+        history_resp.raise_for_status = MagicMock()
+
+        ws_messages = [
+            json.dumps({"type": "execution_start", "data": {"prompt_id": "ws_gate"}}),
+            json.dumps({"type": "executing", "data": {"node": "1", "prompt_id": "ws_gate"}}),
+            json.dumps({"type": "executing", "data": {"node": "2", "prompt_id": "ws_gate"}}),
+        ]
+        ws_messages += [
+            json.dumps({
+                "type": "progress",
+                "data": {"value": i + 1, "max": n_progress, "prompt_id": "ws_gate"},
+            })
+            for i in range(n_progress)
+        ]
+        if error:
+            ws_messages.append(json.dumps({
+                "type": "execution_error",
+                "data": {
+                    "prompt_id": "ws_gate",
+                    "node_id": "2",
+                    "node_type": "KSampler",
+                    "exception_message": "boom",
+                },
+            }))
+        else:
+            ws_messages.append(json.dumps({
+                "type": "executing", "data": {"node": None, "prompt_id": "ws_gate"},
+            }))
+
+        mock_ws = MagicMock()
+        msg_iter = iter(ws_messages)
+        mock_ws.recv.side_effect = lambda timeout=None: next(msg_iter)
+        mock_ws.__enter__ = MagicMock(return_value=mock_ws)
+        mock_ws.__exit__ = MagicMock(return_value=False)
+
+        patcher, mock_client = _mock_httpx_client()
+        mock_client.post.return_value = queue_resp
+        mock_client.get.return_value = history_resp
+        with patch.object(comfy_execute, "_HAS_WS", True), \
+             patcher, \
+             patch("agent.engine.comfyui_adapter.websockets.sync.client.connect",
+                   return_value=mock_ws):
+            return json.loads(comfy_execute.handle("execute_with_progress", {
+                "path": str(sample_workflow),
+                "timeout": 30,
+                **tool_input,
+            }))
+
+    def test_success_without_flag_has_no_progress_log(self, sample_workflow):
+        """Default (no flag): success dict stays compact — no progress_log key."""
+        result = self._run_ws(sample_workflow, {})
+        assert result["status"] == "complete"
+        assert "progress_log" not in result
+        assert "progress_log_truncated" not in result
+        # Compact summary fields still present
+        assert result["progress_events"] >= 3
+        assert len(result["node_timing"]) >= 1
+
+    def test_success_with_flag_carries_progress_log(self, sample_workflow):
+        """include_progress_log=True: success dict carries the log, untruncated."""
+        result = self._run_ws(sample_workflow, {"include_progress_log": True})
+        assert result["status"] == "complete"
+        assert "progress_log" in result
+        assert len(result["progress_log"]) == result["progress_events"]
+        assert "progress_log_truncated" not in result
+
+    def test_long_render_downsampled_to_last_500(self, sample_workflow):
+        """More than 500 events: log capped to newest 500 + truncation marker."""
+        result = self._run_ws(
+            sample_workflow, {"include_progress_log": True}, n_progress=600,
+        )
+        assert result["status"] == "complete"
+        assert result["progress_events"] > 500
+        assert len(result["progress_log"]) == 500
+        assert result["progress_log_truncated"] is True
+        # Downsampling keeps the NEWEST entries — the tail must be the
+        # completion event, and the head must not be the start event.
+        assert result["progress_log"][-1]["event"] == "complete"
+        assert result["progress_log"][0]["event"] != "start"
+
+    def test_error_dict_still_carries_full_log(self, sample_workflow):
+        """Error results keep the full log regardless of the flag (unchanged)."""
+        result = self._run_ws(sample_workflow, {}, n_progress=3, error=True)
+        assert result["status"] == "error"
+        assert "progress_log" in result
+        # start + 2 executing + 3 progress = 6 entries, none dropped
+        assert len(result["progress_log"]) == 6
+        assert "progress_log_truncated" not in result
+
+    def test_schema_declares_include_progress_log(self):
+        """TOOLS schema for execute_with_progress exposes the opt-in flag."""
+        tool = next(t for t in comfy_execute.TOOLS
+                    if t["name"] == "execute_with_progress")
+        props = tool["input_schema"]["properties"]
+        assert "include_progress_log" in props
+        assert props["include_progress_log"]["type"] == "boolean"
+
+
 class TestPathTraversal:
     def test_path_traversal_blocked_execute_workflow(self):
         """Path traversal attempts must be rejected before any file read."""
