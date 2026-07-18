@@ -51,6 +51,24 @@ class TestBridgeAuth:
             _req({"Authorization": "Bearer s3cret"})
         ) is None
 
+    def test_agent_unavailable_fails_closed(self, monkeypatch):
+        """L-PANEL fail-closed: if the agent package cannot import, every
+        request is refused — including same-origin browsers. The mutating
+        routes must never serve unauthenticated."""
+        import builtins
+        real_import = builtins.__import__
+
+        def broken(name, *args, **kwargs):
+            if name == "agent" or name.startswith("agent."):
+                raise ImportError("agent unavailable (simulated)")
+            return real_import(name, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "__import__", broken)
+        assert bridge.bridge_auth_failure(_req({})) == (503, "agent auth unavailable")
+        assert bridge.bridge_auth_failure(
+            _req({"Origin": "http://127.0.0.1:8188"})
+        ) == (503, "agent auth unavailable")
+
     def test_agent_client_sends_bearer_when_token_set(self, monkeypatch):
         from agent.tools.canvas_bridge import bridge_auth_headers
         monkeypatch.setattr("agent.config.MCP_AUTH_TOKEN", None, raising=False)

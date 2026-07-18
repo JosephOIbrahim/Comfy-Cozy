@@ -21,9 +21,9 @@ htmlcov/
 .ruff_cache/
 .mypy_cache/
 
-# Environment
+# Environment (.env.bak* — dated backups carry live keys, never track)
 .env
-.env.bak
+.env.bak*
 
 # Logs (root-level scratch logs from harness runs)
 *.log
@@ -61,3 +61,11 @@ nul
 # Node / JS verifier stack (write-back v1 — Vitest)
 node_modules/
 npm-debug.log*
+
+# Precompressed web assets — aiohttp shadow-serves .br/.gz siblings over the
+# live .js/.css with no freshness check; stale ones mask real edits invisibly.
+# Preflight (verify_cozy_links.py) fails the launch if a stale one exists.
+panel/web/**/*.br
+panel/web/**/*.gz
+ui/web/**/*.br
+ui/web/**/*.gz

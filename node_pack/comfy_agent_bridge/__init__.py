@@ -15,7 +15,9 @@ Security (L-PANEL): the mutating routes (/agent/push_workflow,
 agent later trusts as "what the artist drew". They are Origin-gated (a browser
 fetch can't attach a custom Authorization header, so same-origin IS the auth
 layer) and, for non-browser callers, Bearer-gated when MCP_AUTH_TOKEN is set —
-so a cross-origin page or a tokenless script cannot drive them.
+so a cross-origin page or a tokenless script cannot drive them. If the agent
+package cannot be imported the gate fails CLOSED (503 on every request):
+"registered but unauthenticated" must never be a reachable state.
 """
 
 import logging
@@ -44,14 +46,20 @@ def bridge_auth_failure(request):
 
     Pure logic — takes anything with ``.headers`` and returns ``(status,
     error)`` to reject or ``None`` to allow, so it is unit-testable without a
-    live ComfyUI. If the agent package is unavailable the bridge has nothing
-    to bridge to (inert routes) and the check is skipped.
+    live ComfyUI. If the agent package is unavailable the gate cannot verify
+    anything, so every request is refused (fail-closed) — the routes stay
+    registered, but push_workflow still broadcasts to live browser tabs, so
+    "registered but unauthenticated" must never be a reachable state.
     """
     try:
         from agent._session_helpers import allowed_origins
         from agent.config import MCP_AUTH_TOKEN
-    except Exception:
-        return None
+    except Exception as exc:
+        log.error(
+            "comfy_agent_bridge: agent auth layer unavailable — refusing "
+            "request (fail-closed): %s", exc
+        )
+        return (503, "agent auth unavailable")
     origin = request.headers.get("Origin", "")
     if origin:
         if origin not in allowed_origins():
