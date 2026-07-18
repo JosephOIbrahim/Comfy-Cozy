@@ -8,6 +8,7 @@ codes. All mocked: no ComfyUI server, no network, no API key.
 
 import io
 import json
+import re
 import sys
 from unittest.mock import patch
 
@@ -17,7 +18,7 @@ from typer.testing import CliRunner
 import agent.config as config
 from agent.cli import app
 
-runner = CliRunner()
+runner = CliRunner(env={"NO_COLOR": "1"})
 
 
 @pytest.fixture(autouse=True)
@@ -233,12 +234,18 @@ def _search(found: bool) -> dict:
 # ---------------------------------------------------------------------------
 
 
+def _plain(output: str) -> str:
+    """Strip ANSI styles so flag assertions survive color-rendering CI envs
+    (rich splits option names into styled spans, breaking substring checks)."""
+    return re.sub(r"\x1b\[[0-9;]*m", "", output)
+
+
 class TestHelp:
     def test_run_help_shows_recipe_flag(self):
         result = runner.invoke(app, ["run", "--help"])
         assert result.exit_code == 0
-        assert "--recipe" in result.output
-        assert "--workflow" in result.output
+        assert "--recipe" in _plain(result.output)
+        assert "--workflow" in _plain(result.output)
 
     def test_doctor_help(self):
         result = runner.invoke(app, ["doctor", "--help"])
