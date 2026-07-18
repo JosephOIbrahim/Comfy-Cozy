@@ -1093,5 +1093,205 @@ def mcp():
     mcp_main()
 
 
+# ---------------------------------------------------------------------------
+# FIND spine — `cozy models list` / `cozy nodes list` / `cozy find`
+# ---------------------------------------------------------------------------
+
+models_app = typer.Typer(
+    help="What's on your disk, model-wise -- with a health mark per file.",
+    no_args_is_help=True,
+)
+nodes_app = typer.Typer(
+    help="Your installed custom node packs -- and what a workflow still needs.",
+    no_args_is_help=True,
+)
+app.add_typer(models_app, name="models")
+app.add_typer(nodes_app, name="nodes")
+
+
+def _read_workflow_json(path_str: str) -> dict:
+    """Load a workflow JSON file for the FIND commands, exiting in human words on failure."""
+    from pathlib import Path
+
+    path = Path(path_str)
+    if not path.exists():
+        console.print(f"[red]File not found: {path_str}[/red]")
+        raise typer.Exit(1)
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError) as e:
+        console.print(f"[red]That workflow file could not be read as JSON: {e}[/red]")
+        raise typer.Exit(1)
+    if not isinstance(data, dict):
+        console.print("[red]That file is valid JSON but not a workflow (expected an object).[/red]")
+        raise typer.Exit(1)
+    return data
+
+
+@models_app.command("list")
+def models_list(
+    model_type: str = typer.Argument(
+        None,
+        help="Only show one folder (e.g. checkpoints, loras, vae). Omit for everything.",
+    ),
+    workflow: str = typer.Option(
+        None, "--workflow", "-w",
+        help="Also check which models THIS workflow file needs against what's on disk.",
+    ),
+):
+    """Every model on your disk, grouped by folder, each with a health mark.
+
+    Marks: [green]OK[/green] = usable, [yellow]attention[/yellow] = something's off
+    (zero-byte download, family mismatch), [red]missing[/red] = a workflow wants it
+    but it isn't on disk. Pure local read -- works with ComfyUI off, no account,
+    no network.
+
+    Examples:
+      cozy models list                          # everything on disk
+      cozy models list checkpoints              # just the checkpoints folder
+      cozy models list --workflow shot_020.json # cross-check a workflow's models
+    """
+    from .verbs import find
+
+    wf = _read_workflow_json(workflow) if workflow else None
+    report = find.build_models_report(model_type=model_type, workflow=wf)
+    console.print(find.render_models_report(report), markup=False, highlight=False)
+
+
+@nodes_app.command("list")
+def nodes_list(
+    workflow: str = typer.Option(
+        None, "--workflow", "-w",
+        help="Check THIS workflow file's nodes instead of the one loaded in the session.",
+    ),
+):
+    """Installed custom node packs, plus what your workflow still needs.
+
+    The pack list comes straight from your disk -- no network, no account.
+    If a workflow is loaded (or passed with --workflow) and ComfyUI is running,
+    any node types the workflow uses but you don't have are flagged, with the
+    pack that provides them. ComfyUI off? The pack list still shows; the
+    workflow check politely steps aside.
+
+    Examples:
+      cozy nodes list                           # installed packs + session workflow check
+      cozy nodes list --workflow shot_020.json  # check a specific workflow file
+    """
+    from .verbs import find
+
+    report = find.build_nodes_report(workflow_path=workflow)
+    console.print(find.render_nodes_report(report), markup=False, highlight=False)
+
+
+@app.command("find")
+def find_commands(
+    query: str = typer.Argument(
+        "",
+        help="A word for what you want to do -- 'models', 'render', 'sessions'...",
+    ),
+    limit: int = typer.Option(10, "--limit", help="How many matches to show."),
+):
+    """Find the right cozy command without digging through help pages.
+
+    Type roughly what you're after and get the closest commands with a
+    one-line summary each. No arguments shows the whole palette.
+
+    Examples:
+      cozy find              # show every command
+      cozy find models       # commands about models
+      cozy find missing      # how do I find missing things?
+    """
+    from .verbs import find
+
+    entries = find.command_palette(query, limit=limit)
+    console.print(find.render_palette(entries), markup=False, highlight=False)
+
+
+# ---------------------------------------------------------------------------
+# OPEN-OUT — `cozy open`
+# ---------------------------------------------------------------------------
+
+
+@app.command("open")
+def open_cmd(
+    no_push: bool = typer.Option(
+        False, "--no-push",
+        help="Just open the canvas -- don't put the session workflow on it first.",
+    ),
+):
+    """Open the ComfyUI canvas in your browser, with your session workflow on it.
+
+    One command from session to editable canvas: pushes the workflow you've
+    been building here onto the live canvas, then opens (or focuses) your
+    browser at ComfyUI. Use --no-push to only open the browser. If ComfyUI
+    isn't running there's no canvas to open -- you'll get a plain heads-up
+    instead of a dead tab.
+
+    Examples:
+      cozy open              # push the session workflow, then open the canvas
+      cozy open --no-push    # open the canvas as it already is
+    """
+    from .verbs.open_canvas import open_canvas
+
+    result = open_canvas(push=not no_push)
+    console.print(result["message"], markup=False, highlight=False)
+    raise typer.Exit(0 if result["opened"] else 1)
+
+
+# ---------------------------------------------------------------------------
+# SEE — `cozy see` (run with live telemetry, then a terminal summary)
+# ---------------------------------------------------------------------------
+
+
+@app.command()
+def see(
+    workflow: str = typer.Argument(
+        None,
+        help="Workflow JSON to run. Omit to run the workflow loaded in this session.",
+    ),
+    timeout: float = typer.Option(
+        300.0, "--timeout",
+        help="Give up waiting after this many seconds.",
+    ),
+):
+    """Run a workflow and see what happened -- step timing, slow nodes, VRAM.
+
+    Executes the workflow against your local ComfyUI and then prints a compact
+    telemetry block: a sparkline of sampler step times, the slowest nodes, and
+    a VRAM bar from one snapshot. If the run fails partway you still get the
+    telemetry captured up to that point.
+
+    Examples:
+      cozy see                      # run the session workflow, watch it
+      cozy see shot_020.json        # run a specific workflow file
+      cozy see --timeout 600        # long render, more patience
+    """
+    from .tools import comfy_execute
+    from .verbs.see import StepTimeCollector, render_run_summary
+
+    collector = StepTimeCollector()
+    # False just means no live telemetry; the summary still degrades cleanly.
+    collector.install()
+    try:
+        tool_input: dict = {"timeout": timeout}
+        if workflow:
+            tool_input["path"] = workflow
+        result = json.loads(comfy_execute.handle("execute_with_progress", tool_input))
+    finally:
+        collector.uninstall()
+
+    status = result.get("status")
+    if status is None:
+        # The run never started (ComfyUI down, bad path, no workflow loaded...).
+        console.print(f"[red]{result.get('error', 'The run could not start.')}[/red]")
+        raise typer.Exit(1)
+    if status == "error":
+        console.print(f"[red]The run failed: {result.get('error', 'unknown error')}[/red]")
+    elif status == "timeout":
+        console.print(f"[yellow]{result.get('message', 'The run timed out.')}[/yellow]")
+    console.print(render_run_summary(collector, result), markup=False, highlight=False)
+    raise typer.Exit(0 if status == "complete" else 1)
+
+
 if __name__ == "__main__":
     app()

@@ -586,6 +586,9 @@ def _execute_with_websocket(
         "node_timing": timing[:10],
         "slowest_node": timing[0] if timing else None,
         "progress_events": len(progress_log),
+        # Additive (WP-SEE): the full log the error/timeout dicts already carry,
+        # so a post-hoc telemetry render works from the success dict alone.
+        "progress_log": progress_log,
         "monitoring": "websocket",
     }
     if _outputs_fetch_error:
