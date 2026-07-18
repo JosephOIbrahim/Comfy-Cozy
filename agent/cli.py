@@ -76,30 +76,63 @@ class CLIHandler(NullHandler):
 @app.command()
 def run(
     session: str = typer.Option(
-        None, "--session", "-s",
+        None,
+        "--session",
+        "-s",
         help="Named session for memory persistence",
     ),
     verbose: bool = typer.Option(
-        False, "--verbose", "-v",
+        False,
+        "--verbose",
+        "-v",
         help="Show debug logging (API timing, tool execution, context management)",
     ),
     model: str = typer.Option(
-        None, "--model",
+        None,
+        "--model",
         help="Model alias or id to use (e.g. 'nemotron', 'claude'). See list_models_available.",
     ),
     provider: str = typer.Option(
-        None, "--provider",
+        None,
+        "--provider",
         help="LLM provider: anthropic|openai|gemini|ollama|nvidia|custom",
     ),
+    recipe: str = typer.Option(
+        None,
+        "--recipe",
+        help=(
+            "Apply a named look ('dreamier', 'sharper', 'faster'...) to the workflow "
+            "and run it -- no chat, no API key. 'list' shows every recipe."
+        ),
+    ),
+    workflow: str = typer.Option(
+        None,
+        "--workflow",
+        "-w",
+        help="With --recipe: the workflow JSON file to load and run the recipe on.",
+    ),
 ):
-    """Start an interactive agent session.
+    """Start an interactive agent session -- or, with --recipe, a one-shot recipe run.
+
+    With --recipe the agent stays out of it entirely: the named recipe applies
+    its validated parameter changes to the workflow (loaded from --workflow, or
+    whatever this session already has), the result is checked, and the run
+    executes locally with the same live telemetry as `cozy see`. No API key,
+    no network beyond your own ComfyUI.
 
     Examples:
       agent run                       # ephemeral session, no memory
       agent run --session portrait    # named session, remembers across calls
       agent run --model nemotron      # swap the reasoning model at launch
       agent run -v                    # verbose: API timing + tool tracing
+      cozy run --recipe list          # every recipe, one line each
+      cozy run --recipe dreamier -w shot_020.json   # apply + run, no chat
     """
+    if recipe:
+        # WP-INTEND (CLI.L4): the deterministic recipe/patch rail -- apply ->
+        # validate -> execute. Never the orchestration/cognitive-stage path.
+        raise typer.Exit(_recipe_run(recipe, workflow))
+
     from . import config
     from .tools import session_tools
 
@@ -111,6 +144,7 @@ def run(
     # Apply any saved selection first so it becomes the default; an explicit
     # --model/--provider below still overrides it (this runs before that block).
     from .llm._selection import apply_saved_selection
+
     try:
         _saved = apply_saved_selection()
         if _saved and not (model or provider):
@@ -121,6 +155,7 @@ def run(
     # Apply a launch-time model/provider swap before validating credentials.
     if model or provider:
         from .llm.swap import swap
+
         try:
             info = swap(model=model, provider=provider, probe=True, persist=True)
         except Exception as e:
@@ -152,13 +187,15 @@ def run(
         raise typer.Exit(1)
 
     # Show header (read the model dynamically — reflects any swap above)
-    console.print(Panel.fit(
-        f"[bold blue]ComfyUI Agent[/bold blue]\n"
-        f"Model: {config.LLM_PROVIDER} / {config.AGENT_MODEL}\n"
-        f"ComfyUI: {COMFYUI_URL}\n"
-        f"Database: {COMFYUI_DATABASE}",
-        title=f"ComfyUI Agent v{__version__}",
-    ))
+    console.print(
+        Panel.fit(
+            f"[bold blue]ComfyUI Agent[/bold blue]\n"
+            f"Model: {config.LLM_PROVIDER} / {config.AGENT_MODEL}\n"
+            f"ComfyUI: {COMFYUI_URL}\n"
+            f"Database: {COMFYUI_DATABASE}",
+            title=f"ComfyUI Agent v{__version__}",
+        )
+    )
 
     # Load session context for system prompt injection
     session_context = None
@@ -171,7 +208,9 @@ def run(
             if load_result.get("workflow_restored"):
                 console.print(f"[dim]Workflow loaded: {load_result.get('workflow_path')}[/dim]")
             if load_result.get("notes_count", 0) > 0:
-                console.print(f"[dim]{load_result['notes_count']} note(s) from previous session[/dim]")
+                console.print(
+                    f"[dim]{load_result['notes_count']} note(s) from previous session[/dim]"
+                )
             # Build session context for system prompt
             session_context = {
                 "name": session,
@@ -187,6 +226,7 @@ def run(
             if session_context and load_result.get("workflow_restored"):
                 try:
                     from .config import COMFYUI_OUTPUT_DIR
+
                     pngs = sorted(
                         COMFYUI_OUTPUT_DIR.glob("*.png"),
                         key=lambda p: p.stat().st_mtime,
@@ -222,16 +262,13 @@ def run(
                 # state) instead of the user's session, silently corrupting
                 # the user's foo.json on every normal exit.
                 from ._conn_ctx import _conn_session
+
                 _conn_session.set(session)
-                save_result = json.loads(
-                    session_tools.handle("save_session", {"name": session})
-                )
+                save_result = json.loads(session_tools.handle("save_session", {"name": session}))
                 if "saved" in save_result:
                     console.print(f"\n[dim]Session '{session}' saved.[/dim]")
             except Exception as e:
-                log.warning(
-                    "Failed to save session '%s' on exit: %s", session, e
-                )
+                log.warning("Failed to save session '%s' on exit: %s", session, e)
 
     # Cycle 15: thread the --session flag through the _conn_session ContextVar
     # so every tool call inside run_interactive sees the right session.  Cycles
@@ -249,9 +286,7 @@ def run(
     # so a SIGTERM that fires during startup runs _save_and_exit with the
     # contextvar already pointing at the right session.
     signal.signal(signal.SIGTERM, _save_and_exit)
-    atexit.register(
-        lambda: _save_and_exit() if session and not _shutdown_done.is_set() else None
-    )
+    atexit.register(lambda: _save_and_exit() if session and not _shutdown_done.is_set() else None)
 
     handler = CLIHandler(console)
     try:
@@ -319,7 +354,8 @@ def diagnose(
     json_out: bool = typer.Option(False, "--json", help="Raw document (pipeable, jq-able)"),
     strict: bool = typer.Option(False, "--strict", help="Exit 1 if any critical finding"),
     assert_env: str = typer.Option(
-        None, "--assert-env", help="Assert the env fingerprint matches this hash (exit 3 on drift)"),
+        None, "--assert-env", help="Assert the env fingerprint matches this hash (exit 3 on drift)"
+    ),
 ):
     """Show the latest run report — keyless, deterministic, CI-safe.
 
@@ -330,8 +366,11 @@ def diagnose(
     """
     from .diagnosis.cli import run_diagnose
 
-    raise typer.Exit(run_diagnose(workflow=workflow, last=last, as_json=json_out,
-                                  strict=strict, assert_env=assert_env))
+    raise typer.Exit(
+        run_diagnose(
+            workflow=workflow, last=last, as_json=json_out, strict=strict, assert_env=assert_env
+        )
+    )
 
 
 @app.command()
@@ -369,8 +408,7 @@ def parse(
         if api_data and isinstance(api_data, dict):
             # Has embedded API format
             nodes = {
-                k: v for k, v in api_data.items()
-                if isinstance(v, dict) and "class_type" in v
+                k: v for k, v in api_data.items() if isinstance(v, dict) and "class_type" in v
             }
         else:
             # UI-only -- convert nodes array to dict keyed by ID
@@ -386,10 +424,7 @@ def parse(
                 }
     else:
         fmt = "API format"
-        nodes = {
-            k: v for k, v in data.items()
-            if isinstance(v, dict) and "class_type" in v
-        }
+        nodes = {k: v for k, v in data.items() if isinstance(v, dict) and "class_type" in v}
 
     console.print(f"[bold]Workflow:[/bold] {path.name}")
     console.print(f"[bold]Format:[/bold] {fmt}")
@@ -412,8 +447,7 @@ def parse(
 
     # Show editable fields (API format only)
     api_nodes = {
-        nid: n for nid, n in nodes.items()
-        if n.get("inputs") and not n.get("_widgets_values")
+        nid: n for nid, n in nodes.items() if n.get("inputs") and not n.get("_widgets_values")
     }
     if api_nodes:
         fields_table = Table(show_header=True, show_edge=False, pad_edge=False, box=None)
@@ -478,14 +512,19 @@ def search(
     nodes: bool = typer.Option(False, "--nodes", "-n", help="Search custom node packs"),
     models: bool = typer.Option(False, "--models", "-m", help="Search model registry"),
     node_type: bool = typer.Option(
-        False, "--node-type", "-t",
+        False,
+        "--node-type",
+        "-t",
         help="Search by specific node class_type",
     ),
     huggingface: bool = typer.Option(
-        False, "--hf", help="Search HuggingFace instead of local registry",
+        False,
+        "--hf",
+        help="Search HuggingFace instead of local registry",
     ),
     model_type: str = typer.Option(
-        None, "--type",
+        None,
+        "--type",
         help="Filter models by type (checkpoint, lora, vae, controlnet)",
     ),
 ):
@@ -537,9 +576,7 @@ def search(
             name = r.get("name", "?")
             rtype = r.get("type", "")
             source = r.get("source", "")
-            extra = [
-                p for p in [r.get("model_type", ""), r.get("base_model", "")] if p
-            ]
+            extra = [p for p in [r.get("model_type", ""), r.get("base_model", "")] if p]
             if extra:
                 rtype = f"{rtype} ({', '.join(extra)})" if rtype else ", ".join(extra)
             status = "[green]installed[/green]" if r.get("installed") else ""
@@ -549,7 +586,8 @@ def search(
         # Show descriptions below the table for entries that have them
         descs = [
             (r.get("name", "?"), r.get("description", ""))
-            for r in result["results"] if r.get("description")
+            for r in result["results"]
+            if r.get("description")
         ]
         if descs:
             console.print()
@@ -563,11 +601,15 @@ def search(
 def orchestrate(
     workflow: str = typer.Argument(..., help="Path to workflow JSON file"),
     session: str = typer.Option(
-        None, "--session", "-s",
+        None,
+        "--session",
+        "-s",
         help="Named session for state persistence",
     ),
     verbose: bool = typer.Option(
-        False, "--verbose", "-v",
+        False,
+        "--verbose",
+        "-v",
         help="Show debug logging",
     ),
 ):
@@ -598,9 +640,7 @@ def orchestrate(
 
     # Step 1: Load
     console.print("[bold]Step 1/4:[/bold] Loading workflow...")
-    load_result = json.loads(
-        workflow_parse.handle("load_workflow", {"path": str(path)})
-    )
+    load_result = json.loads(workflow_parse.handle("load_workflow", {"path": str(path)}))
     if "error" in load_result:
         console.print(f"[red]Load failed: {load_result['error']}[/red]")
         raise typer.Exit(1)
@@ -611,9 +651,7 @@ def orchestrate(
 
     # Step 2: Validate
     console.print("[bold]Step 2/4:[/bold] Validating...")
-    val_result = json.loads(
-        comfy_execute.handle("validate_before_execute", {})
-    )
+    val_result = json.loads(comfy_execute.handle("validate_before_execute", {}))
     if "error" in val_result:
         console.print(f"[red]Validation failed: {val_result['error']}[/red]")
         raise typer.Exit(1)
@@ -627,9 +665,7 @@ def orchestrate(
 
     # Step 3: Execute
     console.print("[bold]Step 3/4:[/bold] Executing...")
-    exec_result = json.loads(
-        comfy_execute.handle("execute_workflow", {})
-    )
+    exec_result = json.loads(comfy_execute.handle("execute_workflow", {}))
     if "error" in exec_result:
         console.print(f"[red]Execution failed: {exec_result['error']}[/red]")
         raise typer.Exit(1)
@@ -639,6 +675,7 @@ def orchestrate(
     # Step 4: Verify
     console.print("[bold]Step 4/4:[/bold] Verifying output...")
     from .tools import verify_execution
+
     verify_result = json.loads(
         verify_execution.handle("verify_execution", {"prompt_id": prompt_id})
     )
@@ -656,16 +693,17 @@ def orchestrate(
     scene_composed = False
     try:
         from .stage import HAS_USD
+
         if HAS_USD:
             from .session_context import get_session_context
+
             ctx = get_session_context(session or current_conn_session())
             stage = ctx.ensure_stage()
             if stage is not None:
                 console.print("[bold]Step 5/6:[/bold] Composing USD scene...")
                 from .stage.compositor_tools import handle as comp_handle
-                comp_result = json.loads(
-                    comp_handle("compose_scene", {})
-                )
+
+                comp_result = json.loads(comp_handle("compose_scene", {}))
                 if "error" not in comp_result:
                     console.print("  [green]Scene composed[/green]")
                     scene_composed = True
@@ -679,7 +717,9 @@ def orchestrate(
                             f"camera={val.get('camera_fidelity', 0):.2f})"
                         )
                 else:
-                    console.print(f"  [dim]Scene composition skipped: {comp_result.get('error', '?')}[/dim]")
+                    console.print(
+                        f"  [dim]Scene composition skipped: {comp_result.get('error', '?')}[/dim]"
+                    )
     except ImportError as e:
         log.debug("USD scene composition unavailable: %s", e)
 
@@ -702,9 +742,7 @@ def orchestrate(
 
     # Save session if requested
     if session:
-        save_result = json.loads(
-            session_tools.handle("save_session", {"name": session})
-        )
+        save_result = json.loads(session_tools.handle("save_session", {"name": session}))
         if "saved" in save_result:
             console.print(f"\n[dim]Session '{session}' saved.[/dim]")
 
@@ -714,43 +752,56 @@ def orchestrate(
 @app.command()
 def autoresearch(
     query: str = typer.Argument(
-        None, help="What to search for (model, node, technique). "
+        None,
+        help="What to search for (model, node, technique). "
         "Omit to run a FORESIGHT autoresearch pipeline with --program.",
     ),
     category: str = typer.Option(
-        "all", "--category", "-c",
+        "all",
+        "--category",
+        "-c",
         help="Search category: nodes, models, or all",
     ),
     provision: bool = typer.Option(
-        False, "--provision", "-p",
+        False,
+        "--provision",
+        "-p",
         help="Auto-provision (register in stage) uninstalled models found",
     ),
     program: str = typer.Option(
-        None, "--program",
+        None,
+        "--program",
         help="Path to a program.md file for FORESIGHT autoresearch pipeline",
     ),
     budget_hours: float = typer.Option(
-        1.0, "--budget-hours",
+        1.0,
+        "--budget-hours",
         help="Maximum runtime in hours for FORESIGHT pipeline",
     ),
     experiment_seconds: float = typer.Option(
-        30.0, "--experiment-seconds",
+        30.0,
+        "--experiment-seconds",
         help="Expected seconds per experiment",
     ),
     max_experiments: int = typer.Option(
-        100, "--max-experiments",
+        100,
+        "--max-experiments",
         help="Maximum number of experiments to run",
     ),
     report: bool = typer.Option(
-        True, "--report/--no-report",
+        True,
+        "--report/--no-report",
         help="Generate morning report at end",
     ),
     resume: bool = typer.Option(
-        False, "--resume",
+        False,
+        "--resume",
         help="Resume from saved session experience",
     ),
     verbose: bool = typer.Option(
-        False, "--verbose", "-v",
+        False,
+        "--verbose",
+        "-v",
         help="Show debug logging",
     ),
 ):
@@ -797,6 +848,7 @@ def autoresearch(
         cws = None
         try:
             from .session_context import get_session_context
+
             ctx = get_session_context(current_conn_session())
             cws = ctx.ensure_stage()
         except Exception as e:
@@ -813,8 +865,7 @@ def autoresearch(
         console.print("[bold]Results:[/bold]")
         console.print(f"  Experiments: {len(result.experiments)}")
         console.print(
-            f"  Kept: {sum(1 for e in result.experiments if e.kept)} / "
-            f"{len(result.experiments)}"
+            f"  Kept: {sum(1 for e in result.experiments if e.kept)} / {len(result.experiments)}"
         )
         console.print(f"  Stopped: {result.stopped_reason}")
 
@@ -832,9 +883,7 @@ def autoresearch(
 
     from .tools import comfy_discover
 
-    result = json.loads(
-        comfy_discover.handle("discover", {"query": query, "category": category})
-    )
+    result = json.loads(comfy_discover.handle("discover", {"query": query, "category": category}))
     if "error" in result:
         console.print(f"[red]{result['error']}[/red]")
         raise typer.Exit(1)
@@ -855,7 +904,9 @@ def autoresearch(
         status = "[green]installed[/green]" if r.get("installed") else "[dim]not installed[/dim]"
         table.add_row(str(i), r.get("name", "?"), r.get("type", ""), r.get("source", ""), status)
     console.print(table)
-    console.print(f"\n[dim]{len(results)} results from {', '.join(result.get('sources_searched', []))}[/dim]")
+    console.print(
+        f"\n[dim]{len(results)} results from {', '.join(result.get('sources_searched', []))}[/dim]"
+    )
 
     # Auto-provision uninstalled models into the stage registry
     if provision:
@@ -864,11 +915,16 @@ def autoresearch(
             console.print("\n[dim]All models already installed — nothing to provision.[/dim]")
             return
 
-        console.print(f"\n[bold]Provisioning {len(uninstalled)} model(s) into stage registry...[/bold]")
+        console.print(
+            f"\n[bold]Provisioning {len(uninstalled)} model(s) into stage registry...[/bold]"
+        )
         try:
             from .stage import HAS_USD
+
             if not HAS_USD:
-                console.print("[yellow]usd-core not installed — cannot register in stage.[/yellow]")
+                console.print(
+                    "[yellow]usd-core not installed — cannot register in stage.[/yellow]"
+                )
                 return
 
             from .session_context import get_session_context
@@ -885,7 +941,9 @@ def autoresearch(
                 model_type = r.get("model_type", "checkpoints")
                 url = r.get("url", "")
                 prim = register_model(
-                    stage, model_type, name,
+                    stage,
+                    model_type,
+                    name,
                     source_url=url,
                 )
                 console.print(f"  Registered: {prim}")
@@ -899,26 +957,30 @@ def autoresearch(
 @app.command()
 def autonomous(
     hours: float = typer.Option(
-        24.0, "--hours", "-h",
+        24.0,
+        "--hours",
+        "-h",
         help="Maximum runtime in hours.",
     ),
     max_experiments: int = typer.Option(
-        1000, "--max-experiments",
+        1000,
+        "--max-experiments",
         help="Maximum number of experiments before halting.",
     ),
     program: str = typer.Option(
-        None, "--program",
+        None,
+        "--program",
         help="Path to a program.md file for the autoresearch driver.",
     ),
     workflow: str = typer.Option(
-        None, "--workflow", "-w",
-        help=(
-            "Path to a workflow JSON. Required for --execute-mode real; "
-            "ignored otherwise."
-        ),
+        None,
+        "--workflow",
+        "-w",
+        help=("Path to a workflow JSON. Required for --execute-mode real; ignored otherwise."),
     ),
     execute_mode: str = typer.Option(
-        "dry-run", "--execute-mode",
+        "dry-run",
+        "--execute-mode",
         help=(
             "Execution dispatch: 'dry-run' (real proposals + synthetic "
             "scores; no ComfyUI; the default — useful for smoke-testing "
@@ -930,19 +992,23 @@ def autonomous(
         ),
     ),
     checkpoint_path: str = typer.Option(
-        None, "--checkpoint",
+        None,
+        "--checkpoint",
         help="Override STAGE_DEFAULT_PATH for this run's checkpoint target.",
     ),
     checkpoint_every_seconds: float = typer.Option(
-        300.0, "--checkpoint-every-seconds",
+        300.0,
+        "--checkpoint-every-seconds",
         help="Time-based checkpoint interval (also flushes every N iterations).",
     ),
     session_name: str = typer.Option(
-        "cozy_autonomous", "--session",
+        "cozy_autonomous",
+        "--session",
         help="Session name for ratchet/experience persistence.",
     ),
     resume: bool = typer.Option(
-        False, "--resume",
+        False,
+        "--resume",
         help="Resume from a previously checkpointed session.",
     ),
 ):
@@ -953,6 +1019,7 @@ def autonomous(
     TERMINAL classifications. See .claude/COZY_CONSTITUTION.md for doctrine.
     """
     from rich.console import Console
+
     console = Console()
 
     if execute_mode not in ("mock", "dry-run", "real"):
@@ -962,9 +1029,7 @@ def autonomous(
         )
         raise typer.Exit(code=2)
     if execute_mode == "real" and not workflow:
-        console.print(
-            "[red]--execute-mode real requires --workflow PATH.[/red]"
-        )
+        console.print("[red]--execute-mode real requires --workflow PATH.[/red]")
         raise typer.Exit(code=2)
 
     # T6 from the 5x review: path-validate user-supplied paths before they
@@ -972,6 +1037,7 @@ def autonomous(
     # configured sandbox dirs (COMFYUI_DATABASE etc., plus tempdir for
     # pytest). Returns an error string if rejected, None if accepted.
     from .tools._util import validate_path
+
     if workflow:
         err = validate_path(workflow)
         if err:
@@ -984,18 +1050,17 @@ def autonomous(
             raise typer.Exit(code=2)
 
     from .harness import (
-        CozyLoop, CozyLoopConfig,
-        make_execute_fn, make_propose_fn,
+        CozyLoop,
+        CozyLoopConfig,
+        make_execute_fn,
+        make_propose_fn,
     )
     from .session_context import get_session_context
 
     ctx = get_session_context(session_name)
     cws = ctx.ensure_stage()
     if cws is None:
-        console.print(
-            "[red]Cannot start autonomous harness: usd-core is not installed."
-            "[/red]"
-        )
+        console.print("[red]Cannot start autonomous harness: usd-core is not installed.[/red]")
         raise typer.Exit(code=1)
 
     config = CozyLoopConfig(
@@ -1081,15 +1146,18 @@ def mcp():
       }
     """
     import os
+
     os.environ["COMFY_COZY_MCP"] = "1"  # swap_model reports the host owns the chat model
     # Honor a saved selection for brain/vision out-of-band calls (the host still
     # owns the conversational chat model).
     try:
         from .llm._selection import apply_saved_selection
+
         apply_saved_selection()
     except Exception:
         pass
     from .mcp_server import main as mcp_main
+
     mcp_main()
 
 
@@ -1123,7 +1191,9 @@ def _read_workflow_json(path_str: str) -> dict:
         console.print(f"[red]That workflow file could not be read as JSON: {e}[/red]")
         raise typer.Exit(1)
     if not isinstance(data, dict):
-        console.print("[red]That file is valid JSON but not a workflow (expected an object).[/red]")
+        console.print(
+            "[red]That file is valid JSON but not a workflow (expected an object).[/red]"
+        )
         raise typer.Exit(1)
     return data
 
@@ -1135,7 +1205,9 @@ def models_list(
         help="Only show one folder (e.g. checkpoints, loras, vae). Omit for everything.",
     ),
     workflow: str = typer.Option(
-        None, "--workflow", "-w",
+        None,
+        "--workflow",
+        "-w",
         help="Also check which models THIS workflow file needs against what's on disk.",
     ),
 ):
@@ -1161,7 +1233,9 @@ def models_list(
 @nodes_app.command("list")
 def nodes_list(
     workflow: str = typer.Option(
-        None, "--workflow", "-w",
+        None,
+        "--workflow",
+        "-w",
         help="Check THIS workflow file's nodes instead of the one loaded in the session.",
     ),
 ):
@@ -1215,7 +1289,8 @@ def find_commands(
 @app.command("open")
 def open_cmd(
     no_push: bool = typer.Option(
-        False, "--no-push",
+        False,
+        "--no-push",
         help="Just open the canvas -- don't put the session workflow on it first.",
     ),
 ):
@@ -1250,7 +1325,8 @@ def see(
         help="Workflow JSON to run. Omit to run the workflow loaded in this session.",
     ),
     timeout: float = typer.Option(
-        300.0, "--timeout",
+        300.0,
+        "--timeout",
         help="Give up waiting after this many seconds.",
     ),
 ):
@@ -1266,6 +1342,20 @@ def see(
       cozy see shot_020.json        # run a specific workflow file
       cozy see --timeout 600        # long render, more patience
     """
+    tool_input: dict = {"timeout": timeout}
+    if workflow:
+        tool_input["path"] = workflow
+    raise typer.Exit(_execute_with_telemetry(tool_input))
+
+
+def _execute_with_telemetry(tool_input: dict) -> int:
+    """Run a workflow with the SEE telemetry rail; return the exit code.
+
+    This is the single deterministic execution path shared by `cozy see` and
+    `cozy run --recipe`: execute_with_progress with the step-time collector
+    installed, then the compact telemetry summary. Prints in human words;
+    never raises for run failures.
+    """
     from .tools import comfy_execute
     from .verbs.see import StepTimeCollector, render_run_summary
 
@@ -1273,9 +1363,6 @@ def see(
     # False just means no live telemetry; the summary still degrades cleanly.
     collector.install()
     try:
-        tool_input: dict = {"timeout": timeout}
-        if workflow:
-            tool_input["path"] = workflow
         result = json.loads(comfy_execute.handle("execute_with_progress", tool_input))
     finally:
         collector.uninstall()
@@ -1284,13 +1371,153 @@ def see(
     if status is None:
         # The run never started (ComfyUI down, bad path, no workflow loaded...).
         console.print(f"[red]{result.get('error', 'The run could not start.')}[/red]")
-        raise typer.Exit(1)
+        return 1
     if status == "error":
         console.print(f"[red]The run failed: {result.get('error', 'unknown error')}[/red]")
     elif status == "timeout":
         console.print(f"[yellow]{result.get('message', 'The run timed out.')}[/yellow]")
     console.print(render_run_summary(collector, result), markup=False, highlight=False)
-    raise typer.Exit(0 if status == "complete" else 1)
+    return 0 if status == "complete" else 1
+
+
+# ---------------------------------------------------------------------------
+# INTEND — `cozy run --recipe` (deterministic recipe rail, CLI.L4)
+# ---------------------------------------------------------------------------
+
+
+_RECIPE_RUN_TIMEOUT_S = 300.0
+
+
+def _recipe_run(recipe_text: str, workflow_path: str | None) -> int:
+    """One-shot `run --recipe` flow: apply -> validate -> execute; return exit code.
+
+    Stays on the deterministic recipe/patch rail per the ratified design
+    (HARNESS_CLI_20260714.md §WP-INTEND, CLI.L4): the recipe applies validated
+    patches to the session workflow, then the run rides the same telemetry
+    rail as `cozy see`. Never routes through orchestrate/cognitive-stage.
+    """
+    from .verbs.intend import apply_recipe_to_session, render_recipe_list, render_recipe_result
+
+    if recipe_text.strip().lower() == "list":
+        console.print(render_recipe_list(), markup=False, highlight=False)
+        return 0
+
+    if workflow_path:
+        # Load the file into the session FIRST so the recipe patches it and
+        # the execution below runs the patched graph, not the file on disk.
+        from .tools import workflow_parse
+
+        loaded = json.loads(workflow_parse.handle("load_workflow", {"path": workflow_path}))
+        if "error" in loaded:
+            console.print(f"[red]{loaded['error']}[/red]")
+            return 1
+
+    result = apply_recipe_to_session(recipe_text)
+    console.print(render_recipe_result(result), markup=False, highlight=False)
+    if not result.get("applied"):
+        return 1
+
+    from .tools import comfy_execute
+
+    validation = json.loads(comfy_execute.handle("validate_before_execute", {}))
+    if "error" in validation:
+        console.print(f"[red]{validation['error']}[/red]")
+        return 1
+    for warning in validation.get("warnings", []):
+        console.print(f"[yellow]{warning}[/yellow]", highlight=False)
+    if not validation.get("valid"):
+        console.print("[red]The workflow isn't ready to run yet:[/red]")
+        for err in validation.get("errors", []):
+            console.print(f"  {err}", markup=False, highlight=False)
+        return 1
+
+    return _execute_with_telemetry({"timeout": _RECIPE_RUN_TIMEOUT_S})
+
+
+# ---------------------------------------------------------------------------
+# OWN — `cozy doctor` / `cozy stats` / `cozy model search` (0 network, 0 accounts)
+# ---------------------------------------------------------------------------
+
+model_app = typer.Typer(
+    help="Model discovery on your own disk -- no accounts, no internet.",
+    no_args_is_help=True,
+)
+app.add_typer(model_app, name="model")
+
+
+@app.command()
+def doctor():
+    """Five quick health checks on your setup, each with a fix hint if it fails.
+
+    Checks ComfyUI is reachable, your models and Custom_Nodes folders exist,
+    the bridge node pack is installed, and whether the last run report flagged
+    anything. Runs entirely on your machine -- no account, no network beyond
+    your own ComfyUI. ComfyUI being off is a finding, not a crash.
+
+    Exit code 0 when everything is healthy, 1 when something needs attention
+    (so CI and scripts can gate on it).
+
+    Examples:
+      cozy doctor                     # the full sweep
+    """
+    from .verbs.own import doctor_report, render_doctor_report
+
+    report = doctor_report()
+    console.print(render_doctor_report(report), markup=False, highlight=False)
+    raise typer.Exit(0 if report["ok"] else 1)
+
+
+@app.command()
+def stats():
+    """What you own and what you've done -- models, sessions, GPU, all on-device.
+
+    Model counts and sizes per folder (straight from your disk), how many
+    outcomes each session has recorded, and a GPU/VRAM snapshot if ComfyUI is
+    up. ComfyUI off? The disk numbers still show; the GPU block says so in
+    plain words.
+
+    Examples:
+      cozy stats                      # the whole picture
+    """
+    from .verbs.own import render_stats_report, stats_report
+
+    console.print(render_stats_report(stats_report()), markup=False, highlight=False)
+
+
+def _model_search(query: str) -> None:
+    """Shared body for `cozy model search` and its `cozy models search` alias."""
+    from .verbs.own import render_search_report, search_models
+
+    console.print(render_search_report(search_models(query)), markup=False, highlight=False)
+
+
+@model_app.command("search")
+def model_search(
+    query: str = typer.Argument(
+        ..., help="Part of a model name, family, or folder -- 'sdxl', 'lora', 'flux'..."
+    ),
+):
+    """Find a model you already have -- searches your disk only, not the internet.
+
+    Fuzzy-matches the name, family, and folder of every model on disk and
+    lists the hits with size and health mark. For downloading NEW models from
+    remote registries, use `cozy search` -- that one is clearly network-touching.
+
+    Examples:
+      cozy model search sdxl          # everything SDXL-ish you own
+      cozy model search flux          # got any Flux checkpoints?
+    """
+    _model_search(query)
+
+
+@models_app.command("search")
+def models_search(
+    query: str = typer.Argument(
+        ..., help="Part of a model name, family, or folder -- 'sdxl', 'lora', 'flux'..."
+    ),
+):
+    """Same as `cozy model search` -- registered here too so the plural works."""
+    _model_search(query)
 
 
 if __name__ == "__main__":
