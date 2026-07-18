@@ -9,11 +9,20 @@ exit codes. All mocked: no ComfyUI server, no network, no API key.
 import json
 from unittest.mock import patch
 
+import pytest
 from typer.testing import CliRunner
 
+import agent.config as config
 from agent.cli import app
 
 runner = CliRunner()
+
+
+@pytest.fixture(autouse=True)
+def _isolated_sessions_dir(tmp_path, monkeypatch):
+    """The open/see verbs now restore the CLI session sidecar (defect B1) —
+    keep every test's sidecar reads out of the real sessions directory."""
+    monkeypatch.setattr(config, "SESSIONS_DIR", tmp_path / "sessions")
 
 
 # ---------------------------------------------------------------------------
@@ -310,7 +319,8 @@ class TestSee:
         assert "vram   unavailable" in result.output  # stats poll mocked to down
         name, tool_input = m.call_args[0]
         assert name == "execute_with_progress"
-        assert tool_input == {"timeout": 300.0}
+        # include_progress_log: Lane C contract — see opts in to the capped log.
+        assert tool_input == {"timeout": 300.0, "include_progress_log": True}
 
     def test_workflow_path_forwarded(self):
         with (
@@ -320,7 +330,11 @@ class TestSee:
             result = runner.invoke(app, ["see", "shot_020.json", "--timeout", "600"])
         assert result.exit_code == 0
         _name, tool_input = m.call_args[0]
-        assert tool_input == {"timeout": 600.0, "path": "shot_020.json"}
+        assert tool_input == {
+            "timeout": 600.0,
+            "path": "shot_020.json",
+            "include_progress_log": True,
+        }
 
     def test_comfyui_down_exits_1_in_human_words(self):
         with patch("agent.tools.comfy_execute.handle", return_value=_API_DOWN):

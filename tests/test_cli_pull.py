@@ -9,11 +9,21 @@ ComfyUI server, no network, no API key.
 
 from unittest.mock import patch
 
+import pytest
 from typer.testing import CliRunner
 
+import agent.config as config
 from agent.cli import app
 
 runner = CliRunner()
+
+
+@pytest.fixture(autouse=True)
+def _isolated_sessions_dir(tmp_path, monkeypatch):
+    """``cozy pull`` now restores/persists the CLI session sidecar (defect
+    B1) — keep every test's sidecar reads and writes out of the real
+    sessions directory."""
+    monkeypatch.setattr(config, "SESSIONS_DIR", tmp_path / "sessions")
 
 
 def _flat(output: str) -> str:

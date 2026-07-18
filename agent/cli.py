@@ -4,6 +4,7 @@ import atexit
 import json
 import logging
 import signal
+import sys
 import threading
 
 import typer
@@ -19,6 +20,36 @@ from .streaming import NullHandler
 
 log = logging.getLogger(__name__)
 
+
+def _ensure_utf8_streams() -> None:
+    """Keep glyph output alive on consoles that can't encode it (defect B3).
+
+    A redirected or piped stdout on Windows defaults to cp1252, which cannot
+    encode the check-mark / sparkline glyphs the verbs print — rich would
+    surface a raw UnicodeEncodeError traceback on six commands and falsify
+    the ``cozy doctor`` CI-gating promise. Before the module-level Console
+    is built, any std stream whose declared encoding can't encode U+2713 is
+    reconfigured to UTF-8 with replacement errors: output degrades to
+    readable text instead of dying. Streams without ``reconfigure`` support
+    (or with no declared encoding) are left alone — this never crashes.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        if stream is None or not hasattr(stream, "reconfigure"):
+            continue
+        encoding = getattr(stream, "encoding", None)
+        if not encoding:
+            continue
+        try:
+            "✓".encode(encoding)
+        except (LookupError, UnicodeEncodeError):
+            try:
+                stream.reconfigure(encoding="utf-8", errors="replace")
+            except (OSError, ValueError, TypeError):
+                pass
+
+
+_ensure_utf8_streams()
+
 app = typer.Typer(
     help="ComfyUI Agent -- AI co-pilot for ComfyUI workflows",
     epilog=(
@@ -28,6 +59,53 @@ app = typer.Typer(
     no_args_is_help=True,
 )
 console = Console()
+
+
+# ---------------------------------------------------------------------------
+# CLI-session sidecar wiring (defect B1)
+# ---------------------------------------------------------------------------
+
+
+def _restore_cli_session() -> None:
+    """Restore the CLI sidecar session when the in-memory session is empty.
+
+    Every ``cozy`` invocation is a fresh process, so the session-dependent
+    verbs (open, pull, see, and the recipe rail) call this FIRST — it folds
+    the last persisted session back in so the open→pull round-trip, ``see``
+    with no argument, and pull's undo promise all survive between commands.
+    A sidecar problem degrades to a dim one-line note, never a crash.
+    """
+    try:
+        from .tools.workflow_patch import get_current_workflow
+
+        if get_current_workflow() is not None:
+            return
+        from .verbs import _cli_state
+
+        note = _cli_state.restore()
+    except Exception as exc:  # persistence must never break a verb
+        log.debug("CLI session restore skipped: %s", exc)
+        return
+    if note:
+        console.print(f"[dim]{note}[/dim]", highlight=False)
+
+
+def _persist_cli_session() -> None:
+    """Persist the live session to the CLI sidecar after a session mutation.
+
+    Called after pull applies/initial-loads, recipe applies, and ``-w``
+    loads, so the next ``cozy`` process starts from what this one built.
+    A write problem degrades to a dim one-line note, never a crash.
+    """
+    try:
+        from .verbs import _cli_state
+
+        note = _cli_state.persist()
+    except Exception as exc:  # persistence must never break a verb
+        log.debug("CLI session persist skipped: %s", exc)
+        return
+    if note:
+        console.print(f"[dim]{note}[/dim]", highlight=False)
 
 
 # ---------------------------------------------------------------------------
@@ -1308,6 +1386,7 @@ def open_cmd(
     """
     from .verbs.open_canvas import open_canvas
 
+    _restore_cli_session()  # B1: a fresh process must still see the session workflow
     result = open_canvas(push=not no_push)
     console.print(result["message"], markup=False, highlight=False)
     raise typer.Exit(0 if result["opened"] else 1)
@@ -1338,8 +1417,13 @@ def pull_cmd(
     """
     from .verbs.pull_canvas import pull_canvas, render_pull_result
 
+    _restore_cli_session()  # B1: pull into the persisted session, not an empty one
     result = pull_canvas(source="file" if file else "canvas", file=file)
     console.print(render_pull_result(result), markup=False, highlight=False)
+    if result.get("applied") or result.get("initial_load"):
+        # B1: the pull just mutated the session — persist so "one undo away —
+        # survives between commands" stays true for the next cozy process.
+        _persist_cli_session()
     raise typer.Exit(0 if result["ok"] else 1)
 
 
@@ -1372,6 +1456,7 @@ def see(
       cozy see shot_020.json        # run a specific workflow file
       cozy see --timeout 600        # long render, more patience
     """
+    _restore_cli_session()  # B1: `cozy see` with no argument runs the persisted session
     tool_input: dict = {"timeout": timeout}
     if workflow:
         tool_input["path"] = workflow
@@ -1392,6 +1477,9 @@ def _execute_with_telemetry(tool_input: dict) -> int:
     collector = StepTimeCollector()
     # False just means no live telemetry; the summary still degrades cleanly.
     collector.install()
+    # Lane C contract: opt in to the success-path progress_log (capped at the
+    # newest 500 entries) so the telemetry summary keeps its sparkline data.
+    tool_input = {**tool_input, "include_progress_log": True}
     try:
         result = json.loads(comfy_execute.handle("execute_with_progress", tool_input))
     finally:
@@ -1432,18 +1520,35 @@ def _recipe_run(recipe_text: str, workflow_path: str | None) -> int:
         console.print(render_recipe_list(), markup=False, highlight=False)
         return 0
 
-    if workflow_path:
-        # Load the file into the session FIRST so the recipe patches it and
-        # the execution below runs the patched graph, not the file on disk.
-        from .tools import workflow_parse
+    # B1: a fresh process starts with an empty session — the recipe rail
+    # restores the CLI sidecar so `cozy run --recipe` works without -w.
+    _restore_cli_session()
 
-        loaded = json.loads(workflow_parse.handle("load_workflow", {"path": workflow_path}))
-        if "error" in loaded:
-            console.print(f"[red]{loaded['error']}[/red]")
+    if workflow_path:
+        # Load the file into the SESSION seam FIRST so the recipe patches it
+        # and the execution below runs the patched graph, not the file on
+        # disk. Defect B2: workflow_parse's load_workflow is ANALYSIS-ONLY —
+        # it leaves the session empty and every recipe would fall through.
+        # _load_workflow validates the path and sets base/current/undo state.
+        from .tools.workflow_patch import _load_workflow
+
+        load_err = _load_workflow(workflow_path)
+        if load_err:
+            console.print(f"[red]{load_err}[/red]", highlight=False)
             return 1
+        _persist_cli_session()  # B1: the -w load is a session mutation
 
     result = apply_recipe_to_session(recipe_text)
     console.print(render_recipe_result(result), markup=False, highlight=False)
+    if result.get("applied") or result.get("steps_run"):
+        # B1: steps landed on the session (fully or partially) — persist so
+        # the next cozy command sees exactly what this one left behind.
+        _persist_cli_session()
+    if result.get("error"):
+        # Lane D contract (defect B4): error set means the run stopped
+        # mid-recipe. Exit 1 and NEVER execute the half-applied workflow —
+        # even when result["applied"] is True (a partial apply).
+        return 1
     if not result.get("applied"):
         return 1
 
