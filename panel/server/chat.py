@@ -219,6 +219,7 @@ class _QueueStreamHandler:
 
 def _run_agent_sync(conv: ConversationState, user_text: str, msg_queue: queue.Queue):
     """Run the agent loop synchronously, pushing events to msg_queue."""
+    from agent.llm import get_provider
     from agent.main import run_agent_turn
     from agent.queue_progress import QueueProgressReporter
 
@@ -236,8 +237,14 @@ def _run_agent_sync(conv: ConversationState, user_text: str, msg_queue: queue.Qu
             log.debug("Agent thread stopping: connection %s disconnected mid-turn", conv.id)
             return
         try:
+            # Re-resolve the provider each turn so a runtime model swap
+            # (swap_model via chat tool-use) reaches the live stream — same
+            # pattern as the CLI loop in agent/main.py. Cheap cache hit when
+            # nothing changed; after a cross-provider swap the frozen
+            # _ensure_brain() client would silently keep streaming to the
+            # OLD provider.
             conv.messages, done = run_agent_turn(
-                _client,
+                get_provider(),
                 conv.messages,
                 conv.system_prompt,
                 handler=handler,

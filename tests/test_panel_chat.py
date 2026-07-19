@@ -140,6 +140,58 @@ class TestRunAgentSync:
         # the safe, contextual message is what the browser sees
         assert "agent turn" in msg and "server logs" in msg
 
+    def test_provider_re_resolved_each_turn(self):
+        """A model swap mid-conversation must reach the live stream.
+
+        The loop resolves the provider per turn; a client captured once at
+        brain load would keep streaming to the model the artist left.
+        """
+        conv = self._make_conv()
+        msg_queue = queue.Queue()
+
+        before_swap = MagicMock(name="provider-before-swap")
+        after_swap = MagicMock(name="provider-after-swap")
+        mock_get_provider = MagicMock(side_effect=[before_swap, after_swap])
+        streamed_through = []
+
+        def _side_effect(client, messages, system, **kwargs):
+            streamed_through.append(client)
+            return (messages, len(streamed_through) == 2)  # done on turn 2
+
+        with patch("agent.llm.get_provider", mock_get_provider), \
+             patch("agent.main.run_agent_turn", side_effect=_side_effect), \
+             patch("agent.queue_progress.QueueProgressReporter", MagicMock()):
+            _run_agent_sync(conv, "hello", msg_queue)
+
+        assert mock_get_provider.call_count == 2
+        assert streamed_through == [before_swap, after_swap]
+
+    def test_stale_brain_client_is_never_streamed_through(self):
+        """The module-global client from _ensure_brain() must not be used.
+
+        get_provider() is the single source of truth once the loop is running —
+        the global is the frozen instance a cross-provider swap cannot reach.
+        """
+        conv = self._make_conv()
+        msg_queue = queue.Queue()
+
+        stale_client = MagicMock(name="stale-brain-client")
+        live_provider = MagicMock(name="live-provider")
+        streamed_through = []
+
+        def _side_effect(client, messages, system, **kwargs):
+            streamed_through.append(client)
+            return (messages, True)
+
+        with patch("panel.server.chat._client", stale_client), \
+             patch("agent.llm.get_provider", MagicMock(return_value=live_provider)), \
+             patch("agent.main.run_agent_turn", side_effect=_side_effect), \
+             patch("agent.queue_progress.QueueProgressReporter", MagicMock()):
+            _run_agent_sync(conv, "hello", msg_queue)
+
+        assert streamed_through == [live_provider]
+        assert stale_client not in streamed_through
+
     def test_cancellation_stops_turns_between_iterations(self):
         """Cancelling mid-run stops at the next inter-turn check."""
         conv = self._make_conv()

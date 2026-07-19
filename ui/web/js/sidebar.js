@@ -3,6 +3,7 @@ import { renderText, createTypingIndicator, createPanel, createNodePill } from "
 import { createDispatchCard, updateAgentStatus } from "./dispatch.js";
 import { createProgressPanel, updateProgress } from "./progress.js";
 import { createQuickActions, updateQuickActions } from "./actions.js";
+import { fetchManifest, versionLabel, isStale, createCapabilitiesCard } from "./capabilities.js";
 
 /* ── COMFY COZY Sidebar ──────────────────────────────────────────────
  *  Registers a sidebar tab in ComfyUI's extension manager.
@@ -314,6 +315,7 @@ function buildSidebar(el) {
       <span class="sd-header__title">
         <span class="sd-header__title-mark">Comfy</span><span class="sd-header__title-faint">Cozy</span>
       </span>
+      <button class="sd-header__caps" id="sd-caps-btn" title="Agent capabilities" aria-label="Show agent capabilities"></button>
       <span class="sd-header__dot" id="sd-status-dot" title="Agent connection"></span>
     </div>
     <div class="sd-stage-bar" id="sd-stage" style="display:none">
@@ -702,6 +704,42 @@ function buildSidebar(el) {
   // Reflect the live socket state on the freshly-built status dot.
   handleStatus(conn.ws && conn.ws.readyState === WebSocket.OPEN
     ? "connected" : "connecting");
+
+  /* ── Capability manifest (advertise/render contract, B1) ───────────
+   * The bridge advertises what the agent can do; this chip is where the
+   * loaded version becomes VISIBLE — the drift class behind "my features
+   * don't appear" (2026-07-18) was invisible precisely because nothing on
+   * screen ever said what code was running. */
+  const capsBtn = el.querySelector("#sd-caps-btn");
+  fetchManifest()
+    .then((manifest) => {
+      capsBtn.textContent = versionLabel(manifest);
+      capsBtn.classList.toggle("sd-header__caps--stale", isStale(manifest));
+      if (isStale(manifest)) {
+        capsBtn.title = "Agent code on disk is newer than this process — restart ComfyUI";
+      }
+    })
+    .catch(() => {
+      capsBtn.textContent = "offline";
+      capsBtn.title = "Agent capability manifest unavailable";
+    });
+  capsBtn.addEventListener("click", async () => {
+    try {
+      const manifest = await fetchManifest();
+      const wrapper = document.createElement("div");
+      wrapper.className = "sd-message sd-message--agent";
+      wrapper.style.padding = "0";
+      wrapper.style.background = "none";
+      wrapper.appendChild(createCapabilitiesCard(manifest));
+      messagesEl.appendChild(wrapper);
+      scrollToBottom();
+    } catch (e) {
+      messagesEl.appendChild(
+        createMessageEl("system", "Capability manifest unavailable — is the agent bridge loaded?")
+      );
+      scrollToBottom();
+    }
+  });
 
   /* ── Send message ─────────────────────────────────────────────── */
 

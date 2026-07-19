@@ -30,6 +30,9 @@
 
   /* Accent -> native */
   --sd-accent: var(--accent-primary);
+  /* Brand: capability-row / section dots (chat.js) fall back to this —
+     was undefined (transparent dots). Alias the native accent. */
+  --sd-brand: var(--accent-primary);
   --sd-accent-bg: var(--accent-background);
   --sd-accent-dim: color-mix(in srgb, var(--accent-primary) 20%, transparent);
   --sd-accent-subtle: color-mix(in srgb, var(--accent-primary) 8%, transparent);
@@ -1557,4 +1560,161 @@
   .sd-node-row__value {
     display: none;
   }
+}
+
+/* ── Capabilities (manifest renderer, B1) ─────────────────────────── */
+
+.sd-header__caps {
+  margin-left: auto;
+  margin-right: var(--space-2);
+  padding: 2px var(--space-2);
+  font-family: var(--sd-font-mono);
+  font-size: var(--type-mono-sm);
+  color: var(--sd-text-2);
+  background: none;
+  border: 1px solid var(--sd-border-2);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: color var(--sd-transition), border-color var(--sd-transition);
+}
+
+.sd-header__caps:hover {
+  color: var(--sd-text-1);
+  border-color: var(--sd-border-1);
+}
+
+.sd-header__caps--stale {
+  color: var(--sd-slot-vae);
+  border-color: var(--sd-slot-vae);
+}
+
+.sd-caps {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  background: var(--sd-surface-1);
+  border: 1px solid var(--sd-border-2);
+  border-radius: 6px;
+}
+
+.sd-caps__header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.sd-caps__title {
+  font-size: var(--type-body-sm);
+  font-weight: 600;
+  color: var(--sd-text-1);
+}
+
+.sd-caps__version {
+  font-family: var(--sd-font-mono);
+  font-size: var(--type-mono-sm);
+  color: var(--sd-text-2);
+}
+
+.sd-caps__badge--stale {
+  padding: 1px var(--space-2);
+  font-family: var(--sd-font-mono);
+  font-size: var(--type-mono-sm);
+  color: var(--sd-slot-vae);
+  border: 1px solid var(--sd-slot-vae);
+  border-radius: 4px;
+}
+
+.sd-caps__degraded {
+  padding: var(--space-2);
+  border: 1px solid var(--sd-slot-vae);
+  border-radius: 4px;
+  font-family: var(--sd-font-mono);
+  font-size: var(--type-mono-sm);
+  color: var(--sd-text-2);
+}
+
+.sd-caps__degraded-title {
+  color: var(--sd-slot-vae);
+  margin-bottom: var(--space-1);
+}
+
+.sd-caps__features {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.sd-caps__feature {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--type-small);
+  color: var(--sd-text-2);
+}
+
+.sd-caps__feature-name {
+  font-family: var(--sd-font-mono);
+  color: var(--sd-text-1);
+}
+
+.sd-caps__state--on { color: var(--agent-router); }
+.sd-caps__state--off { color: var(--sd-text-3); }
+
+.sd-caps__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.sd-caps__chip {
+  padding: 1px var(--space-2);
+  font-family: var(--sd-font-mono);
+  font-size: var(--type-mono-sm);
+  border: 1px solid var(--sd-border-2);
+  border-radius: 4px;
+  color: var(--sd-text-2);
+}
+
+.sd-caps__layer {
+  border-top: 1px solid var(--sd-border-2);
+}
+
+.sd-caps__layer-summary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) 0;
+  font-size: var(--type-small);
+  cursor: pointer;
+  color: var(--sd-text-1);
+  list-style-position: inside;
+}
+
+.sd-caps__layer-count {
+  font-family: var(--sd-font-mono);
+  font-size: var(--type-mono-sm);
+  color: var(--sd-text-3);
+}
+
+.sd-caps__tool {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  padding: 2px 0 2px var(--space-4);
+  font-size: var(--type-small);
+}
+
+.sd-caps__tool-name {
+  font-family: var(--sd-font-mono);
+  font-size: var(--type-mono-sm);
+  color: var(--sd-text-1);
+  white-space: nowrap;
+}
+
+.sd-caps__tool-desc {
+  color: var(--sd-text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

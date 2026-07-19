@@ -5,6 +5,64 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.10.0] - 2026-07-19 — The Capability Manifest
+
+The agent stops being invisible inside ComfyUI. The bridge now advertises what
+it can do and which build it is actually running; the sidebar renders it. New
+agent features appear in the UI with no frontend edits, and the question that
+cost a whole session on 2026-07-18 — *"is my code even loaded?"* — is answered
+by a chip in the header instead of by archaeology.
+
+### Added
+- **`GET /agent/capabilities`** (`manifest_schema 1`) — built from the LIVE tool
+  registry, never from documented counts. Carries the loaded package version,
+  git branch and commit, a staleness flag, per-layer tool counts, the tool
+  catalog with artist-facing descriptions, and a features block. ETag/304 keeps
+  it cheap; the ~600 ms lazy stage+brain import is offloaded to an executor so
+  it never blocks the event loop.
+- **Sidebar capability card + version chip** — the header shows the running
+  build (`v5.10.0 · a1b2c3d`). It turns amber and says so when the code on disk
+  has moved past the running process, with a restart hint. Clicking opens the
+  full catalog grouped by layer.
+- **Degraded-module visibility** — a tool module that fails to import is now
+  reported in the manifest instead of vanishing into a log nobody reads. A
+  silently shrunken registry becomes something you can see.
+- **Surface hints** (`chat-only` / `action` / `panel` / `bespoke` / `hidden`) —
+  a closed vocabulary telling the UI how to present each tool. Unknown values
+  degrade to `chat-only`, so an older sidebar never breaks on a newer agent.
+
+### Security
+- **The manifest gate keys on the `Host` header, not the socket peer.** A
+  read-only endpoint has to stay reachable by the sidebar's own fetch, which
+  omits `Origin` on a same-origin GET — but "the peer is 127.0.0.1" proves
+  nothing about who is asking. A same-host reverse proxy (nginx, Caddy, ngrok,
+  cloudflared) makes every internet request look loopback, and a DNS-rebound
+  attacker page is *genuinely* same-origin so it sends no `Origin` either.
+  Relaxation now additionally requires a `Host` from the same allowlist that
+  backs the `Origin` check, so the two can never drift. Everything else takes
+  the full gate. Found by adversarial review before this route ever shipped.
+
+### Fixed
+- **Model swaps reached only half the app.** Both the sidebar and the panel
+  captured the LLM client once per conversation, so a mid-conversation
+  `swap_model` reported success while replies kept streaming from the model the
+  artist thought they had left. Both surfaces now re-resolve per turn.
+- **Staleness detection was defeated in the deployment it was built for.** The
+  build hash is computed lazily and cached on first access; embedded in ComfyUI
+  nothing touched it until the first manifest request, so it read *current* disk
+  HEAD and reported "fresh" for a genuinely stale server. The node pack now pins
+  build identity at load time.
+- **Unbounded manifest growth on a degraded host.** A failed brain import left
+  its guard flag unset, so the doomed import re-ran on every single tool
+  dispatch and appended another identical degraded record each time. Failures
+  are now recorded once and not retried.
+- **Concurrent manifest requests spawned N× the git subprocesses.** The on-disk
+  state memo was written only after both `git` calls returned, so every thread
+  arriving in that window ran its own pair. The refresh is now serialized with
+  double-checked locking; the fast path stays lock-free.
+- Tool counts reconcile: `layers.total == len(tools) + hidden`, so a renderer
+  can't mistake the registry count for the catalog size.
+
 ## [5.9.1] - 2026-07-18 — Release Green
 
 ### Fixed
