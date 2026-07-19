@@ -80,6 +80,67 @@ def bridge_auth_failure(request):
     return None
 
 
+def capabilities_relaxed(request) -> bool:
+    """Whether GET /agent/capabilities may skip the full auth gate.
+
+    Decision record (security review 2026-07-18, revised 2026-07-19): a
+    same-origin browser GET omits the Origin header, so demanding a Bearer
+    here would 401 the sidebar's own manifest fetch exactly when
+    MCP_AUTH_TOKEN is configured. The relaxation is therefore keyed on the
+    HOST header — the standard anti-rebinding control — and NOT on the socket
+    peer. The peer proves nothing: a same-host reverse proxy (nginx, Caddy,
+    ngrok, cloudflared terminating on the box and forwarding to
+    127.0.0.1:8188) makes every internet request look loopback, and a
+    DNS-rebound attacker page is genuinely same-origin so it sends no Origin
+    either. Only the Host the request was actually fetched under separates
+    those two from the real sidebar.
+
+    The allowed host:port set is derived from the SAME allowed_origins() that
+    backs the Origin allowlist, so the two can never drift apart. Anything
+    failing these conditions falls through to bridge_auth_failure, which is
+    the intended posture: a tokenless host still answers, a token-configured
+    host must present the Bearer.
+
+    Pure logic — takes anything with ``.headers`` and ``.remote``, so it is
+    unit-testable without a live ComfyUI. Fails closed (never relaxes) when
+    the agent package cannot be imported.
+    """
+    if request.headers.get("Origin", ""):
+        return False
+    # request.remote is None only for unix sockets (local by construction).
+    if request.remote not in ("127.0.0.1", "::1", None):
+        return False
+    try:
+        from agent._session_helpers import allowed_origins
+    except Exception as exc:
+        log.error("comfy_agent_bridge: manifest gate unverifiable (fail-closed): %s", exc)
+        return False
+    # Host names are case-insensitive per RFC 9110; normalize both sides.
+    host = request.headers.get("Host", "").lower()
+    return host in {o.split("://", 1)[-1].lower() for o in allowed_origins()}
+
+
+def _pin_build_identity() -> None:
+    """Capture the loaded build's identity at node-pack load time.
+
+    Load-bearing, not a dead statement: agent._build computes BUILD_HASH /
+    BUILD_DIRTY lazily (PEP 562) and caches on first access. Embedded in
+    ComfyUI nothing else touches them, so without this the first manifest
+    request would compute them THEN — against whatever HEAD is on disk by
+    that point. An artist who launches at commit A and pulls to commit B
+    would be told "fresh" while the process still runs A's code, which is
+    precisely the staleness the manifest exists to surface.
+    """
+    try:
+        from agent import _build
+
+        _ = (_build.BUILD_HASH, _build.BUILD_DIRTY)
+    except Exception as exc:
+        # An unimportable agent is already handled per-request (fail-closed
+        # gate, 503 manifest); it must not stop the node pack from loading.
+        log.debug("comfy_agent_bridge: build identity unavailable: %s", exc)
+
+
 def _register_routes() -> None:
     global _ROUTES_REGISTERED
     if _ROUTES_REGISTERED:
@@ -184,19 +245,12 @@ def _register_routes() -> None:
 
     @instance.routes.get("/agent/capabilities")
     async def capabilities(request):
-        # Read-only relaxed gate (decision record, security review
-        # 2026-07-18): Origin present -> allowlist or 403 (blocks drive-by
-        # cross-origin scans). Origin ABSENT -> relaxed ONLY for loopback
-        # peers; any routed peer gets the full gate (Bearer when
-        # MCP_AUTH_TOKEN is set). Rationale: same-origin browser GETs omit
-        # the Origin header, so requiring Bearer here would 401 the
-        # sidebar's own manifest fetch exactly when a token is configured —
-        # while a loopback-only relaxation gives a LAN-bound host no
-        # unauthenticated surface. request.remote is None only for unix
-        # sockets (local by construction).
-        origin = request.headers.get("Origin", "")
-        loopback = request.remote in ("127.0.0.1", "::1", None)
-        if origin or not loopback:
+        # Read-only relaxed gate: an Origin-bearing request is allowlisted or
+        # 403'd (blocks drive-by cross-origin scans); an Origin-less one is
+        # relaxed only when it is loopback AND carries a trusted Host — see
+        # capabilities_relaxed() for why the Host, not the peer, is the check.
+        # Everything else takes the full gate (Bearer when MCP_AUTH_TOKEN set).
+        if not capabilities_relaxed(request):
             if (rejected := _reject(request)) is not None:
                 return rejected
 
@@ -230,6 +284,7 @@ def _register_routes() -> None:
     log.info("comfy_agent_bridge: routes registered")
 
 
+_pin_build_identity()
 _register_routes()
 
 NODE_CLASS_MAPPINGS: dict = {}

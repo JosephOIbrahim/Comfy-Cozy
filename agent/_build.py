@@ -6,7 +6,12 @@ the on-disk ``git rev-parse --short HEAD``; a mismatch means the process is
 running old code and needs a restart. Captured ONCE (first attribute access,
 via PEP 562 ``__getattr__``, then cached in module globals) — re-reading at
 call time would just echo the current on-disk HEAD and defeat the purpose.
-Laziness keeps the two git subprocesses off the import path.
+Laziness keeps the two git subprocesses off the import path — so any host that
+NEEDS the value pinned to process start must force it early. The ComfyUI node
+pack does exactly that (``comfy_agent_bridge._pin_build_identity``): embedded
+there, nothing else would touch these until the first manifest request, by
+which point HEAD may already have moved and the comparison would read "fresh"
+for a genuinely stale server.
 
 ``cwd`` is pinned to the repo root via ``__file__`` (NOT the process cwd),
 because the embedded-in-ComfyUI launch runs from a different working directory.
@@ -14,9 +19,11 @@ If git is absent/fails (e.g. a future packaged build), this degrades gracefully
 to ``hash="unknown"``, ``dirty=None``; the build-stamp/env fallback tier is
 intentionally not built — no packaged launch exists today.
 """
+
 from __future__ import annotations
 
 import subprocess
+import threading
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -62,9 +69,12 @@ def _compute_dirty() -> "bool | None":
 # On-disk state is the OPPOSITE of BUILD_HASH: it must be re-read (the whole
 # point is detecting that disk moved past the loaded code), but a git
 # subprocess per manifest request is waste — memoized with a short TTL.
-# Benign race: two concurrent misses just run git twice.
+# The refresh is serialized (double-checked locking) because callers arrive
+# concurrently: /agent/capabilities serves manifests off a thread pool, and an
+# unguarded miss window costs 2 subprocesses per caller, not 2 in total.
 _ON_DISK_TTL_S = 60.0
 _on_disk_memo: "tuple[float, str | None, str | None] | None" = None
+_on_disk_lock = threading.Lock()
 
 
 def on_disk_state() -> "tuple[str | None, str | None]":
@@ -74,14 +84,18 @@ def on_disk_state() -> "tuple[str | None, str | None]":
     "unknown", never as "fresh".
     """
     global _on_disk_memo
-    now = time.monotonic()
     memo = _on_disk_memo
-    if memo is not None and now - memo[0] < _ON_DISK_TTL_S:
+    if memo is not None and time.monotonic() - memo[0] < _ON_DISK_TTL_S:
         return memo[1], memo[2]
-    branch = _git("rev-parse", "--abbrev-ref", "HEAD")
-    head = _git("rev-parse", "--short", "HEAD")
-    _on_disk_memo = (now, branch, head)
-    return branch, head
+    with _on_disk_lock:
+        # Re-check: a refresh may have completed while this thread waited.
+        memo = _on_disk_memo
+        if memo is not None and time.monotonic() - memo[0] < _ON_DISK_TTL_S:
+            return memo[1], memo[2]
+        branch = _git("rev-parse", "--abbrev-ref", "HEAD")
+        head = _git("rev-parse", "--short", "HEAD")
+        _on_disk_memo = (time.monotonic(), branch, head)
+        return branch, head
 
 
 def __getattr__(name: str):

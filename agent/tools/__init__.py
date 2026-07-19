@@ -41,16 +41,29 @@ _STAGE_MODULE_NAMES = [
 # say) is VISIBLE instead of a mystery tool-count drop in a log nobody reads.
 _DEGRADED: list[dict] = []
 
+
+def _record_degraded(module: str, layer: str, error: BaseException) -> None:
+    """Note a module that could not be imported — once, however often we retry.
+
+    Keyed on (module, layer) because the lazy layers are re-entered from
+    dispatch: an un-keyed append would grow the manifest payload without
+    bound on a host where a layer never imports.
+    """
+    if any(d["module"] == module and d["layer"] == layer for d in _DEGRADED):
+        return
+    _DEGRADED.append({
+        "module": module, "layer": layer,
+        "error": f"{type(error).__name__}: {error}",
+    })
+
+
 _MODULES: list = []
 for _mod_name in _INTELLIGENCE_MODULE_NAMES:
     try:
         _MODULES.append(importlib.import_module(f".{_mod_name}", package=__name__))
     except Exception as _ie:
         log.warning("Tool module %r failed to import — its tools are unavailable: %s", _mod_name, _ie)
-        _DEGRADED.append({
-            "module": _mod_name, "layer": "intelligence",
-            "error": f"{type(_ie).__name__}: {_ie}",
-        })
+        _record_degraded(_mod_name, "intelligence", _ie)
 
 # H2 (ledger C-R13): stage modules are NOT imported here — they pull
 # networkx (~294 ms) + pxr (~310 ms) into every cold import. They are
@@ -117,33 +130,35 @@ def _handle_accepts_progress(mod) -> bool:
 
 # Brain tools are loaded lazily to break the circular import
 _brain_loaded = False
+# A brain import that FAILED is never retried: handle() calls _ensure_brain()
+# on every dispatch, so retrying would re-run a doomed import — and re-warn —
+# once per tool call for the life of the process.
+_brain_failed = False
 _brain_lock = threading.Lock()
 _BRAIN_TOOL_NAMES: set[str] = set()
 
 
 def _ensure_brain():
-    """Lazily load brain layer tools (thread-safe)."""
+    """Lazily load brain layer tools (thread-safe, one attempt per process)."""
     from ..config import BRAIN_ENABLED
     if not BRAIN_ENABLED:
         return
-    global _brain_loaded, _BRAIN_TOOL_NAMES
-    if _brain_loaded:
+    global _brain_loaded, _brain_failed, _BRAIN_TOOL_NAMES
+    if _brain_loaded or _brain_failed:
         return
     with _brain_lock:
-        if _brain_loaded:  # double-check after acquiring lock
+        if _brain_loaded or _brain_failed:  # double-check after acquiring lock
             return
         try:
             from ..brain import ALL_BRAIN_TOOLS
             _BRAIN_TOOL_NAMES.update(t["name"] for t in ALL_BRAIN_TOOLS)
             _brain_loaded = True
         except Exception as _be:
+            _brain_failed = True
             log.warning(
                 "Brain layer unavailable — brain tools will not be registered: %s", _be
             )
-            _DEGRADED.append({
-                "module": "brain", "layer": "brain",
-                "error": f"{type(_be).__name__}: {_be}",
-            })
+            _record_degraded("brain", "brain", _be)
 
 
 # Stage tools are loaded lazily (H2 / C-R13): same pattern as the brain
@@ -170,10 +185,7 @@ def _ensure_stage():
                     "Stage module %r failed to import — its tools are unavailable: %s",
                     _mod_name, _ie,
                 )
-                _DEGRADED.append({
-                    "module": _mod_name, "layer": "stage",
-                    "error": f"{type(_ie).__name__}: {_ie}",
-                })
+                _record_degraded(_mod_name, "stage", _ie)
                 continue
             _MODULES.append(_mod)
             for _tool in _mod.TOOLS:

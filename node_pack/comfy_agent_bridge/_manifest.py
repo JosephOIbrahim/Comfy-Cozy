@@ -45,9 +45,11 @@ def build_manifest(include_schemas: bool = False) -> dict:
         stale = build_hash != disk_hash
 
     tools = []
+    hidden = 0
     for t in snap["tools"]:
         hint = surface_hint(t["name"])
         if hint == "hidden":
+            hidden += 1
             continue
         entry = {
             "name": t["name"],
@@ -77,6 +79,10 @@ def build_manifest(include_schemas: bool = False) -> dict:
             "loaded_from": str(Path(agent.__file__).resolve().parent.parent),
         },
         "layers": snap["layers"],
+        # layers counts every loaded tool (REGISTRY truth); `hidden` is the
+        # count filtered out of `tools`, so layers.total == len(tools) + hidden
+        # and a renderer can never mistake layers.total for the catalog size.
+        "hidden": hidden,
         "degraded": snap["degraded"],
         "tools": tools,
         "features": _build_features(),

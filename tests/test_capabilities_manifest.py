@@ -68,6 +68,25 @@ class TestShape:
         assert "push_workflow_to_canvas" not in names
         assert "get_canvas_state" not in names
 
+    def test_counts_reconcile(self, manifest):
+        # layers stays REGISTRY truth, so it necessarily exceeds the listed
+        # tools; `hidden` is what lets a renderer close the gap instead of
+        # silently misreporting layers.total as the catalog size.
+        assert manifest["layers"]["total"] == len(manifest["tools"]) + manifest["hidden"]
+
+    def test_hidden_count_matches_the_hidden_hints(self, manifest):
+        from agent.tools import registry_snapshot
+        from agent.tools._surfaces import surface_hint
+
+        expected = sum(
+            1 for t in registry_snapshot()["tools"] if surface_hint(t["name"]) == "hidden"
+        )
+        assert manifest["hidden"] == expected
+
+    def test_counts_reconcile_with_schemas(self):
+        full = build_manifest(include_schemas=True)
+        assert full["layers"]["total"] == len(full["tools"]) + full["hidden"]
+
     def test_hints_closed_vocabulary(self, manifest):
         from agent.tools._surfaces import SURFACE_HINT_VALUES
 
