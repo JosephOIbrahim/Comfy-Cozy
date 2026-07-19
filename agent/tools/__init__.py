@@ -36,12 +36,21 @@ _STAGE_MODULE_NAMES = [
     "compositor_tools", "hyperagent_tools",
 ]
 
+# Modules that failed to import, by layer — the capability manifest surfaces
+# this so silent registry shrinkage (a dep missing under the ComfyUI python,
+# say) is VISIBLE instead of a mystery tool-count drop in a log nobody reads.
+_DEGRADED: list[dict] = []
+
 _MODULES: list = []
 for _mod_name in _INTELLIGENCE_MODULE_NAMES:
     try:
         _MODULES.append(importlib.import_module(f".{_mod_name}", package=__name__))
     except Exception as _ie:
         log.warning("Tool module %r failed to import — its tools are unavailable: %s", _mod_name, _ie)
+        _DEGRADED.append({
+            "module": _mod_name, "layer": "intelligence",
+            "error": f"{type(_ie).__name__}: {_ie}",
+        })
 
 # H2 (ledger C-R13): stage modules are NOT imported here — they pull
 # networkx (~294 ms) + pxr (~310 ms) into every cold import. They are
@@ -131,6 +140,10 @@ def _ensure_brain():
             log.warning(
                 "Brain layer unavailable — brain tools will not be registered: %s", _be
             )
+            _DEGRADED.append({
+                "module": "brain", "layer": "brain",
+                "error": f"{type(_be).__name__}: {_be}",
+            })
 
 
 # Stage tools are loaded lazily (H2 / C-R13): same pattern as the brain
@@ -157,6 +170,10 @@ def _ensure_stage():
                     "Stage module %r failed to import — its tools are unavailable: %s",
                     _mod_name, _ie,
                 )
+                _DEGRADED.append({
+                    "module": _mod_name, "layer": "stage",
+                    "error": f"{type(_ie).__name__}: {_ie}",
+                })
                 continue
             _MODULES.append(_mod)
             for _tool in _mod.TOOLS:
@@ -249,6 +266,51 @@ class _ToolList(list):
 
 
 ALL_TOOLS = _ToolList()
+
+
+def registry_snapshot() -> dict:
+    """Live-registry snapshot for the capability manifest.
+
+    Always derived from the registry as loaded in THIS process — never from
+    documented counts. First call pays the lazy stage+brain import cost via
+    len(ALL_TOOLS); event-loop callers must offload to an executor.
+
+    Layer attribution: brain tools are absent from _HANDLERS (the brain
+    package dispatches its own), so module falls back to the layer name;
+    intelligence count is total - brain - stage (tool_count()'s first
+    element lumps intelligence WITH stage).
+    """
+    total = len(ALL_TOOLS)  # triggers _ensure_stage() + _ensure_brain()
+    brain = len(_BRAIN_TOOL_NAMES)
+    stage = len(_STAGE_TOOL_NAMES)
+    tools = []
+    for t in ALL_TOOLS:
+        name = t["name"]
+        if name in _BRAIN_TOOL_NAMES:
+            layer = "brain"
+        elif name in _STAGE_TOOL_NAMES:
+            layer = "stage"
+        else:
+            layer = "intelligence"
+        mod = _HANDLERS.get(name)
+        mod_name = getattr(mod, "__name__", "")
+        tools.append({
+            "name": name,
+            "description": t.get("description", ""),
+            "layer": layer,
+            "module": mod_name.rsplit(".", 1)[-1] if mod_name else layer,
+            "input_schema": t.get("input_schema"),
+        })
+    return {
+        "layers": {
+            "intelligence": total - brain - stage,
+            "stage": stage,
+            "brain": brain,
+            "total": total,
+        },
+        "tools": tools,
+        "degraded": list(_DEGRADED),
+    }
 
 
 def handle(

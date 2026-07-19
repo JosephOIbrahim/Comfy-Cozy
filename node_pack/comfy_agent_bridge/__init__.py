@@ -20,6 +20,9 @@ package cannot be imported the gate fails CLOSED (503 on every request):
 "registered but unauthenticated" must never be a reachable state.
 """
 
+import asyncio
+import hashlib
+import json
 import logging
 import time
 
@@ -178,6 +181,50 @@ def _register_routes() -> None:
                 status=404,
             )
         return web.json_response(prof)
+
+    @instance.routes.get("/agent/capabilities")
+    async def capabilities(request):
+        # Read-only relaxed gate (decision record, security review
+        # 2026-07-18): Origin present -> allowlist or 403 (blocks drive-by
+        # cross-origin scans). Origin ABSENT -> relaxed ONLY for loopback
+        # peers; any routed peer gets the full gate (Bearer when
+        # MCP_AUTH_TOKEN is set). Rationale: same-origin browser GETs omit
+        # the Origin header, so requiring Bearer here would 401 the
+        # sidebar's own manifest fetch exactly when a token is configured —
+        # while a loopback-only relaxation gives a LAN-bound host no
+        # unauthenticated surface. request.remote is None only for unix
+        # sockets (local by construction).
+        origin = request.headers.get("Origin", "")
+        loopback = request.remote in ("127.0.0.1", "::1", None)
+        if origin or not loopback:
+            if (rejected := _reject(request)) is not None:
+                return rejected
+
+        include_schemas = request.query.get("include") == "schemas"
+        try:
+            from ._manifest import build_manifest
+
+            loop = asyncio.get_running_loop()
+            manifest = await loop.run_in_executor(
+                None, lambda: build_manifest(include_schemas)
+            )
+        except Exception as exc:
+            # Independent 503: the tool-registry import can fail while the
+            # auth-layer imports still succeed — an unreachable agent must
+            # never advertise an empty-but-200 catalog.
+            log.error("comfy_agent_bridge: manifest build failed: %s", exc)
+            return web.json_response(
+                {"ok": False, "error": "agent package unavailable"}, status=503
+            )
+
+        body = json.dumps(manifest, sort_keys=True).encode()
+        etag = '"' + hashlib.sha256(body).hexdigest()[:16] + '"'
+        headers = {"ETag": etag, "Cache-Control": "no-cache"}
+        if request.headers.get("If-None-Match") == etag:
+            return web.Response(status=304, headers=headers)
+        return web.Response(
+            body=body, content_type="application/json", headers=headers
+        )
 
     _ROUTES_REGISTERED = True
     log.info("comfy_agent_bridge: routes registered")

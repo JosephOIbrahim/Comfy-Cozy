@@ -69,3 +69,5 @@ panel/web/**/*.br
 panel/web/**/*.gz
 ui/web/**/*.br
 ui/web/**/*.gz
+node_pack/*/web/**/*.br
+node_pack/*/web/**/*.gz

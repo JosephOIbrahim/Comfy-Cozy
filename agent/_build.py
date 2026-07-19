@@ -17,6 +17,7 @@ intentionally not built — no packaged launch exists today.
 from __future__ import annotations
 
 import subprocess
+import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -56,6 +57,31 @@ def _compute_dirty() -> "bool | None":
     if porcelain is None:
         return None
     return bool(porcelain)
+
+
+# On-disk state is the OPPOSITE of BUILD_HASH: it must be re-read (the whole
+# point is detecting that disk moved past the loaded code), but a git
+# subprocess per manifest request is waste — memoized with a short TTL.
+# Benign race: two concurrent misses just run git twice.
+_ON_DISK_TTL_S = 60.0
+_on_disk_memo: "tuple[float, str | None, str | None] | None" = None
+
+
+def on_disk_state() -> "tuple[str | None, str | None]":
+    """(branch, short-hash) of the on-disk repo right now, memoized ~60s.
+
+    Degrades to (None, None) when git is absent — callers render that as
+    "unknown", never as "fresh".
+    """
+    global _on_disk_memo
+    now = time.monotonic()
+    memo = _on_disk_memo
+    if memo is not None and now - memo[0] < _ON_DISK_TTL_S:
+        return memo[1], memo[2]
+    branch = _git("rev-parse", "--abbrev-ref", "HEAD")
+    head = _git("rev-parse", "--short", "HEAD")
+    _on_disk_memo = (now, branch, head)
+    return branch, head
 
 
 def __getattr__(name: str):
