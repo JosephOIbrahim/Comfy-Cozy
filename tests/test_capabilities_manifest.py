@@ -120,25 +120,26 @@ class TestSecurity:
     def test_no_credential_values_in_payload(self, monkeypatch):
         """Every secret-shaped config value must be absent from the bytes.
 
-        The credentials are SEEDED rather than read from the ambient
-        environment: a developer box has real keys set and CI has none, so an
-        environment-dependent scan silently checks nothing exactly where it
-        matters most. Seeding makes the assertion mean the same thing
-        everywhere, and the manifest is rebuilt after patching because the
-        features block reads config live.
+        The credentials are SEEDED unconditionally rather than read from the
+        ambient environment: every one of these is ``os.getenv(...)``, so a
+        developer box holds real strings and CI holds None. Branching on the
+        current value — its truthiness, length, or type — makes the scan check
+        nothing exactly where it matters most, which is precisely how this
+        assertion passed locally while proving nothing in CI. Seed first, ask
+        nothing. The manifest is rebuilt after patching because the features
+        block reads config live.
         """
         from agent import config
 
         secret_name = re.compile(r"(_API_KEY$|_TOKEN$|^MCP_AUTH_TOKEN$)")
-        secrets = [n for n in dir(config) if secret_name.search(n)]
-        assert secrets, "config exposes no secret-shaped names — scan target moved"
-
-        seeded = {}
-        for name in secrets:
-            if isinstance(getattr(config, name, None), str):
-                seeded[name] = f"SENTINEL-{name}-must-never-reach-the-wire"
-                monkeypatch.setattr(config, name, seeded[name])
-        assert seeded, "no secret-shaped config value is a str — scan target moved"
+        seeded = {
+            name: f"SENTINEL-{name}-must-never-reach-the-wire"
+            for name in dir(config)
+            if secret_name.search(name)
+        }
+        assert seeded, "config exposes no secret-shaped names — scan target moved"
+        for name, value in seeded.items():
+            monkeypatch.setattr(config, name, value)
 
         fresh = json.dumps(build_manifest(include_schemas=True), sort_keys=True)
         for name, value in seeded.items():
