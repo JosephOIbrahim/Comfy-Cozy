@@ -18,6 +18,33 @@
 - **Provenance** — `workflow.lock` pins model SHA-256s + pack commits; drift warns at validate
 - **6 swappable LLM brains** — Claude, GPT-4o, Gemini, Ollama, NVIDIA Nemotron, or any OpenAI-compatible endpoint
 
+> **TL;DR** *(each line stands alone — take what you need)*
+> - **Plain-English co-pilot for ComfyUI.** You describe the change; the agent does it.
+> - **134 MCP tools · 6 LLM providers** — Claude, GPT-4o, Gemini, Ollama, NVIDIA Nemotron, or *any* OpenAI-compatible endpoint (`custom`). Swap with one env var or mid-session — your pick sticks across restarts, and it won't switch you to a model that can't run the tools.
+> - **Zero-LLM recipes.** "Dreamier", "sharper", "faster" — common intents apply as instant, deterministic parameter macros. No API call, no wait, fully undoable.
+> - **Keyless run reports.** Every render leaves a structured report — env fingerprint, per-node timings, and an *explained* finding for every anomaly. `agent diagnose --last`. No API key in that path, ever.
+> - **Everything is undoable.** Reversible delta layers (LIVRPS), full undo stack, nothing destructive without your say-so.
+> - **It learns you.** ~30 runs in, it starts biasing toward what actually worked for *your* renders. Crash-safe, append-only.
+> - **Fast edit loop.** Validate → fix → re-validate without re-fetching the node registry — cached, instant. Downloads resume from the dead byte.
+> - **Built for the VFX floor.** Linear EXR into the vision loop · `workflow.lock` provenance sidecars · multi-worker endpoint pooling with failover.
+> - **Ships three ways:** inside Claude Code/Desktop (MCP) · standalone CLI · native ComfyUI sidebar.
+
+**Jump to what you need:**
+
+| You want to... | Go to |
+|---|---|
+| Get running in 2 minutes | [Get Running](#get-running) |
+| Compare with the cloud twin | [Where it sits](#where-it-sits) |
+| See what talking to it looks like | [See It In Action](#see-it-in-action) |
+| Put it inside ComfyUI | [Connect the Sidebar](#connect-the-sidebar-to-comfyui) |
+| Pick / swap your LLM | [Pick Your LLM](#pick-your-llm) |
+| Instant parameter macros | [Zero-LLM Recipes](#zero-llm-recipes-instant-artist-speak) |
+| Know why a render was slow/broken | [Run Reports](#run-reports-why-was-that-slow--keyless) |
+| Let it run overnight | [Autonomous Mode](#autonomous-mode) |
+| Understand the machinery | [How It Works](#how-it-works) · Architecture Deep Dive (expandable, below) |
+
+> **Maturity legend** — Unless flagged otherwise, a feature is **on by default**. **Opt-in** = one extra install or env flag, always called out inline (e.g. the USD stage layer via `pip install -e ".[dev,stage]"`, the Agent Bridge node pack, or the BGE embedder).
+
 ### Install
 
 ```bash
@@ -102,32 +129,6 @@ graph LR
 > **Session 1** is a capable tool.<br/>
 > **Session 100** is a capable tool that knows your style.
 
-> **TL;DR** *(each line stands alone — take what you need)*
-> - **Plain-English co-pilot for ComfyUI.** You describe the change; the agent does it.
-> - **134 MCP tools · 6 LLM providers** — Claude, GPT-4o, Gemini, Ollama, NVIDIA Nemotron, or *any* OpenAI-compatible endpoint (`custom`). Swap with one env var or mid-session — your pick sticks across restarts, and it won't switch you to a model that can't run the tools.
-> - **Zero-LLM recipes.** "Dreamier", "sharper", "faster" — common intents apply as instant, deterministic parameter macros. No API call, no wait, fully undoable.
-> - **Keyless run reports.** Every render leaves a structured report — env fingerprint, per-node timings, and an *explained* finding for every anomaly. `agent diagnose --last`. No API key in that path, ever.
-> - **Everything is undoable.** Reversible delta layers (LIVRPS), full undo stack, nothing destructive without your say-so.
-> - **It learns you.** ~30 runs in, it starts biasing toward what actually worked for *your* renders. Crash-safe, append-only.
-> - **Fast edit loop.** Validate → fix → re-validate without re-fetching the node registry — cached, instant. Downloads resume from the dead byte.
-> - **Built for the VFX floor.** Linear EXR into the vision loop · `workflow.lock` provenance sidecars · multi-worker endpoint pooling with failover.
-> - **Ships three ways:** inside Claude Code/Desktop (MCP) · standalone CLI · native ComfyUI sidebar.
-
-**Jump to what you need:**
-
-| You want to... | Go to |
-|---|---|
-| Get running in 2 minutes | [Get Running](#get-running) |
-| Compare with the cloud twin | [Where it sits](#where-it-sits) |
-| See what talking to it looks like | [See It In Action](#see-it-in-action) |
-| Put it inside ComfyUI | [Connect the Sidebar](#connect-the-sidebar-to-comfyui) |
-| Pick / swap your LLM | [Pick Your LLM](#pick-your-llm) |
-| Instant parameter macros | [Zero-LLM Recipes](#zero-llm-recipes-instant-artist-speak) |
-| Know why a render was slow/broken | [Run Reports](#run-reports-why-was-that-slow--keyless) |
-| Let it run overnight | [Autonomous Mode](#autonomous-mode) |
-| Understand the machinery | [How It Works](#how-it-works) · Architecture Deep Dive (expandable, below) |
-
-> **Maturity legend** — Unless flagged otherwise, a feature is **on by default**. **Opt-in** = one extra install or env flag, always called out inline (e.g. the USD stage layer via `pip install -e ".[dev,stage]"`, the Agent Bridge node pack, or the BGE embedder).
 
 ---
 
@@ -156,21 +157,6 @@ graph LR
 
 ---
 
-## Sponsor This Project
-
-Comfy Cozy is production software. 4,740+ tests (all mocked, runnable in minutes) cover the 133 MCP tools that drive the workflow lifecycle end-to-end. CI runs the full advertised matrix — Python 3.10–3.13 on Ubuntu and Windows — with the USD stage layer actually installed and tested, not skipped. Six LLM providers — Anthropic, OpenAI, Gemini, Ollama, NVIDIA Nemotron, and any OpenAI-compatible endpoint (`custom`) — sit behind a single abstraction with parity across all six. The [CHANGELOG](CHANGELOG.md) tracks active hardening and new work.
-
-If Comfy Cozy saves you time inside ComfyUI, sponsorship is the most direct way to keep it moving.
-
-**Sponsorship funds:**
-
-- Continued development of the MCP agent layer
-- Priority response on sponsor-filed issues
-- New intelligence-layer tools — vision evaluators, provisioning, planning
-
-A separate Pro tier with additional offerings is planned. Details when it's ready, not before.
-
-[**Become a sponsor →**](https://github.com/sponsors/JosephOIbrahim) &nbsp;·&nbsp; [Acknowledgments](SPONSORS.md)
 
 ---
 
@@ -382,6 +368,20 @@ Restart ComfyUI. You'll see `comfy_agent_bridge: routes registered` in the log -
 
 Comfy Cozy is **provider-agnostic** — six engines, one abstraction. Same 133 tools, same streaming, same vision analysis; swap one env var, or swap models mid-session. Your last pick is remembered across restarts, a swap won't hand you a model that can't call tools, and `list_models_available` shows which engines are configured (and, with `probe=true`, which actually answer).
 
+**Pick one row. Everything else on this page works the same either way.**
+
+| Provider | Best when | Needs a key? |
+|---|---|---|
+| **Anthropic** *(default)* | you want the best results out of the box | yes |
+| **Ollama** | you want everything local and free | **no** |
+| **OpenAI** | you already pay for GPT-4o | yes |
+| **Google Gemini** | you already have a Google key | yes |
+| **NVIDIA Nemotron** | you want free credits + reasoning models | yes |
+| **Custom** | you self-host vLLM / LM Studio / LiteLLM | usually no |
+
+Setup for each is one collapsed block below — **Anthropic is open by default.**
+
+
 ### Anthropic (default)
 
 ```bash
@@ -404,6 +404,9 @@ The agent runs on Opus 4.7 with a 4K reasoning budget; vision analysis (`analyze
 `compare_outputs`, `suggest_improvements`) runs the same model with its own budget. Set
 `FAST_MODEL` if you want to route triage / classification tools to Haiku 4.5.
 
+<details>
+<summary><strong>OpenAI</strong> — GPT-4o / GPT-4o-mini</summary>
+
 ### OpenAI
 
 ```bash
@@ -420,6 +423,11 @@ comfy-cozy run
 ```
 
 Full tool-use support with streaming. Works with any OpenAI-compatible endpoint.
+
+</details>
+
+<details>
+<summary><strong>Google Gemini</strong> — 2.5 Flash / Pro</summary>
 
 ### Google Gemini
 
@@ -438,6 +446,11 @@ comfy-cozy run
 
 Function declarations mapped automatically. Supports Gemini's thinking mode.
 
+</details>
+
+<details>
+<summary><strong>Ollama</strong> — fully local, free, no API key</summary>
+
 ### Ollama (fully local, no API key)
 
 ```bash
@@ -454,6 +467,11 @@ comfy-cozy run
 ```
 
 Uses Ollama's OpenAI-compatible endpoint at `localhost:11434`. Override with `OLLAMA_BASE_URL` if running remotely. **No data leaves your machine.**
+
+</details>
+
+<details>
+<summary><strong>NVIDIA Nemotron</strong> — NIM cloud / OpenRouter / self-hosted</summary>
 
 ### NVIDIA Nemotron (NIM cloud / OpenRouter / self-hosted)
 
@@ -473,6 +491,11 @@ comfy-cozy run --model nemotron
 
 Endpoint-agnostic, OpenAI-compatible provider for NVIDIA's **Nemotron-3** reasoning models — grab a key + free credits at [build.nvidia.com](https://build.nvidia.com). The same provider serves NVIDIA NIM cloud, OpenRouter, and a self-hosted vLLM/SGLang endpoint; the model id picks the backend. Nemotron streams `<think>` reasoning, which the provider strips from both the visible output **and** the replayed history by default (reasoning is off unless you set `NVIDIA_EMIT_REASONING=true`). Vision stays on a multimodal provider (`VISION_PROVIDER`, default `anthropic`), so swapping the loop to a text-only Nemotron never breaks `analyze_image`.
 
+</details>
+
+<details>
+<summary><strong>Custom</strong> — any OpenAI-compatible endpoint you host</summary>
+
 ### Custom (bring-your-own OpenAI-compatible endpoint)
 
 ```bash
@@ -490,6 +513,8 @@ comfy-cozy run
 ```
 
 Point it at **anything that speaks the OpenAI chat-completions API** -- a self-hosted vLLM/SGLang server, LM Studio, LiteLLM, OpenRouter, or your own gateway. It's a plain passthrough (no Nemotron `<think>` handling), so a local endpoint isn't mislabeled `nvidia` anymore. Vision stays on `VISION_PROVIDER`, so `analyze_image` keeps working.
+
+</details>
 
 ### Swap models on the fly
 
@@ -1703,6 +1728,24 @@ npm test                            # 87 Vitest cases, ~250ms
 ```
 
 The suite covers: surface-report accumulator, push-apply pipeline (widget + link), push control (`debounce` + `withObserverPause` + concurrent-pause refcount), push orchestrator (vi.fn() stubs), integration (SPEC P1-P4 oracle), and stress (100-entry batch, 50-event burst, 50-node Tier-3, slow ack, rapid sequence). See `harness/SHIP_REPORT.md` for write-back v1 details and `harness/CAPSULE.md` for the F-1..F-8 verification status table.
+
+---
+
+## Sponsor This Project
+
+Comfy Cozy is production software. 4,740+ tests (all mocked, runnable in minutes) cover the 133 MCP tools that drive the workflow lifecycle end-to-end. CI runs the full advertised matrix — Python 3.10–3.13 on Ubuntu and Windows — with the USD stage layer actually installed and tested, not skipped. Six LLM providers — Anthropic, OpenAI, Gemini, Ollama, NVIDIA Nemotron, and any OpenAI-compatible endpoint (`custom`) — sit behind a single abstraction with parity across all six. The [CHANGELOG](CHANGELOG.md) tracks active hardening and new work.
+
+If Comfy Cozy saves you time inside ComfyUI, sponsorship is the most direct way to keep it moving.
+
+**Sponsorship funds:**
+
+- Continued development of the MCP agent layer
+- Priority response on sponsor-filed issues
+- New intelligence-layer tools — vision evaluators, provisioning, planning
+
+A separate Pro tier with additional offerings is planned. Details when it's ready, not before.
+
+[**Become a sponsor →**](https://github.com/sponsors/JosephOIbrahim) &nbsp;·&nbsp; [Acknowledgments](SPONSORS.md)
 
 ---
 
