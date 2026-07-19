@@ -117,20 +117,32 @@ class TestShape:
 
 
 class TestSecurity:
-    def test_no_credential_values_in_payload(self, payload):
-        """Every secret-shaped config value must be absent from the bytes."""
+    def test_no_credential_values_in_payload(self, monkeypatch):
+        """Every secret-shaped config value must be absent from the bytes.
+
+        The credentials are SEEDED rather than read from the ambient
+        environment: a developer box has real keys set and CI has none, so an
+        environment-dependent scan silently checks nothing exactly where it
+        matters most. Seeding makes the assertion mean the same thing
+        everywhere, and the manifest is rebuilt after patching because the
+        features block reads config live.
+        """
         from agent import config
 
         secret_name = re.compile(r"(_API_KEY$|_TOKEN$|^MCP_AUTH_TOKEN$)")
-        checked = 0
-        for name in dir(config):
-            if not secret_name.search(name):
-                continue
-            value = getattr(config, name)
-            if isinstance(value, str) and len(value) > 8:
-                assert value not in payload, f"credential {name} leaked into manifest"
-                checked += 1
-        assert checked >= 1  # the scan must actually scan something
+        secrets = [n for n in dir(config) if secret_name.search(n)]
+        assert secrets, "config exposes no secret-shaped names — scan target moved"
+
+        seeded = {}
+        for name in secrets:
+            if isinstance(getattr(config, name, None), str):
+                seeded[name] = f"SENTINEL-{name}-must-never-reach-the-wire"
+                monkeypatch.setattr(config, name, seeded[name])
+        assert seeded, "no secret-shaped config value is a str — scan target moved"
+
+        fresh = json.dumps(build_manifest(include_schemas=True), sort_keys=True)
+        for name, value in seeded.items():
+            assert value not in fresh, f"credential {name} leaked into manifest"
 
     def test_no_auth_posture_disclosure(self, payload, manifest):
         """The manifest must not reveal whether the mutation gate is armed."""
