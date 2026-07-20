@@ -21,7 +21,7 @@ from ..config import SESSIONS_DIR
 
 log = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 # Per-session write lock: prevents read-modify-write races on the notes list
 # when concurrent requests call add_note() for the same session file.
@@ -31,6 +31,17 @@ SCHEMA_VERSION = 2
 _NOTE_LOCK = threading.RLock()
 
 NOTE_TYPES = ("preference", "observation", "decision", "tip")
+
+# Filename extensions that mark a value as a model-weight file. Used by the
+# REMEMBER asset extractor to lift checkpoints / LoRAs / VAEs out of a workflow
+# so an artist can reconstruct a look after a context switch. Pure-local: no
+# network, no model-registry lookup — just the strings already in the graph.
+_MODEL_EXTS = (".safetensors", ".ckpt", ".gguf", ".pt", ".pth", ".bin", ".sft")
+
+# Input-key hints that route a model-weight filename to the checkpoint bucket.
+# Anything else with a model extension is honest residue in the "models" bucket
+# rather than being mislabeled a checkpoint (ControlNet, upscaler, CLIP-Vision).
+_CKPT_HINTS = ("ckpt", "checkpoint", "unet")
 
 
 def _sessions_dir() -> Path:
@@ -132,7 +143,11 @@ def load_session(name: str) -> dict:
             data["notes"] = []
         if not isinstance(data.get("workflow"), dict):
             log.warning("Session '%s': 'workflow' was not a dict — resetting to default", name)
-            data["workflow"] = {"loaded_path": None, "format": None}
+            data["workflow"] = {
+                "loaded_path": None,
+                "format": None,
+                "assets": _extract_workflow_assets(None),
+            }
         return data
     except json.JSONDecodeError as e:
         return {"error": f"Corrupt session file: {e}"}
@@ -265,6 +280,18 @@ def _migrate_session(data: dict) -> dict:
             "Migrated session '%s' from v1 to v2 (typed notes)",
             data.get("name", "?"),
         )
+    if version < 3:
+        # v2 -> v3: backfill named asset provenance (checkpoints/LoRAs/VAEs/seeds)
+        # so sessions saved before REMEMBER v1 gain the field losslessly on load.
+        wf = data.get("workflow")
+        if isinstance(wf, dict) and "assets" not in wf:
+            source = wf.get("current_workflow") or wf.get("base_workflow")
+            wf["assets"] = _extract_workflow_assets(source)
+        data["schema_version"] = 3
+        log.debug(
+            "Migrated session '%s' from v2 to v3 (asset provenance)",
+            data.get("name", "?"),
+        )
     return data
 
 
@@ -306,7 +333,11 @@ def _empty_session(name: str) -> dict:
         "name": name,
         "saved_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
         "schema_version": SCHEMA_VERSION,
-        "workflow": {"loaded_path": None, "format": None},
+        "workflow": {
+            "loaded_path": None,
+            "format": None,
+            "assets": _extract_workflow_assets(None),
+        },
         "notes": [],
         "metadata": {},
     }
@@ -496,17 +527,79 @@ def load_experience(name: str, stage: "object") -> int:
         return 0
 
 
+def _extract_workflow_assets(workflow: dict | None) -> dict:
+    """Lift remembered assets from an API-format workflow dict.
+
+    Returns {"checkpoints", "loras", "vaes", "models", "seeds"} — sorted,
+    de-duplicated, deterministic. Buckets are chosen by input-key hint
+    ('lora' / 'vae' / 'ckpt'|'checkpoint'|'unet'); any other model-weight file
+    (ControlNet, upscaler, CLIP-Vision, ...) goes to the honest "models" residue
+    rather than being mislabeled a checkpoint. Literal integer seeds are recorded
+    (bool is excluded; the ComfyUI -1 "randomize" sentinel is skipped, since it
+    does not reproduce a look). Connection inputs (["node_id", index]) and
+    non-literal seeds are skipped. Pure and network-free: it only reads strings
+    already present in the graph and never touches the cognitive stage or any
+    patent-gated substrate (REMEMBER v1).
+    """
+    assets: dict = {"checkpoints": [], "loras": [], "vaes": [], "models": [], "seeds": []}
+    if not isinstance(workflow, dict):
+        return assets
+
+    checkpoints: set[str] = set()
+    loras: set[str] = set()
+    vaes: set[str] = set()
+    models: set[str] = set()
+    seeds: set[int] = set()
+
+    for node in workflow.values():
+        if not isinstance(node, dict):
+            continue
+        inputs = node.get("inputs")
+        if not isinstance(inputs, dict):
+            continue
+        for key, value in inputs.items():
+            if not isinstance(key, str):
+                continue
+            k = key.lower()
+            if k in ("seed", "noise_seed"):
+                # Literal seeds only — bool is an int subclass (exclude it); -1 is
+                # the "randomize each run" sentinel and does not reproduce a look.
+                if isinstance(value, int) and not isinstance(value, bool) and value != -1:
+                    seeds.add(value)
+            elif isinstance(value, str):
+                if "lora" in k:
+                    loras.add(value)
+                elif "vae" in k and value.lower().endswith(_MODEL_EXTS):
+                    vaes.add(value)
+                elif value.lower().endswith(_MODEL_EXTS):
+                    if any(hint in k for hint in _CKPT_HINTS):
+                        checkpoints.add(value)
+                    else:
+                        models.add(value)
+
+    assets["checkpoints"] = sorted(checkpoints)
+    assets["loras"] = sorted(loras)
+    assets["vaes"] = sorted(vaes)
+    assets["models"] = sorted(models)
+    assets["seeds"] = sorted(seeds)
+    return assets
+
+
 def _serialize_workflow_state(state: dict | None) -> dict:
     """Serialize workflow_patch._state for disk storage."""
     if state is None:
-        return {"loaded_path": None, "format": None}
+        return {"loaded_path": None, "format": None, "assets": _extract_workflow_assets(None)}
 
+    current = state.get("current_workflow")
     return {
         "loaded_path": state.get("loaded_path"),
         "format": state.get("format"),
         "base_workflow": state.get("base_workflow"),
-        "current_workflow": state.get("current_workflow"),
+        "current_workflow": current,
         "history_depth": len(state.get("history", [])),
+        # REMEMBER v1: named asset provenance (checkpoints/LoRAs/VAEs/seed) so a
+        # session survives a context switch without re-reading the workflow JSON.
+        "assets": _extract_workflow_assets(current or state.get("base_workflow")),
         # Don't serialize full history — can be large.
         # User can undo from current_workflow vs base.
     }
